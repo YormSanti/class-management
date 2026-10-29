@@ -1,0 +1,9 @@
+[project]
+name = "classroom-manager"
+version = "0.1.0"
+description = "Offline desktop app for managing classes, attendance, grades and seating"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
