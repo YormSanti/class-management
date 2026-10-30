@@ -8,9 +8,10 @@ is the mean of their subject averages, so each subject counts equally.
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from app.models import AttendanceStatus, Student
+from app.models import AttendanceStatus, Student, Subject
 from app.repositories.dashboard_repo import AssignmentStats, CategoryPoints, DashboardRepository
 from app.repositories.student_repo import StudentRepository
+from app.repositories.subject_repo import SubjectRepository
 
 # Lower bound (percent) of each letter grade, best first.
 GRADE_SCALE: tuple[tuple[str, float], ...] = (("A", 90), ("B", 80), ("C", 70), ("D", 60), ("F", 0))
@@ -40,6 +41,14 @@ class AttentionItem:
 
 
 @dataclass
+class SubjectSummary:
+    subject: Subject
+    average: float | None  # mean of the students' averages in this subject
+    scored: int  # students with at least one score
+    below_pass: int  # students whose average is under LOW_AVERAGE
+
+
+@dataclass
 class DashboardSummary:
     active_students: int
     inactive_students: int
@@ -51,6 +60,7 @@ class DashboardSummary:
     attention: list[AttentionItem] = field(default_factory=list)
     recent_assignments: list[AssignmentStats] = field(default_factory=list)
     grade_distribution: dict[str, int] = field(default_factory=dict)
+    subjects: list[SubjectSummary] = field(default_factory=list)
 
 
 def letter_grade(percent: float) -> str:
@@ -107,9 +117,12 @@ def _plural(n: int, word: str) -> str:
 
 
 class DashboardService:
-    def __init__(self, dashboard: DashboardRepository, students: StudentRepository):
+    def __init__(
+        self, dashboard: DashboardRepository, students: StudentRepository, subjects: SubjectRepository
+    ):
         self.dashboard = dashboard
         self.students = students
+        self.subjects = subjects
 
     def summary(self, class_id: int, today: date | None = None) -> DashboardSummary:
         today = today or date.today()
@@ -127,8 +140,26 @@ class DashboardService:
             else {}
         )
 
-        averages = overall_averages(subject_averages(self.dashboard.category_points(class_id)))
+        by_subject = subject_averages(self.dashboard.category_points(class_id))
+        averages = overall_averages(by_subject)
         missing = self.dashboard.missing_by_student(class_id, today)
+        subjects = self.subjects.list_for_class(class_id)
+
+        subject_summaries = []
+        low_subjects: dict[int, list[tuple[str, float]]] = {}  # student id -> failing subjects
+        for subject in subjects:
+            scores = {sid: pct for (sid, sub_id), pct in by_subject.items() if sub_id == subject.id}
+            low = {sid: pct for sid, pct in scores.items() if pct < LOW_AVERAGE}
+            for sid, pct in low.items():
+                low_subjects.setdefault(sid, []).append((subject.name, pct))
+            subject_summaries.append(
+                SubjectSummary(
+                    subject=subject,
+                    average=sum(scores.values()) / len(scores) if scores else None,
+                    scored=len(scores),
+                    below_pass=len(low),
+                )
+            )
 
         distribution = {letter: 0 for letter, _ in GRADE_SCALE}
         for percent in averages.values():
@@ -142,13 +173,18 @@ class DashboardService:
             class_average=sum(averages.values()) / len(averages) if averages else None,
             missing_total=sum(missing.values()),
             attendance_days=[DayAttendance(d, chart_counts.get(d, {})) for d in chart_dates],
-            attention=self._needs_attention(class_id, today, averages, missing),
+            attention=self._needs_attention(class_id, today, low_subjects, missing),
             recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS),
             grade_distribution=distribution,
+            subjects=subject_summaries,
         )
 
     def _needs_attention(
-        self, class_id: int, today: date, averages: dict[int, float], missing: dict[int, int]
+        self,
+        class_id: int,
+        today: date,
+        low_subjects: dict[int, list[tuple[str, float]]],
+        missing: dict[int, int],
     ) -> list[AttentionItem]:
         """One item per student, using the most serious reason. Most serious first."""
         window_start = today - timedelta(days=ATTENTION_WINDOW_DAYS - 1)
@@ -158,12 +194,15 @@ class DashboardService:
         items: list[tuple[int, AttentionItem]] = []
         for student in self.students.list_for_class(class_id):
             counts = attendance.get(student.id, {})
-            average = averages.get(student.id)
+            low = low_subjects.get(student.id, [])
+            if len(low) == 1:
+                grades_reason = f"{low[0][0]} average is {low[0][1]:.0f}%"
+            else:
+                grades_reason = f"Below {LOW_AVERAGE:.0f}% in {len(low)} subjects"
             checks = [
                 ("absent", counts.get(ABSENT, 0) >= ABSENCE_LIMIT,
                  f"{_plural(counts.get(ABSENT, 0), 'absence')} {window}"),
-                ("grades", average is not None and average < LOW_AVERAGE,
-                 f"Average is {average or 0:.0f}%"),
+                ("grades", bool(low), grades_reason),
                 ("missing", missing.get(student.id, 0) >= MISSING_LIMIT,
                  f"{_plural(missing.get(student.id, 0), 'missing assignment')}"),
                 ("late", counts.get(LATE, 0) >= LATE_LIMIT,

@@ -6,6 +6,7 @@ import pytest
 from app.models import SchoolClass, Student, Subject
 from app.repositories.dashboard_repo import DashboardRepository
 from app.repositories.student_repo import StudentRepository
+from app.repositories.subject_repo import SubjectRepository
 from app.services.dashboard import DashboardService, attendance_rate, letter_grade
 from app.services.roster import RosterService
 
@@ -17,7 +18,7 @@ TODAY = date(2026, 10, 30)  # a Friday
 
 @pytest.fixture
 def service(conn: sqlite3.Connection) -> DashboardService:
-    return DashboardService(DashboardRepository(conn), StudentRepository(conn))
+    return DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
 
 
 @pytest.fixture
@@ -216,3 +217,30 @@ def test_dashboard_counts_daily_attendance_only(service, roster, conn, class_id,
 def test_recent_assignments_show_subject(service, roster, conn, class_id, maths):
     _assignment(conn, maths, _category(conn, maths, "Homework", 1), "HW 1", 10, TODAY)
     assert service.summary(class_id, TODAY).recent_assignments[0].subject == "Maths"
+
+
+def test_subject_summaries(service, roster, conn, class_id, maths):
+    ada, alan = _student(roster, class_id, "Ada"), _student(roster, class_id, "Alan")
+    roster.save_subject(Subject(class_id=class_id, name="Art", teacher="Ms. Chen"))
+    cat = _category(conn, maths, "Tests", 1)
+    test = _assignment(conn, maths, cat, "Test", 10, TODAY)
+    _score(conn, test, ada, 9)
+    _score(conn, test, alan, 5)
+
+    by_name = {s.subject.name: s for s in service.summary(class_id, TODAY).subjects}
+    assert list(by_name) == ["Art", "Maths"]
+    assert (by_name["Maths"].average, by_name["Maths"].scored, by_name["Maths"].below_pass) == (70, 2, 1)
+    assert (by_name["Art"].average, by_name["Art"].scored, by_name["Art"].subject.teacher) == (None, 0, "Ms. Chen")
+
+
+def test_low_grades_name_the_subject(service, roster, conn, class_id, maths):
+    ada, alan = _student(roster, class_id, "Ada"), _student(roster, class_id, "Alan")
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+    for subject_id, ada_score, alan_score in [(maths, 9, 4), (science, 5, 3)]:
+        test = _assignment(conn, subject_id, _category(conn, subject_id, "Tests", 1), "Test", 10, TODAY)
+        _score(conn, test, ada, ada_score)
+        _score(conn, test, alan, alan_score)
+
+    # Ada's overall average is 70%, but she is failing Science.
+    reasons = {i.student.first_name: i.reason for i in service.summary(class_id, TODAY).attention}
+    assert reasons == {"Ada": "Science average is 50%", "Alan": "Below 60% in 2 subjects"}

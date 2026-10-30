@@ -23,11 +23,13 @@ from app.services.dashboard import (
     EXCUSED,
     GRADE_SCALE,
     LATE,
+    LOW_AVERAGE,
     PRESENT,
     AttentionItem,
     DashboardService,
     DashboardSummary,
     DayAttendance,
+    SubjectSummary,
     letter_grade,
 )
 from app.services.roster import RosterService
@@ -357,9 +359,16 @@ class DashboardView(QWidget):
         grades_panel.body.addLayout(grades_grid)
         grades_panel.body.addStretch()
 
+        subjects_panel = Panel("Subjects", "Class average in each subject")
+        self.subjects_grid = QGridLayout()
+        self.subjects_grid.setHorizontalSpacing(16)
+        self.subjects_grid.setVerticalSpacing(10)
+        subjects_panel.body.addLayout(self.subjects_grid)
+        subjects_panel.body.addStretch()
+
         bottom = QHBoxLayout()
         bottom.setSpacing(16)
-        bottom.addWidget(assignments_panel, stretch=2)
+        bottom.addWidget(subjects_panel, stretch=2)
         bottom.addWidget(grades_panel, stretch=1)
 
         content = QWidget()
@@ -373,6 +382,7 @@ class DashboardView(QWidget):
         content_layout.addWidget(kpi_panel)
         content_layout.addLayout(middle, stretch=1)
         content_layout.addLayout(bottom)
+        content_layout.addWidget(assignments_panel)
 
         scroll = QScrollArea()
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -423,6 +433,7 @@ class DashboardView(QWidget):
         self._show_attention(summary.attention)
         self._show_assignments(summary.recent_assignments, summary.active_students)
         self._show_grades(summary.grade_distribution)
+        self._show_subjects(summary.subjects)
 
     # --- Qt events -------------------------------------------------------------
 
@@ -574,3 +585,40 @@ class DashboardView(QWidget):
             n = distribution.get(letter, 0)
             meter.set_value(n, biggest, "warn" if letter in ("D", "F") else "accent")
             count.setText(str(n))
+
+    def _show_subjects(self, subjects: list[SubjectSummary]) -> None:
+        grid = self.subjects_grid
+        _clear(grid)
+        if not subjects:
+            hint = _label("No subjects yet. Add one with the ⋯ button next to Subject in the sidebar.", muted=True)
+            hint.setWordWrap(True)
+            grid.addWidget(hint, 0, 0)
+            return
+
+        for col, text in enumerate(("Subject", "Teacher", "Class average", f"Below {LOW_AVERAGE:.0f}%")):
+            caption = _caption(text)
+            if col == 3:
+                caption.setAlignment(Qt.AlignmentFlag.AlignRight)
+            grid.addWidget(caption, 0, col)
+        for row, s in enumerate(subjects, start=1):
+            grid.addWidget(_label(s.subject.name, bold=True), row, 0)
+            grid.addWidget(_label(s.subject.teacher or "You", 0.92, muted=True), row, 1)
+
+            average = QHBoxLayout()
+            average.setSpacing(10)
+            meter = Meter(height=8)
+            if s.average is not None:
+                color = "danger" if s.average < LOW_AVERAGE else "warn" if s.average < 70 else "accent"
+                meter.set_value(s.average, 100, color)
+            average.addWidget(meter, stretch=1)
+            value = _label("No scores" if s.average is None else f"{s.average:.0f}% {letter_grade(s.average)}", 0.92, bold=s.average is not None, muted=s.average is None)
+            value.setMinimumWidth(64)
+            average.addWidget(value)
+            grid.addLayout(average, row, 2)
+
+            below = _label(str(s.below_pass) if s.scored else "—", bold=bool(s.below_pass), muted=not s.below_pass)
+            below.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if s.below_pass:
+                _set_color(below, _color(self, "danger"))
+            grid.addWidget(below, row, 3)
+        grid.setColumnStretch(2, 1)

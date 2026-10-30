@@ -145,8 +145,9 @@ def main() -> int:
         return 1
 
     students = StudentRepository(conn)
-    roster = RosterService(ClassRepository(conn), students, SubjectRepository(conn))
-    dashboard = DashboardService(DashboardRepository(conn), students)
+    subjects = SubjectRepository(conn)
+    roster = RosterService(ClassRepository(conn), students, subjects)
+    dashboard = DashboardService(DashboardRepository(conn), students, subjects)
     window = MainWindow(roster, dashboard, config)
     window.show()
     try:
