@@ -15,11 +15,12 @@ from app.services.roster import RosterError
 
 
 class ClassDialog(QDialog):
-    """Create or edit a class. `save` persists it and may raise RosterError."""
+    """Create or edit a class. `save(school_class, first_subject)` persists it and may
+    raise RosterError. The first-subject field is only shown for a new class."""
 
     def __init__(
         self,
-        save: Callable[[SchoolClass], SchoolClass],
+        save: Callable[[SchoolClass, str], SchoolClass],
         school_class: SchoolClass | None = None,
         parent: QWidget | None = None,
     ):
@@ -32,8 +33,8 @@ class ClassDialog(QDialog):
 
         self.name = QLineEdit(school_class.name if school_class else "")
         self.name.setPlaceholderText("e.g. 7B")
-        self.subject = QLineEdit(school_class.subject if school_class else "")
-        self.subject.setPlaceholderText("e.g. Mathematics")
+        self.first_subject = QLineEdit()
+        self.first_subject.setPlaceholderText("e.g. Mathematics (more can be added later)")
         self.term = QLineEdit(school_class.term if school_class else "")
         self.term.setPlaceholderText("e.g. 2026 Term 1")
 
@@ -48,19 +49,16 @@ class ClassDialog(QDialog):
 
         layout = QFormLayout(self)
         layout.addRow("Name*", self.name)
-        layout.addRow("Subject", self.subject)
         layout.addRow("Term", self.term)
+        if school_class is None:
+            layout.addRow("First subject", self.first_subject)
         layout.addRow(buttons)
 
     def accept(self) -> None:
-        values = {
-            "name": self.name.text(),
-            "subject": self.subject.text(),
-            "term": self.term.text(),
-        }
+        values = {"name": self.name.text(), "term": self.term.text()}
         school_class = replace(self._original, **values) if self._original else SchoolClass(**values)
         try:
-            self.saved = self._save(school_class)
+            self.saved = self._save(school_class, self.first_subject.text())
         except RosterError as exc:
             QMessageBox.warning(self, self.windowTitle(), str(exc))
             return

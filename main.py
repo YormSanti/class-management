@@ -22,6 +22,7 @@ from app.db.connection import connect, init_db
 from app.repositories.class_repo import ClassRepository
 from app.repositories.dashboard_repo import DashboardRepository
 from app.repositories.student_repo import StudentRepository
+from app.repositories.subject_repo import SubjectRepository
 from app.services.backup import auto_backup
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterService
@@ -144,7 +145,7 @@ def main() -> int:
         return 1
 
     students = StudentRepository(conn)
-    roster = RosterService(ClassRepository(conn), students)
+    roster = RosterService(ClassRepository(conn), students, SubjectRepository(conn))
     dashboard = DashboardService(DashboardRepository(conn), students)
     window = MainWindow(roster, dashboard, config)
     window.show()

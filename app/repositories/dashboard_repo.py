@@ -1,4 +1,8 @@
-"""Read-only aggregate queries for the dashboard. Inactive students are left out everywhere."""
+"""Read-only aggregate queries for the dashboard.
+
+Inactive students are left out everywhere. Attendance means daily (homeroom)
+attendance only, i.e. records without a subject.
+"""
 
 import sqlite3
 from collections import defaultdict
@@ -11,6 +15,7 @@ class CategoryPoints:
     """One student's scored points in one category (scores that are NULL are skipped)."""
 
     student_id: int
+    subject_id: int
     category_id: int
     weight: float
     earned: float
@@ -21,6 +26,7 @@ class CategoryPoints:
 class AssignmentStats:
     id: int
     title: str
+    subject: str
     category: str
     date: date | None
     max_score: float
@@ -49,7 +55,7 @@ class DashboardRepository:
             """
             SELECT DISTINCT a.date FROM attendance a
             JOIN students s ON s.id = a.student_id
-            WHERE s.class_id = ? AND s.active = 1 AND a.date <= ?
+            WHERE s.class_id = ? AND s.active = 1 AND a.subject_id IS NULL AND a.date <= ?
             ORDER BY a.date DESC LIMIT ?
             """,
             (class_id, on_or_before.isoformat(), limit),
@@ -64,7 +70,8 @@ class DashboardRepository:
             """
             SELECT a.student_id, a.status, count(*) AS n FROM attendance a
             JOIN students s ON s.id = a.student_id
-            WHERE s.class_id = ? AND s.active = 1 AND a.date BETWEEN ? AND ?
+            WHERE s.class_id = ? AND s.active = 1 AND a.subject_id IS NULL
+              AND a.date BETWEEN ? AND ?
             GROUP BY a.student_id, a.status
             """,
             (class_id, start.isoformat(), end.isoformat()),
@@ -82,7 +89,8 @@ class DashboardRepository:
             """
             SELECT a.date, a.status, count(*) AS n FROM attendance a
             JOIN students s ON s.id = a.student_id
-            WHERE s.class_id = ? AND s.active = 1 AND a.date BETWEEN ? AND ?
+            WHERE s.class_id = ? AND s.active = 1 AND a.subject_id IS NULL
+              AND a.date BETWEEN ? AND ?
             GROUP BY a.date, a.status
             """,
             (class_id, start.isoformat(), end.isoformat()),
@@ -95,19 +103,22 @@ class DashboardRepository:
     def category_points(self, class_id: int) -> list[CategoryPoints]:
         rows = self.conn.execute(
             """
-            SELECT sc.student_id, c.id AS category_id, c.weight,
+            SELECT sc.student_id, a.subject_id, c.id AS category_id, c.weight,
                    sum(sc.score) AS earned, sum(a.max_score) AS possible
             FROM scores sc
             JOIN assignments a ON a.id = sc.assignment_id
+            JOIN subjects sub ON sub.id = a.subject_id
             JOIN categories c ON c.id = a.category_id
             JOIN students s ON s.id = sc.student_id
-            WHERE a.class_id = ? AND s.active = 1 AND sc.score IS NOT NULL
+            WHERE sub.class_id = ? AND s.active = 1 AND sc.score IS NOT NULL
             GROUP BY sc.student_id, c.id
             """,
             (class_id,),
         )
         return [
-            CategoryPoints(r["student_id"], r["category_id"], r["weight"], r["earned"], r["possible"])
+            CategoryPoints(
+                r["student_id"], r["subject_id"], r["category_id"], r["weight"], r["earned"], r["possible"]
+            )
             for r in rows
         ]
 
@@ -117,7 +128,8 @@ class DashboardRepository:
             """
             SELECT s.id AS student_id, count(*) AS n
             FROM students s
-            JOIN assignments a ON a.class_id = s.class_id
+            JOIN subjects sub ON sub.class_id = s.class_id
+            JOIN assignments a ON a.subject_id = sub.id
             LEFT JOIN scores sc ON sc.assignment_id = a.id AND sc.student_id = s.id
             WHERE s.class_id = ? AND s.active = 1
               AND a.date IS NOT NULL AND a.date <= ? AND sc.score IS NULL
@@ -131,14 +143,15 @@ class DashboardRepository:
         """Newest assignments first; undated ones come last."""
         rows = self.conn.execute(
             """
-            SELECT a.id, a.title, c.name AS category, a.date, a.max_score,
+            SELECT a.id, a.title, sub.name AS subject, c.name AS category, a.date, a.max_score,
                    count(s.id) AS submitted,
                    avg(CASE WHEN s.id IS NOT NULL THEN sc.score * 100.0 / a.max_score END) AS avg_pct
             FROM assignments a
+            JOIN subjects sub ON sub.id = a.subject_id
             JOIN categories c ON c.id = a.category_id
             LEFT JOIN scores sc ON sc.assignment_id = a.id AND sc.score IS NOT NULL
             LEFT JOIN students s ON s.id = sc.student_id AND s.active = 1
-            WHERE a.class_id = ?
+            WHERE sub.class_id = ?
             GROUP BY a.id
             ORDER BY a.date IS NULL, a.date DESC, a.id DESC
             LIMIT ?
@@ -149,6 +162,7 @@ class DashboardRepository:
             AssignmentStats(
                 id=r["id"],
                 title=r["title"],
+                subject=r["subject"],
                 category=r["category"],
                 date=date.fromisoformat(r["date"]) if r["date"] else None,
                 max_score=r["max_score"],

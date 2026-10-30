@@ -531,7 +531,7 @@ class DashboardView(QWidget):
             grid.addWidget(_label("No assignments yet. They will show up here once you add them.", muted=True), 0, 0)
             return
 
-        headers = ("Assignment", "Category", "Date", "Submitted", "Average")
+        headers = ("Assignment", "Subject", "Date", "Submitted", "Average")
         for col, text in enumerate(headers):
             caption = _caption(text)
             if col == 4:
@@ -539,7 +539,9 @@ class DashboardView(QWidget):
             grid.addWidget(caption, 0, col)
         for row, a in enumerate(assignments, start=1):
             grid.addWidget(_label(a.title, bold=True), row, 0)
-            grid.addWidget(_label(a.category, 0.92, muted=True), row, 1)
+            subject = _label(a.subject, 0.92, muted=True)
+            subject.setToolTip(a.category)
+            grid.addWidget(subject, row, 1)
             grid.addWidget(_label(_short_date(a.date), 0.92, muted=True), row, 2)
 
             submitted = QHBoxLayout()

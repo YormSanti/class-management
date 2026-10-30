@@ -6,7 +6,7 @@ from app.models import SchoolClass
 
 
 def _from_row(row: sqlite3.Row) -> SchoolClass:
-    return SchoolClass(id=row["id"], name=row["name"], subject=row["subject"], term=row["term"])
+    return SchoolClass(id=row["id"], name=row["name"], term=row["term"])
 
 
 class ClassRepository:
@@ -16,21 +16,26 @@ class ClassRepository:
     def add(self, school_class: SchoolClass) -> SchoolClass:
         with transaction(self.conn):
             cur = self.conn.execute(
-                "INSERT INTO classes (name, subject, term) VALUES (?, ?, ?)",
-                (school_class.name, school_class.subject, school_class.term),
+                "INSERT INTO classes (name, term) VALUES (?, ?)",
+                (school_class.name, school_class.term),
             )
         return replace(school_class, id=cur.lastrowid)
 
     def update(self, school_class: SchoolClass) -> None:
         with transaction(self.conn):
             self.conn.execute(
-                "UPDATE classes SET name = ?, subject = ?, term = ? WHERE id = ?",
-                (school_class.name, school_class.subject, school_class.term, school_class.id),
+                "UPDATE classes SET name = ?, term = ? WHERE id = ?",
+                (school_class.name, school_class.term, school_class.id),
             )
 
     def delete(self, class_id: int) -> None:
-        """Delete a class. Raises sqlite3.IntegrityError if anything references it."""
+        """Delete a class and its subjects.
+
+        Raises sqlite3.IntegrityError (and deletes nothing) if students, seating,
+        or any subject's grades or attendance still reference them.
+        """
         with transaction(self.conn):
+            self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 
     def get(self, class_id: int) -> SchoolClass | None:

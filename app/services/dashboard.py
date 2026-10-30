@@ -1,7 +1,8 @@
 """Overview numbers for one class: attendance, grades and students who need a look.
 
 Inactive students are left out of every figure. Scores that are NULL (not submitted
-or exempt) are ignored in averages, unlike a score of 0.
+or exempt) are ignored in averages, unlike a score of 0. A student's overall average
+is the mean of their subject averages, so each subject counts equally.
 """
 
 from dataclasses import dataclass, field
@@ -66,24 +67,31 @@ def attendance_rate(counts: dict[str, int]) -> float | None:
     return attended * 100 / marked if marked else None
 
 
-def weighted_averages(points: list[CategoryPoints]) -> dict[int, float]:
-    """{student_id: percent} weighted by category, over the categories the student has scores in.
-
-    If all of those categories have weight 0, the categories count equally.
+def subject_averages(points: list[CategoryPoints]) -> dict[tuple[int, int], float]:
+    """{(student_id, subject_id): percent} weighted by category, over the categories
+    the student has scores in. If all of those have weight 0, they count equally.
     """
-    by_student: dict[int, list[CategoryPoints]] = {}
+    groups: dict[tuple[int, int], list[CategoryPoints]] = {}
     for p in points:
         if p.possible > 0:
-            by_student.setdefault(p.student_id, []).append(p)
+            groups.setdefault((p.student_id, p.subject_id), []).append(p)
 
     averages = {}
-    for student_id, cats in by_student.items():
+    for key, cats in groups.items():
         total_weight = sum(c.weight for c in cats)
         if total_weight > 0:
-            averages[student_id] = sum(c.earned / c.possible * c.weight for c in cats) * 100 / total_weight
+            averages[key] = sum(c.earned / c.possible * c.weight for c in cats) * 100 / total_weight
         else:
-            averages[student_id] = sum(c.earned / c.possible for c in cats) * 100 / len(cats)
+            averages[key] = sum(c.earned / c.possible for c in cats) * 100 / len(cats)
     return averages
+
+
+def overall_averages(by_subject: dict[tuple[int, int], float]) -> dict[int, float]:
+    """{student_id: percent}: the mean of each student's subject averages."""
+    per_student: dict[int, list[float]] = {}
+    for (student_id, _subject_id), percent in by_subject.items():
+        per_student.setdefault(student_id, []).append(percent)
+    return {sid: sum(values) / len(values) for sid, values in per_student.items()}
 
 
 def _sum_counts(days: list[dict[str, int]]) -> dict[str, int]:
@@ -119,7 +127,7 @@ class DashboardService:
             else {}
         )
 
-        averages = weighted_averages(self.dashboard.category_points(class_id))
+        averages = overall_averages(subject_averages(self.dashboard.category_points(class_id)))
         missing = self.dashboard.missing_by_student(class_id, today)
 
         distribution = {letter: 0 for letter, _ in GRADE_SCALE}

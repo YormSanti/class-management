@@ -7,6 +7,7 @@ from app.db.connection import SCHEMA_VERSION, connect, init_db, transaction
 
 TABLES = {
     "classes",
+    "subjects",
     "students",
     "attendance",
     "categories",
@@ -78,9 +79,10 @@ def test_committed_data_survives_reopen(db_path: Path, conn: sqlite3.Connection)
 def test_null_score_is_distinct_from_zero(conn: sqlite3.Connection):
     conn.execute("INSERT INTO classes (id, name) VALUES (1, '7B')")
     conn.execute("INSERT INTO students (id, class_id, first_name, last_name) VALUES (1, 1, 'A', 'B')")
-    conn.execute("INSERT INTO categories (id, class_id, name, weight) VALUES (1, 1, 'Homework', 20)")
+    conn.execute("INSERT INTO subjects (id, class_id, name) VALUES (1, 1, 'Maths')")
+    conn.execute("INSERT INTO categories (id, subject_id, name, weight) VALUES (1, 1, 'Homework', 20)")
     conn.execute(
-        "INSERT INTO assignments (id, class_id, category_id, title, max_score) VALUES (1, 1, 1, 'HW1', 10)"
+        "INSERT INTO assignments (id, subject_id, category_id, title, max_score) VALUES (1, 1, 1, 'HW1', 10)"
     )
     conn.execute("INSERT INTO scores (assignment_id, student_id, score) VALUES (1, 1, NULL)")
     with pytest.raises(sqlite3.IntegrityError):  # one score per student per assignment
