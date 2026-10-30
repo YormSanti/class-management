@@ -1,7 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -16,13 +18,20 @@ from app.services.roster import RosterError
 
 class ClassDialog(QDialog):
     """Create or edit a class. `save(school_class, first_subject)` persists it and may
-    raise RosterError. The first-subject field is only shown for a new class."""
+    raise RosterError. The first-subject field is only shown for a new class.
+
+    `terms` are the school years already in use, offered while typing; a new
+    class starts with `default_term`.
+    """
 
     def __init__(
         self,
         save: Callable[[SchoolClass, str], SchoolClass],
         school_class: SchoolClass | None = None,
         parent: QWidget | None = None,
+        *,
+        terms: Sequence[str] = (),
+        default_term: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit class" if school_class else "New class")
@@ -35,8 +44,12 @@ class ClassDialog(QDialog):
         self.name.setPlaceholderText("e.g. 7B")
         self.first_subject = QLineEdit()
         self.first_subject.setPlaceholderText("e.g. Mathematics (more can be added later)")
-        self.term = QLineEdit(school_class.term if school_class else "")
-        self.term.setPlaceholderText("e.g. 2026 Term 1")
+        self.term = QLineEdit(school_class.term if school_class else default_term)
+        self.term.setPlaceholderText("e.g. 2025-2026")
+        completer = QCompleter(list(terms), self.term)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+        self.term.setCompleter(completer)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -49,7 +62,7 @@ class ClassDialog(QDialog):
 
         layout = QFormLayout(self)
         layout.addRow("Name*", self.name)
-        layout.addRow("Term", self.term)
+        layout.addRow("School year", self.term)
         if school_class is None:
             layout.addRow("First subject", self.first_subject)
         layout.addRow(buttons)

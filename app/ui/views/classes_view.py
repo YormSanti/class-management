@@ -2,6 +2,7 @@ from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -14,6 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.roster import RosterService
+
+ALL_YEARS = "\0all"  # year-filter value meaning "show every school year"
 
 
 def _table(headers: tuple[str, ...]) -> QTableWidget:
@@ -40,16 +43,17 @@ def _item(text: str, data: int | None = None, align_right: bool = False) -> QTab
 
 
 class ClassesView(QWidget):
-    """All classes and the subjects of the selected one, with add / edit / delete.
+    """Classes by school year and the subjects of the selected class, with add / edit / delete.
 
     This is where the app's current class and subject are chosen: clicking a row
-    makes it current for every page. The buttons only emit requests; the main
-    window runs the dialogs and owns the current selection.
+    makes it current for every page, and switching the school year switches to a
+    class of that year. The buttons only emit requests; the main window runs the
+    dialogs and owns the current selection.
     """
 
     class_selected = Signal(int)
     subject_selected = Signal(int)
-    new_class_requested = Signal()
+    new_class_requested = Signal(str)  # school year to suggest for the new class
     edit_class_requested = Signal()
     delete_class_requested = Signal()
     new_subject_requested = Signal()
@@ -61,15 +65,27 @@ class ClassesView(QWidget):
         self.roster = roster
         self.class_id: int | None = None
         self.subject_id: int | None = None
+        self.year: str | None = None  # school year shown; "" = classes without one
+
+        # --- school year ---
+        self.year_combo = QComboBox()
+        self.year_combo.setMinimumContentsLength(14)
+        self.year_combo.activated.connect(self._on_year_picked)
+        year_row = QHBoxLayout()
+        year_row.addWidget(QLabel("School year:"))
+        year_row.addWidget(self.year_combo)
+        year_row.addStretch()
 
         # --- classes ---
-        self.class_table = _table(("Class", "Term", "Students", "Subjects"))
+        self.class_table = _table(("Class", "School year", "Students", "Subjects"))
         self.class_table.horizontalHeader().setStretchLastSection(False)
         self.class_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.class_table.itemSelectionChanged.connect(self._on_class_clicked)
         self.class_table.doubleClicked.connect(lambda _index: self.edit_class_requested.emit())
         new_class = QPushButton("New class…")
-        new_class.clicked.connect(self.new_class_requested)
+        new_class.clicked.connect(
+            lambda: self.new_class_requested.emit("" if self.year == ALL_YEARS else self.year or "")
+        )
         self.edit_class_button = QPushButton("Edit…")
         self.edit_class_button.clicked.connect(self.edit_class_requested)
         self.delete_class_button = QPushButton("Delete")
@@ -111,9 +127,10 @@ class ClassesView(QWidget):
         subject_layout.addLayout(subject_buttons)
 
         intro = QLabel(
-            "<h2>Classes</h2><p>Click a class and a subject to work with them on the other "
-            "pages. A class is a group of students; each subject taught to it has its own "
-            "gradebook. A class or subject can only be deleted while nothing is recorded in it.</p>"
+            "<h2>Manage classes</h2><p>Click a class and a subject to work with them on the "
+            "other pages. A class is a group of students in one school year; each subject "
+            "taught to it has its own gradebook. A class or subject can only be deleted while "
+            "nothing is recorded in it.</p>"
         )
         intro.setWordWrap(True)
 
@@ -122,6 +139,7 @@ class ClassesView(QWidget):
         columns.addWidget(self.subject_box, stretch=2)
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
+        layout.addLayout(year_row)
         layout.addLayout(columns, stretch=1)
 
         self.refresh()
@@ -144,9 +162,28 @@ class ClassesView(QWidget):
     # --- helpers -------------------------------------------------------------
 
     def refresh(self) -> None:
+        current = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        terms = self.roster.list_terms()
+        classes = self.roster.list_classes()
+        if self.year != ALL_YEARS and current is not None:
+            self.year = current.term  # show the year of the class being worked on
+        elif self.year is None or (self.year != ALL_YEARS and self.year not in terms):
+            self.year = terms[0] if terms else ALL_YEARS
+
+        with QSignalBlocker(self.year_combo):
+            self.year_combo.clear()
+            for term in terms:
+                self.year_combo.addItem(term, term)
+            if any(not c.term for c in classes):
+                self.year_combo.addItem("No school year", "")
+            self.year_combo.addItem("All years", ALL_YEARS)
+            self.year_combo.setCurrentIndex(max(0, self.year_combo.findData(self.year)))
+
+        shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
+        self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
         with QSignalBlocker(self.class_table):
             self.class_table.setRowCount(0)
-            for school_class in self.roster.list_classes():
+            for school_class in shown:
                 row = self.class_table.rowCount()
                 self.class_table.insertRow(row)
                 students = len(self.roster.list_students(school_class.id))
@@ -200,3 +237,14 @@ class ClassesView(QWidget):
         subject_id = self._selected_id(self.subject_table)
         if subject_id is not None and subject_id != self.subject_id:
             self.subject_selected.emit(subject_id)
+
+    def _on_year_picked(self, _index: int) -> None:
+        """Show another school year, and switch to one of its classes so every page follows."""
+        self.year = self.year_combo.currentData()
+        current = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if self.year != ALL_YEARS and (current is None or current.term != self.year):
+            in_year = self.roster.list_classes(self.year)
+            if in_year:
+                self.class_selected.emit(in_year[0].id)
+                return
+        self.refresh()

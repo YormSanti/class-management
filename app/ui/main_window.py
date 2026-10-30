@@ -39,14 +39,14 @@ class MainWindow(QMainWindow):
 
         # --- pages ---
         self.dashboard_view = DashboardView(dashboard, roster)
-        self.dashboard_view.create_class_requested.connect(self.new_class)
+        self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.roster_view = RosterView(roster)
-        self.roster_view.create_class_requested.connect(self.new_class)
+        self.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view = ClassesView(roster)
         self.classes_view.class_selected.connect(self.select_class)
         self.classes_view.subject_selected.connect(self.select_subject)
-        self.classes_view.new_class_requested.connect(self.new_class)
+        self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
         self.classes_view.new_subject_requested.connect(self.new_subject)
@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
-            ("Classes", self.classes_view),
+            ("Manage classes", self.classes_view),
             ("Settings", PlaceholderView("Settings", "Coming in Phase 6.")),
         ]
         self.stack = QStackedWidget()
@@ -97,19 +97,29 @@ class MainWindow(QMainWindow):
     # --- classes -------------------------------------------------------------
 
     def select_class(self, class_id: int | None = None) -> None:
-        """Make `class_id` current, or keep the current class, or fall back to the first one.
+        """Make `class_id` current, or keep the current class, or fall back to the
+        first class of the newest school year.
 
         Call it after any change to the classes so every page reloads.
         """
-        class_ids = [c.id for c in self.roster.list_classes()]
+        classes = self.roster.list_classes()
         wanted = class_id if class_id is not None else self.class_id
-        self.class_id = wanted if wanted in class_ids else (class_ids[0] if class_ids else None)
+        if wanted in [c.id for c in classes]:
+            self.class_id = wanted
+        else:
+            terms = self.roster.list_terms()
+            newest = [c for c in classes if terms and c.term == terms[0]] or classes
+            self.class_id = newest[0].id if newest else None
         for _name, page in self.pages:
             page.set_class(self.class_id)
         self.select_subject()
 
-    def new_class(self) -> None:
-        dialog = ClassDialog(self.roster.save_class, parent=self)
+    def new_class(self, term: str | None = None) -> None:
+        """Ask for a new class, suggesting `term` (default: the newest school year)."""
+        terms = self.roster.list_terms()
+        if term is None:
+            term = terms[0] if terms else ""
+        dialog = ClassDialog(self.roster.save_class, parent=self, terms=terms, default_term=term)
         if dialog.exec() and dialog.saved:
             self.select_class(dialog.saved.id)
 
@@ -117,7 +127,9 @@ class MainWindow(QMainWindow):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        dialog = ClassDialog(self.roster.save_class, school_class, parent=self)
+        dialog = ClassDialog(
+            self.roster.save_class, school_class, parent=self, terms=self.roster.list_terms()
+        )
         if dialog.exec():
             self.select_class(school_class.id)
 
@@ -192,5 +204,7 @@ class MainWindow(QMainWindow):
         """Show the current class and subject, now that the sidebar has no pickers."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
-        context = " · ".join(x for x in (school_class and school_class.name, subject and subject.name) if x)
+        context = " · ".join(
+            x for x in (school_class and school_class.display_name, subject and subject.name) if x
+        )
         self.setWindowTitle(f"Classroom Manager — {context}" if context else "Classroom Manager")
