@@ -1,7 +1,7 @@
 import pytest
 
 from app.models import SchoolClass, Student, Subject
-from app.services.roster import RosterError, RosterService, next_term
+from app.services.roster import RosterError, RosterService, move_up, next_term
 
 
 @pytest.fixture
@@ -214,3 +214,10 @@ def test_start_new_year_is_all_or_nothing(roster: RosterService, term, names, me
     with pytest.raises(RosterError, match=message):
         roster.start_new_year(term, list(zip([a, b], names)))
     assert [c.name for c in roster.list_classes("2026-2027")] == ["Taken"]
+
+
+@pytest.mark.parametrize(
+    "name, expected", [("7B", "8B"), ("Grade 9 Blue", "Grade 10 Blue"), ("12A", "13A"), ("Choir", "Choir")]
+)
+def test_move_up(name: str, expected: str):
+    assert move_up(name) == expected

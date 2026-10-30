@@ -54,6 +54,7 @@ class ClassesView(QWidget):
     class_selected = Signal(int)
     subject_selected = Signal(int)
     new_class_requested = Signal(str)  # school year to suggest for the new class
+    new_year_requested = Signal(str)  # school year to copy classes from
     edit_class_requested = Signal()
     delete_class_requested = Signal()
     new_subject_requested = Signal()
@@ -75,6 +76,12 @@ class ClassesView(QWidget):
         year_row.addWidget(QLabel("School year:"))
         year_row.addWidget(self.year_combo)
         year_row.addStretch()
+        self.new_year_button = QPushButton("New school year…")
+        self.new_year_button.setToolTip("Create next year's classes from this year's")
+        self.new_year_button.clicked.connect(
+            lambda: self.new_year_requested.emit("" if self.year == ALL_YEARS else self.year or "")
+        )
+        year_row.addWidget(self.new_year_button)
 
         # --- classes ---
         self.class_table = _table(("Class", "School year", "Students", "Subjects"))
@@ -179,6 +186,7 @@ class ClassesView(QWidget):
             self.year_combo.addItem("All years", ALL_YEARS)
             self.year_combo.setCurrentIndex(max(0, self.year_combo.findData(self.year)))
 
+        self.new_year_button.setEnabled(bool(classes))
         shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
         self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
         with QSignalBlocker(self.class_table):

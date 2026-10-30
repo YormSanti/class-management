@@ -13,6 +13,7 @@ from app.config import AppConfig
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
+from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
@@ -47,6 +48,7 @@ class MainWindow(QMainWindow):
         self.classes_view.class_selected.connect(self.select_class)
         self.classes_view.subject_selected.connect(self.select_subject)
         self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))
+        self.classes_view.new_year_requested.connect(self.start_new_year)
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
         self.classes_view.new_subject_requested.connect(self.new_subject)
@@ -122,6 +124,12 @@ class MainWindow(QMainWindow):
         dialog = ClassDialog(self.roster.save_class, parent=self, terms=terms, default_term=term)
         if dialog.exec() and dialog.saved:
             self.select_class(dialog.saved.id)
+
+    def start_new_year(self, from_term: str = "") -> None:
+        """Copy classes into a new school year, then switch to the first new class."""
+        dialog = NewYearDialog(self.roster, from_term, parent=self)
+        if dialog.exec() and dialog.created:
+            self.select_class(dialog.created[0].id)
 
     def edit_class(self) -> None:
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None

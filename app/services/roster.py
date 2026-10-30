@@ -30,6 +30,14 @@ def next_term(term: str) -> str:
     return re.sub(r"\b\d{4}\b", lambda m: str(int(m.group()) + 1), term)
 
 
+def move_up(name: str) -> str:
+    """The class name one grade up: "7B" -> "8B", "Grade 7 Blue" -> "Grade 8 Blue".
+
+    Only the first number changes; a name without one stays as it is.
+    """
+    return re.sub(r"\d+", lambda m: str(int(m.group()) + 1), name, count=1)
+
+
 class RosterService:
     def __init__(
         self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository
