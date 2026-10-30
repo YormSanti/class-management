@@ -126,9 +126,10 @@ class Panel(QFrame):
             titles.setSpacing(2)
             titles.addWidget(_label(title, 1.15, bold=True))
             if subtitle:
-                titles.addWidget(_label(subtitle, 0.85, muted=True))
-            self.header.addLayout(titles)
-            self.header.addStretch()
+                sub = _label(subtitle, 0.85, muted=True)
+                sub.setWordWrap(True)
+                titles.addWidget(sub)
+            self.header.addLayout(titles, stretch=1)
             self.body.addLayout(self.header)
 
 
@@ -286,9 +287,11 @@ class DashboardView(QWidget):
             cell.setContentsMargins(20, 16, 20, 16)
             cell.setSpacing(4)
             value, sub = _label("—", 2.1), _label("", 0.85, muted=True)
+            sub.setWordWrap(True)
             cell.addWidget(_label(name, 0.92, muted=True))
             cell.addWidget(value)
             cell.addWidget(sub)
+            cell.addStretch()
             kpi_layout.addLayout(cell, stretch=1)
             self.kpis[name] = (value, sub)
 
@@ -303,12 +306,14 @@ class DashboardView(QWidget):
             self.legend_swatches.append((swatch, _STATUS_COLOR[status]))
             legend.addWidget(swatch)
             legend.addWidget(_label(status.capitalize(), 0.85, muted=True))
-        chart_panel.header.addLayout(legend)
+        legend.addStretch()
+        chart_panel.body.addLayout(legend)
         self.chart = AttendanceChart()
         chart_panel.body.addWidget(self.chart, stretch=1)
 
         attention_panel = Panel("Needs attention")
-        attention_panel.setFixedWidth(360)
+        attention_panel.setMinimumWidth(280)
+        attention_panel.setMaximumWidth(380)
         self.attention_count = _label("", 0.85, muted=True)
         attention_panel.header.addWidget(self.attention_count)
         self.attention_list = QVBoxLayout()
@@ -318,8 +323,8 @@ class DashboardView(QWidget):
 
         middle = QHBoxLayout()
         middle.setSpacing(16)
-        middle.addWidget(chart_panel, stretch=1)
-        middle.addWidget(attention_panel)
+        middle.addWidget(chart_panel, stretch=2)
+        middle.addWidget(attention_panel, stretch=1)
 
         # --- recent assignments + grade distribution ---
         assignments_panel = Panel("Recent assignments")
@@ -330,7 +335,8 @@ class DashboardView(QWidget):
         assignments_panel.body.addStretch()
 
         grades_panel = Panel("Grade distribution", "Current weighted averages")
-        grades_panel.setFixedWidth(360)
+        grades_panel.setMinimumWidth(260)
+        grades_panel.setMaximumWidth(380)
         self.grade_rows: dict[str, tuple[Meter, QLabel]] = {}
         grades_grid = QGridLayout()
         grades_grid.setHorizontalSpacing(12)
@@ -352,8 +358,8 @@ class DashboardView(QWidget):
 
         bottom = QHBoxLayout()
         bottom.setSpacing(16)
-        bottom.addWidget(assignments_panel, stretch=1)
-        bottom.addWidget(grades_panel)
+        bottom.addWidget(assignments_panel, stretch=2)
+        bottom.addWidget(grades_panel, stretch=1)
 
         content = QWidget()
         content.setObjectName("DashboardContent")
@@ -366,6 +372,7 @@ class DashboardView(QWidget):
         content_layout.addLayout(bottom)
 
         scroll = QScrollArea()
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(content)

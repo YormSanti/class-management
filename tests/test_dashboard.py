@@ -162,7 +162,7 @@ def test_needs_attention_uses_most_serious_reason(service, roster, conn, class_i
 
     items = service.summary(class_id, TODAY).attention
     assert [(i.student.first_name, i.kind) for i in items] == [("Maya", "absent"), ("Jonas", "late")]
-    assert items[0].reason == "3 absences in the last 30 days"
+    assert items[0].reason == "3 absences in 30 days"
 
 
 def test_inactive_students_are_left_out(service, roster, conn, class_id, maths):

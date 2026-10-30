@@ -153,7 +153,7 @@ class DashboardService:
         """One item per student, using the most serious reason. Most serious first."""
         window_start = today - timedelta(days=ATTENTION_WINDOW_DAYS - 1)
         attendance = self.dashboard.attendance_by_student(class_id, window_start, today)
-        window = f"in the last {ATTENTION_WINDOW_DAYS} days"
+        window = f"in {ATTENTION_WINDOW_DAYS} days"
 
         items: list[tuple[int, AttentionItem]] = []
         for student in self.students.list_for_class(class_id):
