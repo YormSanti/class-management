@@ -18,7 +18,6 @@ from app.ui.dialogs.subject_dialog import SubjectDialog
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
-from app.ui.views.roster_view import RosterView
 
 
 class MainWindow(QMainWindow):
@@ -42,9 +41,8 @@ class MainWindow(QMainWindow):
         self.dashboard_view = DashboardView(dashboard, roster)
         self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
-        self.roster_view = RosterView(roster)
-        self.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view = ClassesView(roster)
+        self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)
         self.classes_view.subject_selected.connect(self.select_subject)
         self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))
@@ -56,7 +54,6 @@ class MainWindow(QMainWindow):
         self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
             ("Dashboard", self.dashboard_view),
-            ("Roster", self.roster_view),
             ("Attendance", PlaceholderView("Attendance", "Coming in Phase 2.")),
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),

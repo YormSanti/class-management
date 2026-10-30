@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.roster import RosterService
+from app.ui.views.roster_view import RosterView
 
 ALL_YEARS = "\0all"  # year-filter value meaning "show every school year"
 
@@ -43,9 +45,9 @@ def _item(text: str, data: int | None = None, align_right: bool = False) -> QTab
 
 
 class ClassesView(QWidget):
-    """Classes by school year and the subjects of the selected class, with add / edit / delete.
+    """Classes by school year, and the students and subjects of the selected class.
 
-    This is where the app's current class and subject are chosen: clicking a row
+    The Students tab is the full roster (search, add, edit, deactivate). This is where the app's current class and subject are chosen: clicking a row
     makes it current for every page, and switching the school year switches to a
     class of that year. The buttons only emit requests; the main window runs the
     dialogs and owns the current selection.
@@ -127,23 +129,30 @@ class ClassesView(QWidget):
         subject_buttons.addStretch()
         subject_buttons.addWidget(self.edit_subject_button)
         subject_buttons.addWidget(self.delete_subject_button)
-        self.subject_box = QGroupBox("Subjects")
+        self.subject_box = QWidget()
         subject_layout = QVBoxLayout(self.subject_box)
         subject_layout.addWidget(self.subject_table)
         subject_layout.addWidget(self.subject_hint)
         subject_layout.addLayout(subject_buttons)
 
+        # --- students and subjects of the selected class ---
+        self.roster_view = RosterView(roster)
+        self.roster_view.students_changed.connect(self.refresh)  # student counts
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.roster_view, "Students")
+        self.tabs.addTab(self.subject_box, "Subjects")
+
         intro = QLabel(
-            "<h2>Manage classes</h2><p>Click a class and a subject to work with them on the "
-            "other pages. A class is a group of students in one school year; each subject "
-            "taught to it has its own gradebook. A class or subject can only be deleted while "
-            "nothing is recorded in it.</p>"
+            "<h2>Manage classes</h2><p>Click a class to see its students and subjects; the "
+            "class and subject you pick are used on the other pages. A class is a group of "
+            "students in one school year; each subject taught to it has its own gradebook. "
+            "A class or subject can only be deleted while nothing is recorded in it.</p>"
         )
         intro.setWordWrap(True)
 
         columns = QHBoxLayout()
-        columns.addWidget(class_box, stretch=3)
-        columns.addWidget(self.subject_box, stretch=2)
+        columns.addWidget(class_box, stretch=1)
+        columns.addWidget(self.tabs, stretch=2)
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
         layout.addLayout(year_row)
@@ -155,6 +164,7 @@ class ClassesView(QWidget):
 
     def set_class(self, class_id: int | None) -> None:
         self.class_id = class_id
+        self.roster_view.set_class(class_id)
         self.refresh()
 
     def set_subject(self, subject_id: int | None) -> None:
@@ -162,7 +172,7 @@ class ClassesView(QWidget):
         self.refresh()  # the class list shows subject counts too
 
     def showEvent(self, event) -> None:
-        # Student counts may have changed on the Roster page meanwhile.
+        # Attendance or grades recorded meanwhile can change what may be deleted.
         super().showEvent(event)
         self.refresh()
 
@@ -219,7 +229,9 @@ class ClassesView(QWidget):
                 if subject.id == self.subject_id:
                     self.subject_table.selectRow(row)
 
-        self.subject_box.setTitle(f"Subjects in {school_class.name}" if school_class else "Subjects")
+        students = len(self.roster.list_students(school_class.id)) if school_class else 0
+        self.tabs.setTabText(0, f"Students ({students})" if school_class else "Students")
+        self.tabs.setTabText(1, f"Subjects ({len(subjects)})" if school_class else "Subjects")
         self.subject_box.setEnabled(school_class is not None)
         if school_class is None:
             self.subject_hint.setText("Create a class first.")

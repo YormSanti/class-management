@@ -95,6 +95,7 @@ class RosterView(QWidget):
     """Student list for the selected class: search, add, edit, (de)activate."""
 
     create_class_requested = Signal()
+    students_changed = Signal()  # a student was added, edited, deactivated or reactivated
 
     def __init__(self, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -209,6 +210,7 @@ class RosterView(QWidget):
             self.search.clear()  # make sure the new student is visible
             self.refresh()
             self._select(dialog.saved.id)
+            self.students_changed.emit()
 
     def edit_selected(self) -> None:
         student = self._selected_student()
@@ -217,6 +219,7 @@ class RosterView(QWidget):
         dialog = StudentDialog(self.roster.save_student, self.class_id, student, parent=self)
         if dialog.exec():
             self.refresh()
+            self.students_changed.emit()
 
     def toggle_active_selected(self) -> None:
         student = self._selected_student()
@@ -237,6 +240,7 @@ class RosterView(QWidget):
         else:
             self.roster.reactivate_student(student.id)
         self.refresh()
+        self.students_changed.emit()
 
     # --- helpers -------------------------------------------------------------
 
