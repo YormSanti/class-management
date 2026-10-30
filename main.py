@@ -20,8 +20,10 @@ from app.config import (
 )
 from app.db.connection import connect, init_db
 from app.repositories.class_repo import ClassRepository
+from app.repositories.dashboard_repo import DashboardRepository
 from app.repositories.student_repo import StudentRepository
 from app.services.backup import auto_backup
+from app.services.dashboard import DashboardService
 from app.services.roster import RosterService
 from app.ui.dialogs.setup_dialog import SetupDialog
 from app.ui.main_window import MainWindow
@@ -141,8 +143,10 @@ def main() -> int:
         )
         return 1
 
-    roster = RosterService(ClassRepository(conn), StudentRepository(conn))
-    window = MainWindow(roster, config)
+    students = StudentRepository(conn)
+    roster = RosterService(ClassRepository(conn), students)
+    dashboard = DashboardService(DashboardRepository(conn), students)
+    window = MainWindow(roster, dashboard, config)
     window.show()
     try:
         return app.exec()

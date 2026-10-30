@@ -15,8 +15,10 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import AppConfig
+from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
+from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
 from app.ui.views.roster_view import RosterView
 
@@ -28,16 +30,20 @@ class MainWindow(QMainWindow):
     the selected class changes.
     """
 
-    def __init__(self, roster: RosterService, config: AppConfig):
+    def __init__(self, roster: RosterService, dashboard: DashboardService, config: AppConfig):
         super().__init__()
         self.roster = roster
         self.setWindowTitle("Classroom Manager")
         self.resize(1100, 700)
 
         # --- pages ---
+        self.dashboard_view = DashboardView(dashboard, roster)
+        self.dashboard_view.create_class_requested.connect(self.new_class)
+        self.dashboard_view.navigate_requested.connect(self.show_page)
         self.roster_view = RosterView(roster)
         self.roster_view.create_class_requested.connect(self.new_class)
         self.pages: list[tuple[str, QWidget]] = [
+            ("Dashboard", self.dashboard_view),
             ("Roster", self.roster_view),
             ("Attendance", PlaceholderView("Attendance", "Coming in Phase 2.")),
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
@@ -92,6 +98,12 @@ class MainWindow(QMainWindow):
 
         self.nav.setCurrentRow(0)
         self.reload_classes()
+
+    def show_page(self, name: str) -> None:
+        for row, (page_name, _page) in enumerate(self.pages):
+            if page_name == name:
+                self.nav.setCurrentRow(row)
+                return
 
     # --- classes -------------------------------------------------------------
 
