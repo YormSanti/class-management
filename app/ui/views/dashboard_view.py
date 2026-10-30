@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -366,6 +367,8 @@ class DashboardView(QWidget):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(24, 20, 24, 20)
         content_layout.setSpacing(16)
+        # Wrapped labels make the scroll area ignore the minimum height; enforce it.
+        content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         content_layout.addLayout(header)
         content_layout.addWidget(kpi_panel)
         content_layout.addLayout(middle, stretch=1)
