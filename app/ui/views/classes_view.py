@@ -42,9 +42,9 @@ def _item(text: str, data: int | None = None, align_right: bool = False) -> QTab
 class ClassesView(QWidget):
     """All classes and the subjects of the selected one, with add / edit / delete.
 
-    The selection follows the sidebar pickers and drives them: clicking a class
-    or subject here selects it everywhere. The buttons only emit requests; the
-    main window runs the dialogs, so the sidebar menus and this page behave the same.
+    This is where the app's current class and subject are chosen: clicking a row
+    makes it current for every page. The buttons only emit requests; the main
+    window runs the dialogs and owns the current selection.
     """
 
     class_selected = Signal(int)
@@ -111,9 +111,9 @@ class ClassesView(QWidget):
         subject_layout.addLayout(subject_buttons)
 
         intro = QLabel(
-            "<h2>Classes</h2><p>A class is a group of students. Each subject taught to it "
-            "has its own gradebook. A class or subject can only be deleted while nothing "
-            "is recorded in it.</p>"
+            "<h2>Classes</h2><p>Click a class and a subject to work with them on the other "
+            "pages. A class is a group of students; each subject taught to it has its own "
+            "gradebook. A class or subject can only be deleted while nothing is recorded in it.</p>"
         )
         intro.setWordWrap(True)
 

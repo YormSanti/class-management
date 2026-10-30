@@ -1,15 +1,10 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox,
-    QHBoxLayout,
-    QLabel,
     QListWidget,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QSplitter,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -26,18 +21,20 @@ from app.ui.views.roster_view import RosterView
 
 
 class MainWindow(QMainWindow):
-    """Sidebar (class and subject pickers + navigation) and a stack of pages.
+    """Sidebar navigation and a stack of pages.
 
-    Every page implements `set_class(class_id | None)` and is told whenever
-    the selected class changes. Pages that work per subject (e.g. the gradebook)
-    also implement `set_subject(subject_id | None)`.
+    The window keeps the current class and subject, which are chosen on the
+    Classes page and shown in the title bar. Every page implements
+    `set_class(class_id | None)` and is told whenever the class changes. Pages
+    that work per subject (e.g. the gradebook) also implement `set_subject(subject_id | None)`.
     """
 
     def __init__(self, roster: RosterService, dashboard: DashboardService, config: AppConfig):
         super().__init__()
         self.roster = roster
+        self.class_id: int | None = None
+        self.subject_id: int | None = None
         self._last_subject: dict[int, int] = {}  # class id -> subject picked in it this session
-        self.setWindowTitle("Classroom Manager")
         self.resize(1100, 700)
 
         # --- pages ---
@@ -47,8 +44,8 @@ class MainWindow(QMainWindow):
         self.roster_view = RosterView(roster)
         self.roster_view.create_class_requested.connect(self.new_class)
         self.classes_view = ClassesView(roster)
-        self.classes_view.class_selected.connect(self.reload_classes)
-        self.classes_view.subject_selected.connect(self.reload_subjects)
+        self.classes_view.class_selected.connect(self.select_class)
+        self.classes_view.subject_selected.connect(self.select_subject)
         self.classes_view.new_class_requested.connect(self.new_class)
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
@@ -70,56 +67,13 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(page)
 
         # --- sidebar ---
-        self.class_combo = QComboBox()
-        self.class_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.class_combo.currentIndexChanged.connect(self._on_class_changed)
-
-        class_menu = QMenu(self)
-        class_menu.addAction("New class…", self.new_class)
-        self.edit_class_action = class_menu.addAction("Edit class…", self.edit_class)
-        self.delete_class_action = class_menu.addAction("Delete class", self.delete_class)
-        class_button = QToolButton()
-        class_button.setText("⋯")
-        class_button.setToolTip("Manage classes")
-        class_button.setMenu(class_menu)
-        class_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-
-        class_row = QHBoxLayout()
-        class_row.addWidget(self.class_combo, stretch=1)
-        class_row.addWidget(class_button)
-
-        self.subject_combo = QComboBox()
-        self.subject_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.subject_combo.setPlaceholderText("No subjects yet")
-        self.subject_combo.currentIndexChanged.connect(self._on_subject_changed)
-
-        subject_menu = QMenu(self)
-        self.new_subject_action = subject_menu.addAction("New subject…", self.new_subject)
-        self.edit_subject_action = subject_menu.addAction("Edit subject…", self.edit_subject)
-        self.delete_subject_action = subject_menu.addAction("Delete subject", self.delete_subject)
-        subject_button = QToolButton()
-        subject_button.setText("⋯")
-        subject_button.setToolTip("Manage subjects")
-        subject_button.setMenu(subject_menu)
-        subject_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-
-        subject_row = QHBoxLayout()
-        subject_row.addWidget(self.subject_combo, stretch=1)
-        subject_row.addWidget(subject_button)
-
         self.nav = QListWidget()
         for name, _page in self.pages:
             self.nav.addItem(name)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
         sidebar = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.addWidget(QLabel("<b>Class</b>"))
-        sidebar_layout.addLayout(class_row)
-        sidebar_layout.addWidget(QLabel("<b>Subject</b>"))
-        sidebar_layout.addLayout(subject_row)
-        sidebar_layout.addSpacing(8)
-        sidebar_layout.addWidget(self.nav, stretch=1)
+        QVBoxLayout(sidebar).addWidget(self.nav)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(sidebar)
@@ -132,7 +86,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Data file: {config.db_path}")
 
         self.nav.setCurrentRow(0)
-        self.reload_classes()
+        self.select_class()
 
     def show_page(self, name: str) -> None:
         for row, (page_name, _page) in enumerate(self.pages):
@@ -142,121 +96,101 @@ class MainWindow(QMainWindow):
 
     # --- classes -------------------------------------------------------------
 
-    def current_class_id(self) -> int | None:
-        return self.class_combo.currentData()
+    def select_class(self, class_id: int | None = None) -> None:
+        """Make `class_id` current, or keep the current class, or fall back to the first one.
 
-    def reload_classes(self, select_id: int | None = None) -> None:
-        """Refill the class picker, keeping (or switching to) `select_id`."""
-        select_id = select_id if select_id is not None else self.current_class_id()
-        self.class_combo.blockSignals(True)
-        self.class_combo.clear()
-        for school_class in self.roster.list_classes():
-            self.class_combo.addItem(school_class.display_name, school_class.id)
-        index = self.class_combo.findData(select_id) if select_id is not None else -1
-        self.class_combo.setCurrentIndex(index if index >= 0 else 0)
-        self.class_combo.blockSignals(False)
-        self._on_class_changed()
-
-    def _on_class_changed(self, _index: int = -1) -> None:
-        class_id = self.current_class_id()
-        self.edit_class_action.setEnabled(class_id is not None)
-        self.delete_class_action.setEnabled(class_id is not None)
-        self.new_subject_action.setEnabled(class_id is not None)
+        Call it after any change to the classes so every page reloads.
+        """
+        class_ids = [c.id for c in self.roster.list_classes()]
+        wanted = class_id if class_id is not None else self.class_id
+        self.class_id = wanted if wanted in class_ids else (class_ids[0] if class_ids else None)
         for _name, page in self.pages:
-            page.set_class(class_id)
-        self.reload_subjects()
+            page.set_class(self.class_id)
+        self.select_subject()
 
     def new_class(self) -> None:
         dialog = ClassDialog(self.roster.save_class, parent=self)
         if dialog.exec() and dialog.saved:
-            self.reload_classes(dialog.saved.id)
+            self.select_class(dialog.saved.id)
 
     def edit_class(self) -> None:
-        class_id = self.current_class_id()
-        school_class = self.roster.get_class(class_id) if class_id is not None else None
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
         dialog = ClassDialog(self.roster.save_class, school_class, parent=self)
         if dialog.exec():
-            self.reload_classes(class_id)
+            self.select_class(school_class.id)
 
     def delete_class(self) -> None:
-        class_id = self.current_class_id()
-        if class_id is None:
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if school_class is None:
             return
-        name = self.class_combo.currentText()
-        answer = QMessageBox.question(self, "Delete class", f"Delete the class {name}?")
+        answer = QMessageBox.question(
+            self, "Delete class", f"Delete the class {school_class.display_name}?"
+        )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.roster.delete_class(class_id)
+            self.roster.delete_class(school_class.id)
         except RosterError as exc:
             QMessageBox.information(self, "Delete class", str(exc))
             return
-        self.reload_classes()
+        self.select_class()
 
     # --- subjects ------------------------------------------------------------
 
-    def current_subject_id(self) -> int | None:
-        return self.subject_combo.currentData()
+    def select_subject(self, subject_id: int | None = None) -> None:
+        """Make `subject_id` current within the current class.
 
-    def reload_subjects(self, select_id: int | None = None) -> None:
-        """Refill the subject picker for the current class.
-
-        Selects `select_id`, else the subject last picked in this class, else the first.
+        Falls back to the subject last picked in this class, then to the first one.
+        Call it after any change to the subjects so every page reloads.
         """
-        class_id = self.current_class_id()
-        if select_id is None and class_id is not None:
-            select_id = self._last_subject.get(class_id)
-        self.subject_combo.blockSignals(True)
-        self.subject_combo.clear()
-        if class_id is not None:
-            for subject in self.roster.list_subjects(class_id):
-                self.subject_combo.addItem(subject.name, subject.id)
-        index = self.subject_combo.findData(select_id) if select_id is not None else -1
-        self.subject_combo.setCurrentIndex(index if index >= 0 else (0 if self.subject_combo.count() else -1))
-        self.subject_combo.setEnabled(self.subject_combo.count() > 0)
-        self.subject_combo.blockSignals(False)
-        self._on_subject_changed()
-
-    def _on_subject_changed(self, _index: int = -1) -> None:
-        class_id, subject_id = self.current_class_id(), self.current_subject_id()
-        if class_id is not None and subject_id is not None:
-            self._last_subject[class_id] = subject_id
-        self.edit_subject_action.setEnabled(subject_id is not None)
-        self.delete_subject_action.setEnabled(subject_id is not None)
+        subject_ids = [s.id for s in self.roster.list_subjects(self.class_id)] if self.class_id else []
+        for wanted in (subject_id, self._last_subject.get(self.class_id or 0)):
+            if wanted in subject_ids:
+                self.subject_id = wanted
+                break
+        else:
+            self.subject_id = subject_ids[0] if subject_ids else None
+        if self.class_id is not None and self.subject_id is not None:
+            self._last_subject[self.class_id] = self.subject_id
         for _name, page in self.pages:
             if set_subject := getattr(page, "set_subject", None):
-                set_subject(subject_id)
+                set_subject(self.subject_id)
+        self._update_title()
 
     def new_subject(self) -> None:
-        class_id = self.current_class_id()
-        if class_id is None:
+        if self.class_id is None:
             return
-        dialog = SubjectDialog(self.roster.save_subject, class_id, parent=self)
+        dialog = SubjectDialog(self.roster.save_subject, self.class_id, parent=self)
         if dialog.exec() and dialog.saved:
-            self.reload_subjects(dialog.saved.id)
+            self.select_subject(dialog.saved.id)
 
     def edit_subject(self) -> None:
-        subject_id = self.current_subject_id()
-        subject = self.roster.get_subject(subject_id) if subject_id is not None else None
+        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if subject is None:
             return
         dialog = SubjectDialog(self.roster.save_subject, subject.class_id, subject, parent=self)
         if dialog.exec():
-            self.reload_subjects(subject_id)
+            self.select_subject(subject.id)
 
     def delete_subject(self) -> None:
-        subject_id = self.current_subject_id()
-        if subject_id is None:
+        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
+        if subject is None:
             return
-        name = self.subject_combo.currentText()
-        answer = QMessageBox.question(self, "Delete subject", f"Delete the subject {name}?")
+        answer = QMessageBox.question(self, "Delete subject", f"Delete the subject {subject.name}?")
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.roster.delete_subject(subject_id)
+            self.roster.delete_subject(subject.id)
         except RosterError as exc:
             QMessageBox.information(self, "Delete subject", str(exc))
             return
-        self.reload_subjects()
+        self.select_subject()
+
+    def _update_title(self) -> None:
+        """Show the current class and subject, now that the sidebar has no pickers."""
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
+        context = " · ".join(x for x in (school_class and school_class.name, subject and subject.name) if x)
+        self.setWindowTitle(f"Classroom Manager — {context}" if context else "Classroom Manager")
