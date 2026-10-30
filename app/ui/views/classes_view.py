@@ -1,0 +1,202 @@
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app.services.roster import RosterService
+
+
+def _table(headers: tuple[str, ...]) -> QTableWidget:
+    table = QTableWidget(0, len(headers))
+    table.setHorizontalHeaderLabels(headers)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setAlternatingRowColors(True)
+    table.verticalHeader().setVisible(False)
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    header.setStretchLastSection(True)
+    return table
+
+
+def _item(text: str, data: int | None = None, align_right: bool = False) -> QTableWidgetItem:
+    item = QTableWidgetItem(text)
+    if data is not None:
+        item.setData(Qt.ItemDataRole.UserRole, data)
+    if align_right:
+        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    return item
+
+
+class ClassesView(QWidget):
+    """All classes and the subjects of the selected one, with add / edit / delete.
+
+    The selection follows the sidebar pickers and drives them: clicking a class
+    or subject here selects it everywhere. The buttons only emit requests; the
+    main window runs the dialogs, so the sidebar menus and this page behave the same.
+    """
+
+    class_selected = Signal(int)
+    subject_selected = Signal(int)
+    new_class_requested = Signal()
+    edit_class_requested = Signal()
+    delete_class_requested = Signal()
+    new_subject_requested = Signal()
+    edit_subject_requested = Signal()
+    delete_subject_requested = Signal()
+
+    def __init__(self, roster: RosterService, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.roster = roster
+        self.class_id: int | None = None
+        self.subject_id: int | None = None
+
+        # --- classes ---
+        self.class_table = _table(("Class", "Term", "Students", "Subjects"))
+        self.class_table.horizontalHeader().setStretchLastSection(False)
+        self.class_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.class_table.itemSelectionChanged.connect(self._on_class_clicked)
+        self.class_table.doubleClicked.connect(lambda _index: self.edit_class_requested.emit())
+        new_class = QPushButton("New class…")
+        new_class.clicked.connect(self.new_class_requested)
+        self.edit_class_button = QPushButton("Edit…")
+        self.edit_class_button.clicked.connect(self.edit_class_requested)
+        self.delete_class_button = QPushButton("Delete")
+        self.delete_class_button.clicked.connect(self.delete_class_requested)
+
+        class_buttons = QHBoxLayout()
+        class_buttons.addWidget(new_class)
+        class_buttons.addStretch()
+        class_buttons.addWidget(self.edit_class_button)
+        class_buttons.addWidget(self.delete_class_button)
+        class_box = QGroupBox("Classes")
+        class_layout = QVBoxLayout(class_box)
+        class_layout.addWidget(self.class_table)
+        class_layout.addLayout(class_buttons)
+
+        # --- subjects of the selected class ---
+        self.subject_table = _table(("Subject", "Teacher"))
+        self.subject_table.itemSelectionChanged.connect(self._on_subject_clicked)
+        self.subject_table.doubleClicked.connect(lambda _index: self.edit_subject_requested.emit())
+        self.new_subject_button = QPushButton("Add subject…")
+        self.new_subject_button.clicked.connect(self.new_subject_requested)
+        self.edit_subject_button = QPushButton("Edit…")
+        self.edit_subject_button.clicked.connect(self.edit_subject_requested)
+        self.delete_subject_button = QPushButton("Delete")
+        self.delete_subject_button.clicked.connect(self.delete_subject_requested)
+        self.subject_hint = QLabel()
+        self.subject_hint.setWordWrap(True)
+        self.subject_hint.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+
+        subject_buttons = QHBoxLayout()
+        subject_buttons.addWidget(self.new_subject_button)
+        subject_buttons.addStretch()
+        subject_buttons.addWidget(self.edit_subject_button)
+        subject_buttons.addWidget(self.delete_subject_button)
+        self.subject_box = QGroupBox("Subjects")
+        subject_layout = QVBoxLayout(self.subject_box)
+        subject_layout.addWidget(self.subject_table)
+        subject_layout.addWidget(self.subject_hint)
+        subject_layout.addLayout(subject_buttons)
+
+        intro = QLabel(
+            "<h2>Classes</h2><p>A class is a group of students. Each subject taught to it "
+            "has its own gradebook. A class or subject can only be deleted while nothing "
+            "is recorded in it.</p>"
+        )
+        intro.setWordWrap(True)
+
+        columns = QHBoxLayout()
+        columns.addWidget(class_box, stretch=3)
+        columns.addWidget(self.subject_box, stretch=2)
+        layout = QVBoxLayout(self)
+        layout.addWidget(intro)
+        layout.addLayout(columns, stretch=1)
+
+        self.refresh()
+
+    # --- page protocol -----------------------------------------------------
+
+    def set_class(self, class_id: int | None) -> None:
+        self.class_id = class_id
+        self.refresh()
+
+    def set_subject(self, subject_id: int | None) -> None:
+        self.subject_id = subject_id
+        self.refresh()  # the class list shows subject counts too
+
+    def showEvent(self, event) -> None:
+        # Student counts may have changed on the Roster page meanwhile.
+        super().showEvent(event)
+        self.refresh()
+
+    # --- helpers -------------------------------------------------------------
+
+    def refresh(self) -> None:
+        with QSignalBlocker(self.class_table):
+            self.class_table.setRowCount(0)
+            for school_class in self.roster.list_classes():
+                row = self.class_table.rowCount()
+                self.class_table.insertRow(row)
+                students = len(self.roster.list_students(school_class.id))
+                subjects = len(self.roster.list_subjects(school_class.id))
+                self.class_table.setItem(row, 0, _item(school_class.name, school_class.id))
+                self.class_table.setItem(row, 1, _item(school_class.term))
+                self.class_table.setItem(row, 2, _item(str(students), align_right=True))
+                self.class_table.setItem(row, 3, _item(str(subjects), align_right=True))
+                if school_class.id == self.class_id:
+                    self.class_table.selectRow(row)
+        has_class = self.class_id is not None
+        self.edit_class_button.setEnabled(has_class)
+        self.delete_class_button.setEnabled(has_class)
+        self._refresh_subjects()
+
+    def _refresh_subjects(self) -> None:
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        subjects = self.roster.list_subjects(school_class.id) if school_class else []
+        with QSignalBlocker(self.subject_table):
+            self.subject_table.setRowCount(0)
+            for row, subject in enumerate(subjects):
+                self.subject_table.insertRow(row)
+                self.subject_table.setItem(row, 0, _item(subject.name, subject.id))
+                self.subject_table.setItem(row, 1, _item(subject.teacher or "You"))
+                if subject.id == self.subject_id:
+                    self.subject_table.selectRow(row)
+
+        self.subject_box.setTitle(f"Subjects in {school_class.name}" if school_class else "Subjects")
+        self.subject_box.setEnabled(school_class is not None)
+        if school_class is None:
+            self.subject_hint.setText("Create a class first.")
+        elif not subjects:
+            self.subject_hint.setText("No subjects yet. Add the subjects taught to this class.")
+        else:
+            self.subject_hint.setText("")
+        self.subject_hint.setVisible(bool(self.subject_hint.text()))
+        has_subject = self.subject_id is not None and bool(subjects)
+        self.edit_subject_button.setEnabled(has_subject)
+        self.delete_subject_button.setEnabled(has_subject)
+
+    def _selected_id(self, table: QTableWidget) -> int | None:
+        rows = table.selectionModel().selectedRows()
+        return table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole) if rows else None
+
+    def _on_class_clicked(self) -> None:
+        class_id = self._selected_id(self.class_table)
+        if class_id is not None and class_id != self.class_id:
+            self.class_selected.emit(class_id)
+
+    def _on_subject_clicked(self) -> None:
+        subject_id = self._selected_id(self.subject_table)
+        if subject_id is not None and subject_id != self.subject_id:
+            self.subject_selected.emit(subject_id)

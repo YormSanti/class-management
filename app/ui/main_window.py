@@ -19,6 +19,7 @@ from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
+from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
 from app.ui.views.roster_view import RosterView
@@ -45,6 +46,15 @@ class MainWindow(QMainWindow):
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.roster_view = RosterView(roster)
         self.roster_view.create_class_requested.connect(self.new_class)
+        self.classes_view = ClassesView(roster)
+        self.classes_view.class_selected.connect(self.reload_classes)
+        self.classes_view.subject_selected.connect(self.reload_subjects)
+        self.classes_view.new_class_requested.connect(self.new_class)
+        self.classes_view.edit_class_requested.connect(self.edit_class)
+        self.classes_view.delete_class_requested.connect(self.delete_class)
+        self.classes_view.new_subject_requested.connect(self.new_subject)
+        self.classes_view.edit_subject_requested.connect(self.edit_subject)
+        self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
             ("Dashboard", self.dashboard_view),
             ("Roster", self.roster_view),
@@ -52,6 +62,7 @@ class MainWindow(QMainWindow):
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
+            ("Classes", self.classes_view),
             ("Settings", PlaceholderView("Settings", "Coming in Phase 6.")),
         ]
         self.stack = QStackedWidget()
