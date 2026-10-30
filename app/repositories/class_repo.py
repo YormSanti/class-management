@@ -45,3 +45,15 @@ class ClassRepository:
     def list_all(self) -> list[SchoolClass]:
         rows = self.conn.execute("SELECT * FROM classes ORDER BY name COLLATE NOCASE, term, id")
         return [_from_row(r) for r in rows]
+
+    def find_by_name(self, name: str, term: str) -> SchoolClass | None:
+        """Case-insensitive, so "7b" and "7B" in the same school year count as the same class."""
+        row = self.conn.execute(
+            "SELECT * FROM classes WHERE name = ? COLLATE NOCASE AND term = ?", (name, term)
+        ).fetchone()
+        return _from_row(row) if row else None
+
+    def list_terms(self) -> list[str]:
+        """Distinct non-empty school years, newest first ("2026-2027" before "2025-2026")."""
+        rows = self.conn.execute("SELECT DISTINCT term FROM classes WHERE term <> '' ORDER BY term DESC")
+        return [r["term"] for r in rows]

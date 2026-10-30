@@ -1,5 +1,6 @@
 """Class, subject and student management: validation and rules on top of the repositories."""
 
+import re
 import sqlite3
 from dataclasses import replace
 
@@ -18,6 +19,17 @@ def _clean(text: str | None) -> str:
     return (text or "").strip()
 
 
+def next_term(term: str) -> str:
+    """Suggest the school year after `term`: "2025-2026" -> "2026-2027", "2026" -> "2027".
+
+    Every 4-digit year in the text moves on by one, keeping the rest as typed.
+    Returns "" when there is no year to move on.
+    """
+    if not re.search(r"\b\d{4}\b", term):
+        return ""
+    return re.sub(r"\b\d{4}\b", lambda m: str(int(m.group()) + 1), term)
+
+
 class RosterService:
     def __init__(
         self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository
@@ -28,8 +40,13 @@ class RosterService:
 
     # --- classes ---------------------------------------------------------
 
-    def list_classes(self) -> list[SchoolClass]:
-        return self.classes.list_all()
+    def list_classes(self, term: str | None = None) -> list[SchoolClass]:
+        """All classes, or only those of one school year when `term` is given."""
+        classes = self.classes.list_all()
+        return classes if term is None else [c for c in classes if c.term == term]
+
+    def list_terms(self) -> list[str]:
+        return self.classes.list_terms()
 
     def get_class(self, class_id: int) -> SchoolClass | None:
         return self.classes.get(class_id)
@@ -44,6 +61,7 @@ class RosterService:
         )
         if not school_class.name:
             raise RosterError("Class name is required.")
+        self._check_name_free(school_class.name, school_class.term, school_class.id)
         if school_class.id is not None:
             self.classes.update(school_class)
             return school_class
@@ -52,6 +70,52 @@ class RosterService:
             if _clean(first_subject):
                 self.save_subject(Subject(class_id=school_class.id, name=first_subject))
         return school_class
+
+    def start_new_year(
+        self, new_term: str, plan: list[tuple[int, str]], copy_students: bool = True
+    ) -> list[SchoolClass]:
+        """Create next year's classes from existing ones, all at once or not at all.
+
+        `plan` lists (existing class id, name for the new class), e.g. (7B's id, "8B").
+        Each new class gets the old class's subjects and teachers and, if
+        `copy_students`, its active students (as new records, so last year's
+        attendance and grades stay with last year's class). Nothing else is copied.
+        """
+        new_term = _clean(new_term)
+        if not new_term:
+            raise RosterError("Enter the new school year, e.g. 2026-2027.")
+        if not plan:
+            raise RosterError("Choose at least one class to copy.")
+        names = [_clean(name) for _id, name in plan]
+        if not all(names):
+            raise RosterError("Every new class needs a name.")
+        seen: set[str] = set()
+        for name in names:
+            if name.casefold() in seen:
+                raise RosterError(f"The name {name} is used twice.")
+            seen.add(name.casefold())
+
+        created = []
+        with transaction(self.classes.conn):
+            for (source_id, _), name in zip(plan, names):
+                if self.classes.get(source_id) is None:
+                    raise RosterError("One of the classes to copy no longer exists.")
+                new_class = self.save_class(SchoolClass(name=name, term=new_term))
+                for subject in self.subjects.list_for_class(source_id):
+                    self.subjects.add(
+                        Subject(class_id=new_class.id, name=subject.name, teacher=subject.teacher)
+                    )
+                if copy_students:
+                    for student in self.students.list_for_class(source_id):
+                        self.students.add(replace(student, id=None, class_id=new_class.id))
+                created.append(new_class)
+        return created
+
+    def _check_name_free(self, name: str, term: str, class_id: int | None) -> None:
+        existing = self.classes.find_by_name(name, term)
+        if existing and existing.id != class_id:
+            year = f" in {term}" if term else " without a school year"
+            raise RosterError(f"There is already a class called {existing.name}{year}.")
 
     def delete_class(self, class_id: int) -> None:
         """Delete a class (and its subjects) only if no students, grades or layouts refer to it."""

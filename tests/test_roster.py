@@ -1,7 +1,7 @@
 import pytest
 
 from app.models import SchoolClass, Student, Subject
-from app.services.roster import RosterError, RosterService
+from app.services.roster import RosterError, RosterService, next_term
 
 
 @pytest.fixture
@@ -150,3 +150,67 @@ def test_class_with_graded_subject_cannot_be_deleted(roster: RosterService, conn
     with pytest.raises(RosterError):
         roster.delete_class(school_class.id)
     assert roster.list_subjects(school_class.id)  # nothing was half-deleted
+
+
+@pytest.mark.parametrize(
+    "term, expected",
+    [("2025-2026", "2026-2027"), ("2025 - 2026", "2026 - 2027"), ("2026", "2027"),
+     ("Semester 1 2026", "Semester 1 2027"), ("Autumn", ""), ("", "")],
+)  # fmt: skip
+def test_next_term(term: str, expected: str):
+    assert next_term(term) == expected
+
+
+def test_class_names_are_unique_within_a_school_year(roster: RosterService):
+    roster.save_class(SchoolClass(name="7B", term="2025-2026"))
+    with pytest.raises(RosterError, match="already a class called 7B in 2025-2026"):
+        roster.save_class(SchoolClass(name="7b", term="2025-2026"))
+    roster.save_class(SchoolClass(name="7B", term="2026-2027"))  # another year is fine
+
+
+def test_terms_and_classes_by_year(roster: RosterService):
+    for name, term in [("7B", "2025-2026"), ("8A", "2026-2027"), ("7C", "2025-2026"), ("Club", "")]:
+        roster.save_class(SchoolClass(name=name, term=term))
+    assert roster.list_terms() == ["2026-2027", "2025-2026"]
+    assert [c.name for c in roster.list_classes("2025-2026")] == ["7B", "7C"]
+    assert [c.name for c in roster.list_classes("")] == ["Club"]
+    assert len(roster.list_classes()) == 4
+
+
+def test_start_new_year_copies_subjects_and_active_students(roster: RosterService):
+    old = roster.save_class(SchoolClass(name="7B", term="2025-2026"), first_subject="Math")
+    roster.save_subject(Subject(class_id=old.id, name="Science", teacher="Ms. Chen"))
+    ada = _add(roster, old.id, "Ada", "Lovelace", no="001")
+    ada.notes = "Front row"
+    roster.save_student(ada)
+    roster.deactivate_student(_add(roster, old.id, "Left", "School").id)
+
+    (new,) = roster.start_new_year(" 2026-2027 ", [(old.id, " 8B ")])
+
+    assert (new.name, new.term) == ("8B", "2026-2027")
+    assert [(s.name, s.teacher) for s in roster.list_subjects(new.id)] == [("Math", ""), ("Science", "Ms. Chen")]
+    (copy,) = roster.list_students(new.id, include_inactive=True)
+    assert (copy.full_name, copy.student_no, copy.notes) == ("Ada Lovelace", "001", "Front row")
+    assert copy.id != ada.id
+    assert len(roster.list_students(old.id, include_inactive=True)) == 2  # last year is untouched
+
+
+def test_start_new_year_without_students(roster: RosterService):
+    old = roster.save_class(SchoolClass(name="7B", term="2025-2026"))
+    _add(roster, old.id, "Ada", "Lovelace")
+    (new,) = roster.start_new_year("2026-2027", [(old.id, "8B")], copy_students=False)
+    assert roster.list_students(new.id) == []
+
+
+@pytest.mark.parametrize(
+    "term, names, message",
+    [("", ["8B"], "new school year"), ("2026-2027", [""], "needs a name"),
+     ("2026-2027", ["8B", "8b"], "used twice"), ("2026-2027", ["8A", "Taken"], "already a class called Taken")],
+)  # fmt: skip
+def test_start_new_year_is_all_or_nothing(roster: RosterService, term, names, message):
+    a = roster.save_class(SchoolClass(name="7A", term="2025-2026")).id
+    b = roster.save_class(SchoolClass(name="7B", term="2025-2026")).id
+    roster.save_class(SchoolClass(name="Taken", term="2026-2027"))
+    with pytest.raises(RosterError, match=message):
+        roster.start_new_year(term, list(zip([a, b], names)))
+    assert [c.name for c in roster.list_classes("2026-2027")] == ["Taken"]
