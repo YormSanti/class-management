@@ -155,7 +155,8 @@ def test_class_with_graded_subject_cannot_be_deleted(roster: RosterService, conn
 @pytest.mark.parametrize(
     "term, expected",
     [("2025-2026", "2026-2027"), ("2025 - 2026", "2026 - 2027"), ("2026", "2027"),
-     ("Semester 1 2026", "Semester 1 2027"), ("Autumn", ""), ("", "")],
+     ("Semester 1 2026", "Semester 1 2027"), ("Autumn", ""), ("", ""),
+     ("2025-26", "2026-27"), ("2025/26", "2026/27"), ("2099-00", "2100-01"), ("SY 2025–26", "SY 2026–27")],
 )  # fmt: skip
 def test_next_term(term: str, expected: str):
     assert next_term(term) == expected

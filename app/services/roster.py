@@ -19,15 +19,26 @@ def _clean(text: str | None) -> str:
     return (text or "").strip()
 
 
-def next_term(term: str) -> str:
-    """Suggest the school year after `term`: "2025-2026" -> "2026-2027", "2026" -> "2027".
+# "2025-26" style: a full year, a dash or slash, then the next year's last two digits.
+_SHORT_YEAR_RANGE = r"\b(\d{4})(\s*[-/–]\s*)(\d{2})\b"
 
-    Every 4-digit year in the text moves on by one, keeping the rest as typed.
+
+def next_term(term: str) -> str:
+    """Suggest the school year after `term`: "2025-2026" -> "2026-2027", "2026" -> "2027",
+    "2025-26" -> "2026-27".
+
+    Every year in the text moves on by one, keeping the rest as typed.
     Returns "" when there is no year to move on.
     """
     if not re.search(r"\b\d{4}\b", term):
         return ""
-    return re.sub(r"\b\d{4}\b", lambda m: str(int(m.group()) + 1), term)
+
+    def bump(m: re.Match[str]) -> str:
+        if m.group(1) is None:
+            return str(int(m.group()) + 1)
+        return f"{int(m.group(1)) + 1}{m.group(2)}{(int(m.group(3)) + 1) % 100:02d}"
+
+    return re.sub(_SHORT_YEAR_RANGE + r"|\b\d{4}\b", bump, term)
 
 
 def move_up(name: str) -> str:
