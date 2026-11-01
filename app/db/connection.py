@@ -95,3 +95,24 @@ def _migrate(conn: sqlite3.Connection, target: int) -> None:
         raise
     finally:
         conn.execute("PRAGMA foreign_keys = ON")
+
+
+def find_problems(db_path: Path) -> list[str]:
+    """Run SQLite's quick integrity check on the file without changing it.
+
+    Returns [] for a healthy (or not yet created) database, otherwise SQLite's
+    description of each problem found.
+    """
+    if not db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        return [str(exc)]
+    try:
+        rows = conn.execute("PRAGMA quick_check").fetchall()
+    except sqlite3.DatabaseError as exc:  # e.g. "file is not a database"
+        return [str(exc)]
+    finally:
+        conn.close()
+    return [] if [r[0] for r in rows] == ["ok"] else [r[0] for r in rows]

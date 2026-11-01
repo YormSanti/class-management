@@ -101,6 +101,7 @@ def _set_color(label: QLabel, color: QColor) -> None:
 def _clear(layout: QGridLayout | QVBoxLayout | QHBoxLayout) -> None:
     while (item := layout.takeAt(0)) is not None:
         if widget := item.widget():
+            widget.hide()  # deleteLater() waits for the event loop; don't leave it on screen
             widget.deleteLater()
         elif child := item.layout():
             _clear(child)
@@ -246,12 +247,15 @@ class DashboardView(QWidget):
 
     navigate_requested = Signal(str)  # page name, e.g. "Attendance"
     create_class_requested = Signal()
+    manage_subjects_requested = Signal()
 
     def __init__(self, dashboard: DashboardService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
         self.dashboard = dashboard
         self.roster = roster
         self.class_id: int | None = None
+        self._attention: list[AttentionItem] = []
+        self._attention_expanded = False
 
         # --- header ---
         self.date_label = _caption("")
@@ -414,6 +418,8 @@ class DashboardView(QWidget):
     # --- public ----------------------------------------------------------------
 
     def set_class(self, class_id: int | None) -> None:
+        if class_id != self.class_id:
+            self._attention_expanded = False
         self.class_id = class_id
         self.refresh()
 
@@ -502,14 +508,20 @@ class DashboardView(QWidget):
         else:
             sub.setText("Nothing missing")
 
+    def _toggle_attention(self) -> None:
+        self._attention_expanded = not self._attention_expanded
+        self._show_attention(self._attention)
+
     def _show_attention(self, items: list[AttentionItem]) -> None:
+        self._attention = items
         _clear(self.attention_list)
         self.attention_count.setText(f"{len(items)} student{'' if len(items) == 1 else 's'}" if items else "")
         if not items:
             self.attention_list.addWidget(_label("Nobody needs attention right now.", muted=True))
             return
 
-        for i, item in enumerate(items[:ATTENTION_SHOWN]):
+        shown = items if self._attention_expanded else items[:ATTENTION_SHOWN]
+        for i, item in enumerate(shown):
             color, soft = _color(self, _KIND_COLOR[item.kind]), _soft(self, _KIND_COLOR[item.kind])
             row = QFrame()
             row.setObjectName("AttentionRow")
@@ -541,8 +553,13 @@ class DashboardView(QWidget):
             self.attention_list.addWidget(row)
 
         if len(items) > ATTENTION_SHOWN:
-            more = _label(f"+ {len(items) - ATTENTION_SHOWN} more", 0.85, muted=True)
+            if self._attention_expanded:
+                text = "Show fewer"
+            else:
+                text = f"+ {len(items) - ATTENTION_SHOWN} more · Show all"
+            more = _label(f'<a href="toggle">{text}</a>', 0.85, muted=True)
             more.setContentsMargins(0, 8, 0, 0)
+            more.linkActivated.connect(lambda _link: self._toggle_attention())
             self.attention_list.addWidget(more)
 
     def _show_assignments(self, assignments: list[AssignmentStats], active_students: int) -> None:
@@ -590,8 +607,9 @@ class DashboardView(QWidget):
         grid = self.subjects_grid
         _clear(grid)
         if not subjects:
-            hint = _label("No subjects yet. Add one with the ⋯ button next to Subject in the sidebar.", muted=True)
+            hint = _label('No subjects yet. Add them in <a href="subjects">Manage classes</a>.', muted=True)
             hint.setWordWrap(True)
+            hint.linkActivated.connect(lambda _link: self.manage_subjects_requested.emit())
             grid.addWidget(hint, 0, 0)
             return
 

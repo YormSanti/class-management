@@ -7,6 +7,7 @@ from dataclasses import replace
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from app.config import (
@@ -18,7 +19,7 @@ from app.config import (
     save_config,
     settings_dir,
 )
-from app.db.connection import connect, init_db
+from app.db.connection import connect, find_problems, init_db
 from app.repositories.class_repo import ClassRepository
 from app.repositories.dashboard_repo import DashboardRepository
 from app.repositories.student_repo import StudentRepository
@@ -121,8 +122,26 @@ def main() -> int:
     if config is None:
         return 0
 
+    problems = find_problems(config.db_path)
+    if problems:
+        log.error("Database check failed for %s: %s", config.db_path, problems)
+        answer = QMessageBox.critical(
+            None,
+            "Data file is damaged",
+            f"{config.db_path}\n\nSQLite found problems in this file:\n"
+            + "\n".join(problems[:5])
+            + f"\n\nAutomatic backups are in {config.backup_dir}. Quit now and copy the newest "
+            "good backup over the data file, or continue to try to open it anyway (no "
+            "automatic backup will be made of the damaged file).",
+            QMessageBox.StandardButton.Ignore | QMessageBox.StandardButton.Close,
+            QMessageBox.StandardButton.Close,
+        )
+        if answer != QMessageBox.StandardButton.Ignore:
+            return 1
+
     try:
-        auto_backup(config.db_path, config.backup_dir)
+        if not problems:  # never let a damaged copy push a good backup out
+            auto_backup(config.db_path, config.backup_dir)
     except (OSError, sqlite3.Error) as exc:
         log.exception("Automatic backup failed")
         QMessageBox.warning(
@@ -148,7 +167,9 @@ def main() -> int:
     subjects = SubjectRepository(conn)
     roster = RosterService(ClassRepository(conn), students, subjects)
     dashboard = DashboardService(DashboardRepository(conn), students, subjects)
-    window = MainWindow(roster, dashboard, config)
+    # Window layout lives next to config.json, never in the (possibly shared) data folder.
+    settings = QSettings(str(settings_dir() / "window.ini"), QSettings.Format.IniFormat)
+    window = MainWindow(roster, dashboard, config, settings)
     window.show()
     try:
         return app.exec()

@@ -29,12 +29,13 @@ class ClassRepository:
             )
 
     def delete(self, class_id: int) -> None:
-        """Delete a class and its subjects.
+        """Delete a class with its students and subjects.
 
-        Raises sqlite3.IntegrityError (and deletes nothing) if students, seating,
-        or any subject's grades or attendance still reference them.
+        Raises sqlite3.IntegrityError (and deletes nothing) if seating, or any
+        attendance or grades of its students or subjects, still reference them.
         """
         with transaction(self.conn):
+            self.conn.execute("DELETE FROM students WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 
@@ -57,3 +58,15 @@ class ClassRepository:
         """Distinct non-empty school years, newest first ("2026-2027" before "2025-2026")."""
         rows = self.conn.execute("SELECT DISTINCT term FROM classes WHERE term <> '' ORDER BY term DESC")
         return [r["term"] for r in rows]
+
+    def counts(self) -> dict[int, tuple[int, int]]:
+        """{class id: (active students, subjects)} for every class, in one query."""
+        rows = self.conn.execute(
+            """
+            SELECT c.id,
+                   (SELECT count(*) FROM students s WHERE s.class_id = c.id AND s.active = 1) AS students,
+                   (SELECT count(*) FROM subjects sub WHERE sub.class_id = c.id) AS subjects
+            FROM classes c
+            """
+        )
+        return {r["id"]: (r["students"], r["subjects"]) for r in rows}

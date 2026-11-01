@@ -92,11 +92,22 @@ def test_empty_class_can_be_deleted(roster: RosterService, class_id: int):
     assert roster.list_classes() == []
 
 
-def test_class_with_students_cannot_be_deleted(roster: RosterService, class_id: int):
+def test_class_with_students_but_no_records_can_be_deleted(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace")
-    with pytest.raises(RosterError):
+    gone = _add(roster, class_id, "Alan", "Turing")
+    roster.deactivate_student(gone.id)
+    roster.delete_class(class_id)
+    assert roster.list_classes() == []
+
+
+def test_class_with_attendance_cannot_be_deleted(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    conn.execute(
+        "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
+    )
+    with pytest.raises(RosterError, match="attendance, grades or seating"):
         roster.delete_class(class_id)
-    assert roster.get_class(class_id) is not None
+    assert [s.id for s in roster.list_students(class_id)] == [ada.id]  # nothing was half-deleted
 
 
 def test_new_class_can_get_its_first_subject(roster: RosterService):
@@ -155,7 +166,8 @@ def test_class_with_graded_subject_cannot_be_deleted(roster: RosterService, conn
 @pytest.mark.parametrize(
     "term, expected",
     [("2025-2026", "2026-2027"), ("2025 - 2026", "2026 - 2027"), ("2026", "2027"),
-     ("Semester 1 2026", "Semester 1 2027"), ("Autumn", ""), ("", "")],
+     ("Semester 1 2026", "Semester 1 2027"), ("Autumn", ""), ("", ""),
+     ("2025-26", "2026-27"), ("2025/26", "2026/27"), ("2099-00", "2100-01"), ("SY 2025–26", "SY 2026–27")],
 )  # fmt: skip
 def test_next_term(term: str, expected: str):
     assert next_term(term) == expected
@@ -221,3 +233,115 @@ def test_start_new_year_is_all_or_nothing(roster: RosterService, term, names, me
 )
 def test_move_up(name: str, expected: str):
     assert move_up(name) == expected
+
+
+def test_class_counts_active_students_and_subjects(roster: RosterService, class_id: int):
+    empty = roster.save_class(SchoolClass(name="8A")).id
+    _add(roster, class_id, "Ada", "Lovelace")
+    gone = _add(roster, class_id, "Alan", "Turing")
+    roster.deactivate_student(gone.id)
+    roster.save_subject(Subject(class_id=class_id, name="Maths"))
+    roster.save_subject(Subject(class_id=class_id, name="Science"))
+    assert roster.class_counts() == {class_id: (1, 2), empty: (0, 0)}
+
+
+def test_same_name_students_ignores_case_and_self(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    other_class = roster.save_class(SchoolClass(name="8A")).id
+    _add(roster, other_class, "Ada", "Lovelace")
+    new = Student(class_id=class_id, first_name=" ada ", last_name="LOVELACE")
+    assert [s.id for s in roster.same_name_students(new)] == [ada.id]
+    assert roster.same_name_students(ada) == []
+
+
+@pytest.mark.parametrize(
+    "numbers, expected",
+    [([], ""), (["abc"], ""), (["1", "2", "10"], "11"), (["007", "003"], "008"),
+     (["S-099"], "S-100"), (["A1", "B7"], "B8")],
+)  # fmt: skip
+def test_suggest_student_no(roster: RosterService, class_id: int, numbers: list[str], expected: str):
+    for i, number in enumerate(numbers):
+        _add(roster, class_id, "Student", f"Number{i}", no=number)
+    assert roster.suggest_student_no(class_id) == expected
+
+
+def test_suggest_student_no_counts_inactive_students(roster: RosterService, class_id: int):
+    gone = _add(roster, class_id, "Alan", "Turing", no="12")
+    roster.deactivate_student(gone.id)
+    assert roster.suggest_student_no(class_id) == "13"
+
+
+def test_parse_student_list_formats():
+    from app.services.roster import PastedStudent, parse_student_list
+
+    text = """
+Ada Lovelace
+Hopper, Grace
+007 Alan Turing
+2. Mary Ann Evans
+S-12\tKatherine\tJohnson
+Edsger\tDijkstra
+Plato
+"""
+    students, problems = parse_student_list(text)
+    assert students == [
+        PastedStudent(2, "Ada", "Lovelace"),
+        PastedStudent(3, "Grace", "Hopper"),
+        PastedStudent(4, "Alan", "Turing", "007"),
+        PastedStudent(5, "Mary Ann", "Evans"),
+        PastedStudent(6, "Katherine", "Johnson", "S-12"),
+        PastedStudent(7, "Edsger", "Dijkstra"),
+    ]
+    assert problems == ["Line 8: needs a first and a last name: Plato"]
+
+
+def test_parse_student_list_skips_spreadsheet_header():
+    from app.services.roster import parse_student_list
+
+    students, problems = parse_student_list("No.\tFirst name\tLast name\n1\tAda\tLovelace\n")
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [("1", "Ada", "Lovelace")]
+    assert problems == []
+
+
+def test_add_students_is_all_or_nothing(roster: RosterService, class_id: int):
+    from app.services.roster import parse_student_list
+
+    _add(roster, class_id, "Ada", "Lovelace", no="1")
+    students, _ = parse_student_list("2 Alan Turing\n1 Grace Hopper\n")
+    with pytest.raises(RosterError, match="Line 2: Student number 1 is already used by Ada Lovelace"):
+        roster.add_students(class_id, students)
+    assert [s.full_name for s in roster.list_students(class_id)] == ["Ada Lovelace"]
+
+    students, _ = parse_student_list("2 Alan Turing\n3 Grace Hopper\n")
+    added = roster.add_students(class_id, students)
+    assert [s.student_no for s in added] == ["2", "3"]
+    assert len(roster.list_students(class_id)) == 3
+
+
+def test_transfer_student_without_records_moves_them(roster: RosterService, class_id: int):
+    other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="5")
+    moved = roster.transfer_student(ada.id, other)
+    assert moved.id == ada.id and moved.class_id == other and moved.student_no == "5"
+    assert roster.list_students(class_id, include_inactive=True) == []
+    assert [s.id for s in roster.list_students(other)] == [ada.id]
+
+
+def test_transfer_student_with_records_keeps_history_in_old_class(roster: RosterService, class_id: int, conn):
+    other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="5")
+    _add(roster, other, "Alan", "Turing", no="5")
+    conn.execute(
+        "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
+    )
+    moved = roster.transfer_student(ada.id, other)
+    assert moved.id != ada.id and moved.student_no is None  # number 5 is taken in 7C
+    old = roster.list_students(class_id, include_inactive=True)
+    assert [(s.id, s.active) for s in old] == [(ada.id, False)]
+    assert {s.full_name for s in roster.list_students(other)} == {"Ada Lovelace", "Alan Turing"}
+
+
+def test_transfer_student_to_same_class_is_rejected(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    with pytest.raises(RosterError, match="already in this class"):
+        roster.transfer_student(ada.id, class_id)

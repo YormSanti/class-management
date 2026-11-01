@@ -1,5 +1,10 @@
-from PySide6.QtCore import Qt
+from datetime import date
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QFileDialog,
     QListWidget,
     QMainWindow,
     QMessageBox,
@@ -9,7 +14,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import __version__
 from app.config import AppConfig
+from app.services.backup import copy_database
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
@@ -29,9 +36,18 @@ class MainWindow(QMainWindow):
     that work per subject (e.g. the gradebook) also implement `set_subject(subject_id | None)`.
     """
 
-    def __init__(self, roster: RosterService, dashboard: DashboardService, config: AppConfig):
+    def __init__(
+        self,
+        roster: RosterService,
+        dashboard: DashboardService,
+        config: AppConfig,
+        settings: QSettings | None = None,
+    ):
+        """`settings` keeps window state between sessions; None remembers nothing."""
         super().__init__()
         self.roster = roster
+        self.config = config
+        self.settings = settings
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self._last_subject: dict[int, int] = {}  # class id -> subject picked in it this session
@@ -41,6 +57,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view = DashboardView(dashboard, roster)
         self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
+        self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)
@@ -67,31 +84,124 @@ class MainWindow(QMainWindow):
 
         # --- sidebar ---
         self.nav = QListWidget()
-        for name, _page in self.pages:
+        for row, (name, _page) in enumerate(self.pages):
             self.nav.addItem(name)
+            keys = QKeySequence(f"Ctrl+{row + 1}")
+            self.nav.item(row).setToolTip(
+                f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})"
+            )
+            QShortcut(keys, self, activated=lambda row=row: self.nav.setCurrentRow(row))
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
         sidebar = QWidget()
         QVBoxLayout(sidebar).addWidget(self.nav)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(sidebar)
-        splitter.addWidget(self.stack)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([220, 880])
-        splitter.setCollapsible(0, False)
-        self.setCentralWidget(splitter)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(sidebar)
+        self.splitter.addWidget(self.stack)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([220, 880])
+        self.splitter.setCollapsible(0, False)
+        self.setCentralWidget(self.splitter)
+        self._restore_window_state()
 
         self.statusBar().showMessage(f"Data file: {config.db_path}")
+        self._build_menus()
 
         self.nav.setCurrentRow(0)
-        self.select_class()
+        # Read both before select_class() picks (and saves) a subject of its own.
+        saved_class, saved_subject = self._saved_id("class_id"), self._saved_id("subject_id")
+        self.select_class(saved_class)
+        if saved_subject is not None:
+            self.select_subject(saved_subject)
+
+    # --- menus ---------------------------------------------------------------
+
+    def _build_menus(self) -> None:
+        file_menu = self.menuBar().addMenu("&File")
+        backup = file_menu.addAction("&Back up now…", self.back_up_now)
+        backup.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        file_menu.addAction("&Open data folder", self.open_data_folder)
+        file_menu.addSeparator()
+        quit_action = file_menu.addAction("&Quit", self.close)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+
+        help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction("&About Classroom Manager", self.show_about)
+
+    def back_up_now(self) -> None:
+        """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
+        # Not "classroom_…": that prefix marks automatic backups, which get pruned.
+        start = Path.home() / f"Classroom backup {date.today().isoformat()}.db"
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Back up now", str(start), "Classroom Manager backups (*.db)"
+        )
+        if not path:
+            return
+        dest = Path(path) if path.lower().endswith(".db") else Path(path + ".db")
+        if dest.resolve() == self.config.db_path.resolve():
+            QMessageBox.warning(self, "Back up now", "Choose another file than the data file itself.")
+            return
+        try:
+            copy_database(self.config.db_path, dest)
+        except OSError as exc:
+            QMessageBox.warning(self, "Back up now", f"The backup could not be saved:\n{exc}")
+            return
+        self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
+
+    def open_data_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
+
+    def show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Classroom Manager",
+            f"<h3>Classroom Manager {__version__}</h3>"
+            "<p>Classes, attendance, grades and seating for one teacher, offline.</p>"
+            f"<p>Data file:<br>{self.config.db_path}</p>"
+            f"<p>Automatic backups:<br>{self.config.backup_dir}</p>",
+        )
+
+    # --- window state --------------------------------------------------------
+
+    def _restore_window_state(self) -> None:
+        if self.settings is None:
+            return
+        if geometry := self.settings.value("window/geometry"):
+            self.restoreGeometry(geometry)
+        if splitter := self.settings.value("window/splitter"):
+            self.splitter.restoreState(splitter)
+
+    def _saved_id(self, key: str) -> int | None:
+        """A class or subject id saved last session, if any."""
+        value = self.settings.value(f"session/{key}") if self.settings is not None else None
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    def _save_selection(self) -> None:
+        if self.settings is not None:
+            self.settings.setValue("session/class_id", "" if self.class_id is None else self.class_id)
+            self.settings.setValue("session/subject_id", "" if self.subject_id is None else self.subject_id)
+
+    def closeEvent(self, event) -> None:
+        if self.settings is not None:
+            self.settings.setValue("window/geometry", self.saveGeometry())
+            self.settings.setValue("window/splitter", self.splitter.saveState())
+            self.settings.sync()
+        super().closeEvent(event)
 
     def show_page(self, name: str) -> None:
         for row, (page_name, _page) in enumerate(self.pages):
             if page_name == name:
                 self.nav.setCurrentRow(row)
                 return
+
+    def show_subjects(self) -> None:
+        """Open Manage classes on the Subjects tab of the current class."""
+        self.show_page("Manage classes")
+        self.classes_view.tabs.setCurrentWidget(self.classes_view.subject_box)
 
     # --- classes -------------------------------------------------------------
 
@@ -142,9 +252,16 @@ class MainWindow(QMainWindow):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        answer = QMessageBox.question(
-            self, "Delete class", f"Delete the class {school_class.display_name}?"
-        )
+        students = self.roster.list_students(school_class.id, include_inactive=True)
+        subjects = self.roster.list_subjects(school_class.id)
+        also = [
+            f"{len(items)} {noun}{'' if len(items) == 1 else 's'}"
+            for items, noun in ((students, "student"), (subjects, "subject"))
+            if items
+        ]
+        question = f"Delete the class {school_class.display_name}"
+        question += f" with its {' and '.join(also)}?" if also else "?"
+        answer = QMessageBox.question(self, "Delete class", question + "\n\nThis can't be undone.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
@@ -175,6 +292,7 @@ class MainWindow(QMainWindow):
             if set_subject := getattr(page, "set_subject", None):
                 set_subject(self.subject_id)
         self._update_title()
+        self._save_selection()
 
     def new_subject(self) -> None:
         if self.class_id is None:
