@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QListWidget,
     QMainWindow,
@@ -68,8 +69,13 @@ class MainWindow(QMainWindow):
 
         # --- sidebar ---
         self.nav = QListWidget()
-        for name, _page in self.pages:
+        for row, (name, _page) in enumerate(self.pages):
             self.nav.addItem(name)
+            keys = QKeySequence(f"Ctrl+{row + 1}")
+            self.nav.item(row).setToolTip(
+                f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})"
+            )
+            QShortcut(keys, self, activated=lambda row=row: self.nav.setCurrentRow(row))
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
         sidebar = QWidget()

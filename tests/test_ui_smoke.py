@@ -203,3 +203,16 @@ def test_roster_count_mentions_hidden_inactive_students(window: MainWindow, rost
     roster_view.search.clear()
     roster_view.show_inactive.setChecked(True)
     assert roster_view.count_label.text() == "2 students"
+
+
+def test_ctrl_number_switches_page(window: MainWindow):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    QTest.keyClick(window, Qt.Key.Key_6, Qt.KeyboardModifier.ControlModifier)
+    assert window.stack.currentWidget() is window.classes_view
+    QTest.keyClick(window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier)
+    assert window.stack.currentWidget() is window.dashboard_view
+    assert window.nav.item(5).toolTip() == "Manage classes (Ctrl+6)"
