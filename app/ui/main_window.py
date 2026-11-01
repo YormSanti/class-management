@@ -101,7 +101,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Data file: {config.db_path}")
 
         self.nav.setCurrentRow(0)
-        self.select_class()
+        # Read both before select_class() picks (and saves) a subject of its own.
+        saved_class, saved_subject = self._saved_id("class_id"), self._saved_id("subject_id")
+        self.select_class(saved_class)
+        if saved_subject is not None:
+            self.select_subject(saved_subject)
 
     # --- window state --------------------------------------------------------
 
@@ -112,6 +116,19 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geometry)
         if splitter := self.settings.value("window/splitter"):
             self.splitter.restoreState(splitter)
+
+    def _saved_id(self, key: str) -> int | None:
+        """A class or subject id saved last session, if any."""
+        value = self.settings.value(f"session/{key}") if self.settings is not None else None
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    def _save_selection(self) -> None:
+        if self.settings is not None:
+            self.settings.setValue("session/class_id", "" if self.class_id is None else self.class_id)
+            self.settings.setValue("session/subject_id", "" if self.subject_id is None else self.subject_id)
 
     def closeEvent(self, event) -> None:
         if self.settings is not None:
@@ -220,6 +237,7 @@ class MainWindow(QMainWindow):
             if set_subject := getattr(page, "set_subject", None):
                 set_subject(self.subject_id)
         self._update_title()
+        self._save_selection()
 
     def new_subject(self) -> None:
         if self.class_id is None:

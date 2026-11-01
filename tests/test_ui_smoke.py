@@ -240,3 +240,29 @@ def test_window_size_and_splitter_are_remembered(
     assert second.size() == size and size.height() == 520
     assert second.splitter.sizes() == sizes
     second.close()
+
+
+def test_class_and_subject_are_remembered(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    roster.save_class(SchoolClass(name="7A", term="2026-2027"), "Art")
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027"), "Art").id
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+
+    first = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    first.select_class(class_id)
+    first.select_subject(science)
+    first.close()
+
+    second = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    assert (second.class_id, second.subject_id) == (class_id, science)
+    second.close()
+
+    roster.delete_class(class_id)  # a deleted class falls back to the first one
+    third = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    assert roster.get_class(third.class_id).name == "7A"
+    third.close()
