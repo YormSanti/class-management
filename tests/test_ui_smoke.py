@@ -77,3 +77,14 @@ def test_dashboard_subject_hint_opens_subjects_tab(window: MainWindow, roster: R
     window.dashboard_view.manage_subjects_requested.emit()
     assert window.stack.currentWidget() is window.classes_view
     assert window.classes_view.tabs.currentWidget() is window.classes_view.subject_box
+
+
+def test_new_year_dialog_lists_classes_with_student_counts(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.new_year_dialog import NewYearDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B", term="2025-2026")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    dialog = NewYearDialog(roster, "2025-2026")
+    assert dialog.table.rowCount() == 1
+    assert dialog.table.item(0, 2).text() == "1"
+    assert dialog.new_term.text() == "2026-2027"

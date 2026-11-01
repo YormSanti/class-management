@@ -199,13 +199,13 @@ class ClassesView(QWidget):
         self.new_year_button.setEnabled(bool(classes))
         shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
         self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
+        counts = self.roster.class_counts()
         with QSignalBlocker(self.class_table):
             self.class_table.setRowCount(0)
             for school_class in shown:
                 row = self.class_table.rowCount()
                 self.class_table.insertRow(row)
-                students = len(self.roster.list_students(school_class.id))
-                subjects = len(self.roster.list_subjects(school_class.id))
+                students, subjects = counts.get(school_class.id, (0, 0))
                 self.class_table.setItem(row, 0, _item(school_class.name, school_class.id))
                 self.class_table.setItem(row, 1, _item(school_class.term))
                 self.class_table.setItem(row, 2, _item(str(students), align_right=True))

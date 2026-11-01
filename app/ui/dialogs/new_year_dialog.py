@@ -111,6 +111,7 @@ class NewYearDialog(QDialog):
             self._suggested_term = next_term(term or "")
             self.new_term.setText(self._suggested_term)
 
+        counts = self.roster.class_counts()
         with QSignalBlocker(self.table):
             self.table.setRowCount(0)
             for row, school_class in enumerate(self.roster.list_classes(term if term is not None else "")):
@@ -122,7 +123,7 @@ class NewYearDialog(QDialog):
                 self.table.setItem(row, _COPY, copy)
                 for col, text in (
                     (_CLASS, school_class.name),
-                    (_STUDENTS, str(len(self.roster.list_students(school_class.id)))),
+                    (_STUDENTS, str(counts.get(school_class.id, (0, 0))[0])),
                 ):
                     item = QTableWidgetItem(text)
                     item.setFlags(Qt.ItemFlag.ItemIsEnabled)

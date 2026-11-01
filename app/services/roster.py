@@ -56,6 +56,10 @@ class RosterService:
     def list_terms(self) -> list[str]:
         return self.classes.list_terms()
 
+    def class_counts(self) -> dict[int, tuple[int, int]]:
+        """{class id: (active students, subjects)}."""
+        return self.classes.counts()
+
     def get_class(self, class_id: int) -> SchoolClass | None:
         return self.classes.get(class_id)
 

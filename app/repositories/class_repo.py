@@ -57,3 +57,15 @@ class ClassRepository:
         """Distinct non-empty school years, newest first ("2026-2027" before "2025-2026")."""
         rows = self.conn.execute("SELECT DISTINCT term FROM classes WHERE term <> '' ORDER BY term DESC")
         return [r["term"] for r in rows]
+
+    def counts(self) -> dict[int, tuple[int, int]]:
+        """{class id: (active students, subjects)} for every class, in one query."""
+        rows = self.conn.execute(
+            """
+            SELECT c.id,
+                   (SELECT count(*) FROM students s WHERE s.class_id = c.id AND s.active = 1) AS students,
+                   (SELECT count(*) FROM subjects sub WHERE sub.class_id = c.id) AS subjects
+            FROM classes c
+            """
+        )
+        return {r["id"]: (r["students"], r["subjects"]) for r in rows}

@@ -221,3 +221,13 @@ def test_start_new_year_is_all_or_nothing(roster: RosterService, term, names, me
 )
 def test_move_up(name: str, expected: str):
     assert move_up(name) == expected
+
+
+def test_class_counts_active_students_and_subjects(roster: RosterService, class_id: int):
+    empty = roster.save_class(SchoolClass(name="8A")).id
+    _add(roster, class_id, "Ada", "Lovelace")
+    gone = _add(roster, class_id, "Alan", "Turing")
+    roster.deactivate_student(gone.id)
+    roster.save_subject(Subject(class_id=class_id, name="Maths"))
+    roster.save_subject(Subject(class_id=class_id, name="Science"))
+    assert roster.class_counts() == {class_id: (1, 2), empty: (0, 0)}
