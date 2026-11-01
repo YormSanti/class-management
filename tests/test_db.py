@@ -88,3 +88,34 @@ def test_null_score_is_distinct_from_zero(conn: sqlite3.Connection):
     with pytest.raises(sqlite3.IntegrityError):  # one score per student per assignment
         conn.execute("INSERT INTO scores (assignment_id, student_id, score) VALUES (1, 1, 0)")
     assert conn.execute("SELECT score FROM scores").fetchone()["score"] is None
+
+
+def test_find_problems_healthy_and_missing(db_path: Path, conn: sqlite3.Connection, tmp_path: Path):
+    from app.db.connection import find_problems
+
+    assert find_problems(db_path) == []
+    assert find_problems(tmp_path / "nothing-here.db") == []
+
+
+def test_find_problems_reports_a_damaged_file(tmp_path: Path):
+    from app.db.connection import find_problems
+
+    path = tmp_path / "classroom #1?.db"  # characters that need escaping in a URI
+    path.write_bytes(b"this is not a database" * 100)
+    assert find_problems(path) == ["file is not a database"]
+
+
+def test_find_problems_reports_damaged_pages(tmp_path: Path):
+    from app.db.connection import find_problems
+
+    path = tmp_path / "classroom.db"
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA page_size = 1024")
+    conn.execute("CREATE TABLE t (x TEXT)")
+    conn.executemany("INSERT INTO t VALUES (?)", [("x" * 200,)] * 200)
+    conn.commit()
+    conn.close()
+    data = bytearray(path.read_bytes())
+    data[3 * 1024 : 4 * 1024] = b"\xff" * 1024  # wipe a page in the middle
+    path.write_bytes(bytes(data))
+    assert find_problems(path) != []
