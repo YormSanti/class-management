@@ -266,3 +266,27 @@ def test_class_and_subject_are_remembered(
     third = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
     assert roster.get_class(third.class_id).name == "7A"
     third.close()
+
+
+def test_back_up_now_copies_the_database(
+    qapp: QApplication,
+    conn: sqlite3.Connection,
+    roster: RosterService,
+    db_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    roster.save_class(SchoolClass(name="7B"))
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(roster, dashboard, AppConfig(data_dir=db_path.parent))
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(usb / "before trip"), ""))
+    window.back_up_now()
+    copy = sqlite3.connect(usb / "before trip.db")
+    assert copy.execute("SELECT name FROM classes").fetchall() == [("7B",)]
+    copy.close()
+    assert "File" in [a.text().replace("&", "") for a in window.menuBar().actions()]
+    window.close()

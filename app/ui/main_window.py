@@ -1,6 +1,10 @@
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from datetime import date
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QFileDialog,
     QListWidget,
     QMainWindow,
     QMessageBox,
@@ -10,7 +14,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import __version__
 from app.config import AppConfig
+from app.services.backup import copy_database
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
@@ -40,6 +46,7 @@ class MainWindow(QMainWindow):
         """`settings` keeps window state between sessions; None remembers nothing."""
         super().__init__()
         self.roster = roster
+        self.config = config
         self.settings = settings
         self.class_id: int | None = None
         self.subject_id: int | None = None
@@ -99,6 +106,7 @@ class MainWindow(QMainWindow):
         self._restore_window_state()
 
         self.statusBar().showMessage(f"Data file: {config.db_path}")
+        self._build_menus()
 
         self.nav.setCurrentRow(0)
         # Read both before select_class() picks (and saves) a subject of its own.
@@ -106,6 +114,53 @@ class MainWindow(QMainWindow):
         self.select_class(saved_class)
         if saved_subject is not None:
             self.select_subject(saved_subject)
+
+    # --- menus ---------------------------------------------------------------
+
+    def _build_menus(self) -> None:
+        file_menu = self.menuBar().addMenu("&File")
+        backup = file_menu.addAction("&Back up now…", self.back_up_now)
+        backup.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        file_menu.addAction("&Open data folder", self.open_data_folder)
+        file_menu.addSeparator()
+        quit_action = file_menu.addAction("&Quit", self.close)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+
+        help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction("&About Classroom Manager", self.show_about)
+
+    def back_up_now(self) -> None:
+        """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
+        # Not "classroom_…": that prefix marks automatic backups, which get pruned.
+        start = Path.home() / f"Classroom backup {date.today().isoformat()}.db"
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Back up now", str(start), "Classroom Manager backups (*.db)"
+        )
+        if not path:
+            return
+        dest = Path(path) if path.lower().endswith(".db") else Path(path + ".db")
+        if dest.resolve() == self.config.db_path.resolve():
+            QMessageBox.warning(self, "Back up now", "Choose another file than the data file itself.")
+            return
+        try:
+            copy_database(self.config.db_path, dest)
+        except OSError as exc:
+            QMessageBox.warning(self, "Back up now", f"The backup could not be saved:\n{exc}")
+            return
+        self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
+
+    def open_data_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
+
+    def show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Classroom Manager",
+            f"<h3>Classroom Manager {__version__}</h3>"
+            "<p>Classes, attendance, grades and seating for one teacher, offline.</p>"
+            f"<p>Data file:<br>{self.config.db_path}</p>"
+            f"<p>Automatic backups:<br>{self.config.backup_dir}</p>",
+        )
 
     # --- window state --------------------------------------------------------
 
