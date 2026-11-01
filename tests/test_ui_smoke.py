@@ -151,3 +151,24 @@ def test_paste_students_dialog_previews_and_adds(qapp: QApplication, roster: Ros
     dialog.accept()
     assert [s.full_name for s in dialog.added] == ["Ada Lovelace", "Grace Hopper"]
     assert len(roster.list_students(class_id)) == 2
+
+
+def test_roster_export_writes_csv(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7/B", term="2026")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    suggested: list[str] = []
+
+    def save_name(_parent, _title, start, _filter):
+        suggested.append(start)
+        return str(tmp_path / "out"), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", save_name)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    window.classes_view.roster_view.export_csv()
+    assert Path(suggested[0]).name == "7-B (2026) students.csv"
+    assert "Lovelace" in (tmp_path / "out.csv").read_text(encoding="utf-8-sig")

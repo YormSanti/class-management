@@ -1,3 +1,5 @@
+import re
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import (
@@ -13,6 +15,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -26,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
+from app.services.export import write_roster_csv
 from app.services.roster import RosterService
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.dialogs.student_dialog import StudentDialog
@@ -119,6 +123,9 @@ class RosterView(QWidget):
         self.edit_button.clicked.connect(self.edit_selected)
         self.toggle_active_button = QPushButton("Deactivate")
         self.toggle_active_button.clicked.connect(self.toggle_active_selected)
+        self.export_button = QPushButton("Export…")
+        self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
+        self.export_button.clicked.connect(self.export_csv)
 
         toolbar = QHBoxLayout()
         toolbar.addWidget(self.search, stretch=1)
@@ -151,13 +158,16 @@ class RosterView(QWidget):
         self.table.selectionModel().selectionChanged.connect(self._update_buttons)
 
         self.count_label = QLabel()
+        footer = QHBoxLayout()
+        footer.addWidget(self.count_label, stretch=1)
+        footer.addWidget(self.export_button)
 
         table_page = QWidget()
         table_layout = QVBoxLayout(table_page)
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.addLayout(toolbar)
         table_layout.addWidget(self.table)
-        table_layout.addWidget(self.count_label)
+        table_layout.addLayout(footer)
 
         # --- empty state (no class yet) ---
         empty_page = QWidget()
@@ -271,6 +281,26 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def export_csv(self) -> None:
+        """Save every student of the class (inactive ones too if they are shown) as CSV."""
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if school_class is None:
+            return
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", school_class.display_name)
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Export students", str(Path.home() / f"{safe_name} students.csv"), "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
+        students = self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
+        try:
+            write_roster_csv(path, students)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export students", f"The file could not be saved:\n{exc}")
+            return
+        QMessageBox.information(self, "Export students", f"Saved {len(students)} students to\n{path}")
+
     # --- helpers -------------------------------------------------------------
 
     def _selected_student(self) -> Student | None:
@@ -292,6 +322,7 @@ class RosterView(QWidget):
         has_class = self.class_id is not None
         self.add_button.setEnabled(has_class)
         self.paste_button.setEnabled(has_class)
+        self.export_button.setEnabled(has_class)
         self.edit_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.toggle_active_button.setText(
