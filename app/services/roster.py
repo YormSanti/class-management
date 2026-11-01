@@ -218,6 +218,27 @@ class RosterService:
         self.students.update(student)
         return student
 
+    def suggest_student_no(self, class_id: int) -> str:
+        """The number after the highest one in the class, keeping its prefix and
+        zero padding: "S007" -> "S008". "" if the class uses no numbers yet."""
+        taken = {
+            s.student_no for s in self.students.list_for_class(class_id, include_inactive=True) if s.student_no
+        }
+        best: tuple[int, str, int] | None = None  # (value, prefix, digit count)
+        for number in taken:
+            if m := re.fullmatch(r"(.*?)(\d+)", number):
+                candidate = (int(m.group(2)), m.group(1), len(m.group(2)))
+                if best is None or candidate[0] > best[0]:
+                    best = candidate
+        if best is None:
+            return ""
+        value, prefix, width = best
+        while True:
+            value += 1
+            suggestion = f"{prefix}{value:0{width}d}"
+            if suggestion not in taken:
+                return suggestion
+
     def same_name_students(self, student: Student) -> list[Student]:
         """Other students in the same class with the same name, so the UI can ask
         before adding a second one. Two students may share a name, so this isn't an error."""

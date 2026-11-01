@@ -252,3 +252,20 @@ def test_same_name_students_ignores_case_and_self(roster: RosterService, class_i
     new = Student(class_id=class_id, first_name=" ada ", last_name="LOVELACE")
     assert [s.id for s in roster.same_name_students(new)] == [ada.id]
     assert roster.same_name_students(ada) == []
+
+
+@pytest.mark.parametrize(
+    "numbers, expected",
+    [([], ""), (["abc"], ""), (["1", "2", "10"], "11"), (["007", "003"], "008"),
+     (["S-099"], "S-100"), (["A1", "B7"], "B8")],
+)  # fmt: skip
+def test_suggest_student_no(roster: RosterService, class_id: int, numbers: list[str], expected: str):
+    for i, number in enumerate(numbers):
+        _add(roster, class_id, "Student", f"Number{i}", no=number)
+    assert roster.suggest_student_no(class_id) == expected
+
+
+def test_suggest_student_no_counts_inactive_students(roster: RosterService, class_id: int):
+    gone = _add(roster, class_id, "Alan", "Turing", no="12")
+    roster.deactivate_student(gone.id)
+    assert roster.suggest_student_no(class_id) == "13"

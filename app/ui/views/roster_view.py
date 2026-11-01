@@ -206,7 +206,11 @@ class RosterView(QWidget):
         if self.class_id is None:
             return
         dialog = StudentDialog(
-            self.roster.save_student, self.class_id, parent=self, same_name=self.roster.same_name_students
+            self.roster.save_student,
+            self.class_id,
+            parent=self,
+            same_name=self.roster.same_name_students,
+            suggested_no=self.roster.suggest_student_no(self.class_id),
         )
         if dialog.exec() and dialog.saved:
             self.search.clear()  # make sure the new student is visible

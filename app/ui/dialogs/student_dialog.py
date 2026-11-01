@@ -31,6 +31,7 @@ class StudentDialog(QDialog):
         parent: QWidget | None = None,
         *,
         same_name: Callable[[Student], list[Student]] | None = None,
+        suggested_no: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit student" if student else "Add student")
@@ -41,7 +42,9 @@ class StudentDialog(QDialog):
         self._original = student
         self.saved: Student | None = None
 
-        self.student_no = QLineEdit((student.student_no or "") if student else "")
+        self.student_no = QLineEdit((student.student_no or "") if student else suggested_no)
+        if suggested_no and not student:
+            self.student_no.setToolTip("The next free number in this class")
         self.student_no.setPlaceholderText("Optional")
         self.first_name = QLineEdit(student.first_name if student else "")
         self.last_name = QLineEdit(student.last_name if student else "")
