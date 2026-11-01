@@ -216,3 +216,27 @@ def test_ctrl_number_switches_page(window: MainWindow):
     QTest.keyClick(window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier)
     assert window.stack.currentWidget() is window.dashboard_view
     assert window.nav.item(5).toolTip() == "Manage classes (Ctrl+6)"
+
+
+def test_window_size_and_splitter_are_remembered(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    first.show()
+    # Restoring keeps the window on screen, and the offscreen screen is only 800x600.
+    first.resize(first.minimumSizeHint().width(), 520)
+    first.splitter.setSizes([300, 460])
+    qapp.processEvents()
+    size, sizes = first.size(), first.splitter.sizes()
+    first.close()
+
+    second = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    second.show()
+    qapp.processEvents()
+    assert second.size() == size and size.height() == 520
+    assert second.splitter.sizes() == sizes
+    second.close()

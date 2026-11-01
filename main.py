@@ -7,6 +7,7 @@ from dataclasses import replace
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from app.config import (
@@ -148,7 +149,9 @@ def main() -> int:
     subjects = SubjectRepository(conn)
     roster = RosterService(ClassRepository(conn), students, subjects)
     dashboard = DashboardService(DashboardRepository(conn), students, subjects)
-    window = MainWindow(roster, dashboard, config)
+    # Window layout lives next to config.json, never in the (possibly shared) data folder.
+    settings = QSettings(str(settings_dir() / "window.ini"), QSettings.Format.IniFormat)
+    window = MainWindow(roster, dashboard, config, settings)
     window.show()
     try:
         return app.exec()

@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QListWidget,
@@ -30,9 +30,17 @@ class MainWindow(QMainWindow):
     that work per subject (e.g. the gradebook) also implement `set_subject(subject_id | None)`.
     """
 
-    def __init__(self, roster: RosterService, dashboard: DashboardService, config: AppConfig):
+    def __init__(
+        self,
+        roster: RosterService,
+        dashboard: DashboardService,
+        config: AppConfig,
+        settings: QSettings | None = None,
+    ):
+        """`settings` keeps window state between sessions; None remembers nothing."""
         super().__init__()
         self.roster = roster
+        self.settings = settings
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self._last_subject: dict[int, int] = {}  # class id -> subject picked in it this session
@@ -81,18 +89,36 @@ class MainWindow(QMainWindow):
         sidebar = QWidget()
         QVBoxLayout(sidebar).addWidget(self.nav)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(sidebar)
-        splitter.addWidget(self.stack)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([220, 880])
-        splitter.setCollapsible(0, False)
-        self.setCentralWidget(splitter)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(sidebar)
+        self.splitter.addWidget(self.stack)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([220, 880])
+        self.splitter.setCollapsible(0, False)
+        self.setCentralWidget(self.splitter)
+        self._restore_window_state()
 
         self.statusBar().showMessage(f"Data file: {config.db_path}")
 
         self.nav.setCurrentRow(0)
         self.select_class()
+
+    # --- window state --------------------------------------------------------
+
+    def _restore_window_state(self) -> None:
+        if self.settings is None:
+            return
+        if geometry := self.settings.value("window/geometry"):
+            self.restoreGeometry(geometry)
+        if splitter := self.settings.value("window/splitter"):
+            self.splitter.restoreState(splitter)
+
+    def closeEvent(self, event) -> None:
+        if self.settings is not None:
+            self.settings.setValue("window/geometry", self.saveGeometry())
+            self.settings.setValue("window/splitter", self.splitter.saveState())
+            self.settings.sync()
+        super().closeEvent(event)
 
     def show_page(self, name: str) -> None:
         for row, (page_name, _page) in enumerate(self.pages):
