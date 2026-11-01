@@ -386,5 +386,9 @@ class RosterView(QWidget):
         noun = "student" if shown == 1 else "students"
         text = f"{shown} {noun}"
         if self.search.text().strip():
-            text += " match your search"
+            text += " matches your search" if shown == 1 else " match your search"
+        if not self.show_inactive.isChecked() and self.class_id is not None:
+            hidden = len(self.roster.list_students(self.class_id, self.search.text(), True)) - shown
+            if hidden:
+                text += f" · {hidden} inactive hidden"
         self.count_label.setText(text)

@@ -188,3 +188,18 @@ def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeyp
     roster_view.transfer_selected()
     assert roster_view.model.rowCount() == 0
     assert [s.full_name for s in roster.list_students(other)] == ["Ada Lovelace"]
+
+
+def test_roster_count_mentions_hidden_inactive_students(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    gone = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    roster.deactivate_student(gone.id)
+    window.select_class(class_id)
+    roster_view = window.classes_view.roster_view
+    assert roster_view.count_label.text() == "1 student · 1 inactive hidden"
+    roster_view.search.setText("Ada")
+    assert roster_view.count_label.text() == "1 student matches your search"
+    roster_view.search.clear()
+    roster_view.show_inactive.setChecked(True)
+    assert roster_view.count_label.text() == "2 students"
