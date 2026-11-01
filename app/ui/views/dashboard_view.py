@@ -246,6 +246,7 @@ class DashboardView(QWidget):
 
     navigate_requested = Signal(str)  # page name, e.g. "Attendance"
     create_class_requested = Signal()
+    manage_subjects_requested = Signal()
 
     def __init__(self, dashboard: DashboardService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -590,8 +591,9 @@ class DashboardView(QWidget):
         grid = self.subjects_grid
         _clear(grid)
         if not subjects:
-            hint = _label("No subjects yet. Add one with the ⋯ button next to Subject in the sidebar.", muted=True)
+            hint = _label('No subjects yet. Add them in <a href="subjects">Manage classes</a>.', muted=True)
             hint.setWordWrap(True)
+            hint.linkActivated.connect(lambda _link: self.manage_subjects_requested.emit())
             grid.addWidget(hint, 0, 0)
             return
 

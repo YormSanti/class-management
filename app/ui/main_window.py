@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view = DashboardView(dashboard, roster)
         self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
+        self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)
@@ -92,6 +93,11 @@ class MainWindow(QMainWindow):
             if page_name == name:
                 self.nav.setCurrentRow(row)
                 return
+
+    def show_subjects(self) -> None:
+        """Open Manage classes on the Subjects tab of the current class."""
+        self.show_page("Manage classes")
+        self.classes_view.tabs.setCurrentWidget(self.classes_view.subject_box)
 
     # --- classes -------------------------------------------------------------
 

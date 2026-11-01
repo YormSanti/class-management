@@ -69,3 +69,11 @@ def test_roster_lists_students_of_current_class(window: MainWindow, roster: Rost
     roster_view = window.classes_view.roster_view
     assert roster_view.model.rowCount() == 1
     assert roster_view.count_label.text() == "1 student"
+
+
+def test_dashboard_subject_hint_opens_subjects_tab(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    window.dashboard_view.manage_subjects_requested.emit()
+    assert window.stack.currentWidget() is window.classes_view
+    assert window.classes_view.tabs.currentWidget() is window.classes_view.subject_box
