@@ -2,7 +2,7 @@
 
 import re
 import sqlite3
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from app.db.connection import transaction
 from app.models import SchoolClass, Student, Subject
@@ -47,6 +47,71 @@ def move_up(name: str) -> str:
     Only the first number changes; a name without one stays as it is.
     """
     return re.sub(r"\d+", lambda m: str(int(m.group()) + 1), name, count=1)
+
+
+@dataclass
+class PastedStudent:
+    """One student read from a pasted list; `line` is 1-based, for error messages."""
+
+    line: int
+    first_name: str
+    last_name: str
+    student_no: str | None = None
+
+
+_STUDENT_NO = re.compile(r"[A-Za-z]{0,3}[-_]?\d+")  # 7, 007, S007, S-007
+_LIST_NUMBER = re.compile(r"\d+[.)]")  # "1." or "1)" from a numbered list
+
+
+def _parse_name(text: str) -> tuple[str, str] | None:
+    """(first, last) from "Last, First" or "First [Middle] Last"; None if there is one word."""
+    if "," in text:
+        last, _, first = text.partition(",")
+        first, last = first.strip(), last.strip()
+        return (first, last) if first and last else None
+    words = text.split()
+    return (" ".join(words[:-1]), words[-1]) if len(words) >= 2 else None
+
+
+def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
+    """Read students from pasted text, one per line. Returns (students, problems).
+
+    A line can be "First Last", "Last, First", either one after a student number
+    ("007 Ada Lovelace"), or columns copied from a spreadsheet: first and last
+    name, or number, first and last name. Blank lines and a heading row
+    (containing "name") are skipped.
+    """
+    students: list[PastedStudent] = []
+    problems: list[str] = []
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        if "\t" in line:
+            cells = [c.strip() for c in line.split("\t")]
+            cells = [c for c in cells if c]
+            if "name" in line.casefold() and not students and not problems:
+                continue  # header row
+            if len(cells) == 2:
+                students.append(PastedStudent(line_no, cells[0], cells[1]))
+            elif len(cells) == 3:
+                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0]))
+            else:
+                problems.append(f"Line {line_no}: expected first and last name columns: {line}")
+            continue
+
+        student_no = None
+        first_word, _, rest = line.partition(" ")
+        if _LIST_NUMBER.fullmatch(first_word):
+            line = rest.strip()
+        elif _STUDENT_NO.fullmatch(first_word) and rest.strip():
+            student_no, line = first_word, rest.strip()
+        name = _parse_name(line)
+        if name is None:
+            problems.append(f"Line {line_no}: needs a first and a last name: {raw.strip()}")
+        else:
+            students.append(PastedStudent(line_no, name[0], name[1], student_no))
+    return students, problems
 
 
 class RosterService:
@@ -217,6 +282,21 @@ class RosterService:
             return self.students.add(student)
         self.students.update(student)
         return student
+
+    def add_students(self, class_id: int, pasted: list[PastedStudent]) -> list[Student]:
+        """Add several students at once, all or none. A problem in any one of them
+        raises RosterError naming its line, and nothing is added."""
+        added = []
+        with transaction(self.students.conn):
+            for p in pasted:
+                student = Student(
+                    class_id=class_id, first_name=p.first_name, last_name=p.last_name, student_no=p.student_no
+                )
+                try:
+                    added.append(self.save_student(student))
+                except RosterError as exc:
+                    raise RosterError(f"Line {p.line}: {exc}") from None
+        return added
 
     def suggest_student_no(self, class_id: int) -> str:
         """The number after the highest one in the class, keeping its prefix and
