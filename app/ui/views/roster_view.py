@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -30,7 +31,7 @@ from PySide6.QtWidgets import (
 
 from app.models import Student
 from app.services.export import write_roster_csv
-from app.services.roster import RosterService
+from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.dialogs.student_dialog import StudentDialog
 
@@ -123,6 +124,9 @@ class RosterView(QWidget):
         self.edit_button.clicked.connect(self.edit_selected)
         self.toggle_active_button = QPushButton("Deactivate")
         self.toggle_active_button.clicked.connect(self.toggle_active_selected)
+        self.transfer_button = QPushButton("Move to class…")
+        self.transfer_button.setToolTip("Move the selected student to another class")
+        self.transfer_button.clicked.connect(self.transfer_selected)
         self.export_button = QPushButton("Export…")
         self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
@@ -133,8 +137,6 @@ class RosterView(QWidget):
         toolbar.addSpacing(12)
         toolbar.addWidget(self.add_button)
         toolbar.addWidget(self.paste_button)
-        toolbar.addWidget(self.edit_button)
-        toolbar.addWidget(self.toggle_active_button)
 
         # --- table ---
         self.model = StudentTableModel(self)
@@ -158,8 +160,13 @@ class RosterView(QWidget):
         self.table.selectionModel().selectionChanged.connect(self._update_buttons)
 
         self.count_label = QLabel()
+        # Actions on the selected student sit under the table, leaving room to search.
         footer = QHBoxLayout()
         footer.addWidget(self.count_label, stretch=1)
+        footer.addWidget(self.edit_button)
+        footer.addWidget(self.toggle_active_button)
+        footer.addWidget(self.transfer_button)
+        footer.addSpacing(12)
         footer.addWidget(self.export_button)
 
         table_page = QWidget()
@@ -281,6 +288,50 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def transfer_selected(self) -> None:
+        student = self._selected_student()
+        if student is None:
+            return
+        # Newest school year first, so this year's classes are at the top.
+        order = {term: i for i, term in enumerate(self.roster.list_terms())}
+        targets = sorted(
+            (c for c in self.roster.list_classes() if c.id != student.class_id),
+            key=lambda c: order.get(c.term, len(order)),
+        )
+        if not targets:
+            QMessageBox.information(self, "Move to class", "There is no other class to move to yet.")
+            return
+        names = [c.display_name for c in targets]
+        name, ok = QInputDialog.getItem(
+            self, "Move to class", f"Move {student.full_name} to:", names, 0, False
+        )
+        if not ok:
+            return
+        target = targets[names.index(name)]
+        try:
+            moved = self.roster.transfer_student(student.id, target.id)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Move to class", str(exc))
+            return
+        details = []
+        if moved.id != student.id:
+            details.append(
+                "Their attendance and grades so far stay with this class, where they are "
+                "now listed as inactive."
+            )
+        if student.student_no and not moved.student_no:
+            details.append(
+                f"Student number {student.student_no} is already used in {target.name}, "
+                "so they have no number there yet."
+            )
+        QMessageBox.information(
+            self,
+            "Move to class",
+            f"{student.full_name} is now in {target.display_name}." + "".join(f"\n\n{d}" for d in details),
+        )
+        self.refresh()
+        self.students_changed.emit()
+
     def export_csv(self) -> None:
         """Save every student of the class (inactive ones too if they are shown) as CSV."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
@@ -325,6 +376,7 @@ class RosterView(QWidget):
         self.export_button.setEnabled(has_class)
         self.edit_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
+        self.transfer_button.setEnabled(student is not None)
         self.toggle_active_button.setText(
             "Reactivate" if student is not None and not student.active else "Deactivate"
         )

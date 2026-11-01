@@ -298,6 +298,37 @@ class RosterService:
                     raise RosterError(f"Line {p.line}: {exc}") from None
         return added
 
+    def transfer_student(self, student_id: int, class_id: int) -> Student:
+        """Move a student to another class, e.g. after a change of homeroom.
+
+        A student with nothing recorded yet simply moves. Otherwise their
+        attendance and grades stay with the old class: that record is made
+        inactive and a new, active one is created in `class_id`. The student
+        number is kept unless another student in the new class has it.
+        Returns the student as they are in the new class.
+        """
+        student = self.students.get(student_id)
+        if student is None:
+            raise RosterError("This student no longer exists.")
+        if self.classes.get(class_id) is None:
+            raise RosterError("The selected class no longer exists.")
+        if student.class_id == class_id:
+            raise RosterError(f"{student.full_name} is already in this class.")
+
+        student_no = student.student_no
+        if student_no and self.students.find_by_student_no(class_id, student_no):
+            student_no = None
+        with transaction(self.students.conn):
+            if not self.students.has_records(student.id):
+                moved = replace(student, class_id=class_id, student_no=student_no, active=True)
+                self.students.update(moved)
+                self.students.set_class(student.id, class_id)
+                return moved
+            self.students.set_active(student.id, False)
+            return self.students.add(
+                replace(student, id=None, class_id=class_id, student_no=student_no, active=True)
+            )
+
     def suggest_student_no(self, class_id: int) -> str:
         """The number after the highest one in the class, keeping its prefix and
         zero padding: "S007" -> "S008". "" if the class uses no numbers yet."""

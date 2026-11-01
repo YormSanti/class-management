@@ -172,3 +172,19 @@ def test_roster_export_writes_csv(
     window.classes_view.roster_view.export_csv()
     assert Path(suggested[0]).name == "7-B (2026) students.csv"
     assert "Lovelace" in (tmp_path / "out.csv").read_text(encoding="utf-8-sig")
+
+
+def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    other = roster.save_class(SchoolClass(name="7C")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    roster_view = window.classes_view.roster_view
+    roster_view.table.selectRow(0)
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    roster_view.transfer_selected()
+    assert roster_view.model.rowCount() == 0
+    assert [s.full_name for s in roster.list_students(other)] == ["Ada Lovelace"]

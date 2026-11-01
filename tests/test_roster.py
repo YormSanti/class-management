@@ -316,3 +316,32 @@ def test_add_students_is_all_or_nothing(roster: RosterService, class_id: int):
     added = roster.add_students(class_id, students)
     assert [s.student_no for s in added] == ["2", "3"]
     assert len(roster.list_students(class_id)) == 3
+
+
+def test_transfer_student_without_records_moves_them(roster: RosterService, class_id: int):
+    other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="5")
+    moved = roster.transfer_student(ada.id, other)
+    assert moved.id == ada.id and moved.class_id == other and moved.student_no == "5"
+    assert roster.list_students(class_id, include_inactive=True) == []
+    assert [s.id for s in roster.list_students(other)] == [ada.id]
+
+
+def test_transfer_student_with_records_keeps_history_in_old_class(roster: RosterService, class_id: int, conn):
+    other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="5")
+    _add(roster, other, "Alan", "Turing", no="5")
+    conn.execute(
+        "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
+    )
+    moved = roster.transfer_student(ada.id, other)
+    assert moved.id != ada.id and moved.student_no is None  # number 5 is taken in 7C
+    old = roster.list_students(class_id, include_inactive=True)
+    assert [(s.id, s.active) for s in old] == [(ada.id, False)]
+    assert {s.full_name for s in roster.list_students(other)} == {"Ada Lovelace", "Alan Turing"}
+
+
+def test_transfer_student_to_same_class_is_rejected(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    with pytest.raises(RosterError, match="already in this class"):
+        roster.transfer_student(ada.id, class_id)

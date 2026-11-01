@@ -67,6 +67,22 @@ class StudentRepository:
                 "UPDATE students SET active = ? WHERE id = ?", (int(active), student_id)
             )
 
+    def set_class(self, student_id: int, class_id: int) -> None:
+        with transaction(self.conn):
+            self.conn.execute("UPDATE students SET class_id = ? WHERE id = ?", (class_id, student_id))
+
+    def has_records(self, student_id: int) -> bool:
+        """True if any attendance, score or seat refers to the student."""
+        row = self.conn.execute(
+            """
+            SELECT EXISTS (SELECT 1 FROM attendance WHERE student_id = :id)
+                OR EXISTS (SELECT 1 FROM scores WHERE student_id = :id)
+                OR EXISTS (SELECT 1 FROM seats WHERE student_id = :id)
+            """,
+            {"id": student_id},
+        ).fetchone()
+        return bool(row[0])
+
     def get(self, student_id: int) -> Student | None:
         row = self.conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
         return _from_row(row) if row else None
