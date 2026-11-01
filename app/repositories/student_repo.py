@@ -78,6 +78,18 @@ class StudentRepository:
         ).fetchone()
         return _from_row(row) if row else None
 
+    def find_by_name(self, class_id: int, first_name: str, last_name: str) -> list[Student]:
+        """Students in the class with this name, ignoring case; inactive ones included."""
+        rows = self.conn.execute(
+            """
+            SELECT * FROM students
+            WHERE class_id = ? AND first_name = ? COLLATE NOCASE AND last_name = ? COLLATE NOCASE
+            ORDER BY id
+            """,
+            (class_id, first_name, last_name),
+        )
+        return [_from_row(r) for r in rows]
+
     def list_for_class(
         self, class_id: int, search: str = "", include_inactive: bool = False
     ) -> list[Student]:

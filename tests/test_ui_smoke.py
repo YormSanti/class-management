@@ -88,3 +88,28 @@ def test_new_year_dialog_lists_classes_with_student_counts(qapp: QApplication, r
     assert dialog.table.rowCount() == 1
     assert dialog.table.item(0, 2).text() == "1"
     assert dialog.new_term.text() == "2026-2027"
+
+
+def test_student_dialog_asks_before_saving_a_duplicate_name(
+    qapp: QApplication, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.dialogs.student_dialog import StudentDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    asked: list[str] = []
+
+    def answer_no(_parent, _title, text, *args):
+        asked.append(text)
+        return QMessageBox.StandardButton.No
+
+    monkeypatch.setattr(QMessageBox, "question", answer_no)
+    dialog = StudentDialog(roster.save_student, class_id, same_name=roster.same_name_students)
+    dialog.first_name.setText("Ada")
+    dialog.last_name.setText("Lovelace")
+    dialog.accept()
+    assert "already has Ada Lovelace" in asked[0]
+    assert dialog.saved is None
+    assert len(roster.list_students(class_id)) == 1

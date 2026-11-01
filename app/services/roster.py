@@ -218,6 +218,14 @@ class RosterService:
         self.students.update(student)
         return student
 
+    def same_name_students(self, student: Student) -> list[Student]:
+        """Other students in the same class with the same name, so the UI can ask
+        before adding a second one. Two students may share a name, so this isn't an error."""
+        matches = self.students.find_by_name(
+            student.class_id, _clean(student.first_name), _clean(student.last_name)
+        )
+        return [s for s in matches if s.id != student.id]
+
     def deactivate_student(self, student_id: int) -> None:
         """Hide a student from day-to-day lists. Their history is kept."""
         self.students.set_active(student_id, False)

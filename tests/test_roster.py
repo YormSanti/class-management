@@ -243,3 +243,12 @@ def test_class_counts_active_students_and_subjects(roster: RosterService, class_
     roster.save_subject(Subject(class_id=class_id, name="Maths"))
     roster.save_subject(Subject(class_id=class_id, name="Science"))
     assert roster.class_counts() == {class_id: (1, 2), empty: (0, 0)}
+
+
+def test_same_name_students_ignores_case_and_self(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    other_class = roster.save_class(SchoolClass(name="8A")).id
+    _add(roster, other_class, "Ada", "Lovelace")
+    new = Student(class_id=class_id, first_name=" ada ", last_name="LOVELACE")
+    assert [s.id for s in roster.same_name_students(new)] == [ada.id]
+    assert roster.same_name_students(ada) == []
