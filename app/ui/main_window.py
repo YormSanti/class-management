@@ -1,48 +1,81 @@
-from PySide6.QtCore import Qt
+from datetime import date
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QComboBox,
-    QHBoxLayout,
-    QLabel,
+    QFileDialog,
     QListWidget,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QSplitter,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from app import __version__
 from app.config import AppConfig
+from app.services.backup import copy_database
+from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
+from app.ui.dialogs.new_year_dialog import NewYearDialog
+from app.ui.dialogs.subject_dialog import SubjectDialog
+from app.ui.views.classes_view import ClassesView
+from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
-from app.ui.views.roster_view import RosterView
 
 
 class MainWindow(QMainWindow):
-    """Sidebar (class picker + navigation) and a stack of pages.
+    """Sidebar navigation and a stack of pages.
 
-    Every page implements `set_class(class_id | None)` and is told whenever
-    the selected class changes.
+    The window keeps the current class and subject, which are chosen on the
+    Classes page and shown in the title bar. Every page implements
+    `set_class(class_id | None)` and is told whenever the class changes. Pages
+    that work per subject (e.g. the gradebook) also implement `set_subject(subject_id | None)`.
     """
 
-    def __init__(self, roster: RosterService, config: AppConfig):
+    def __init__(
+        self,
+        roster: RosterService,
+        dashboard: DashboardService,
+        config: AppConfig,
+        settings: QSettings | None = None,
+    ):
+        """`settings` keeps window state between sessions; None remembers nothing."""
         super().__init__()
         self.roster = roster
-        self.setWindowTitle("Classroom Manager")
+        self.config = config
+        self.settings = settings
+        self.class_id: int | None = None
+        self.subject_id: int | None = None
+        self._last_subject: dict[int, int] = {}  # class id -> subject picked in it this session
         self.resize(1100, 700)
 
         # --- pages ---
-        self.roster_view = RosterView(roster)
-        self.roster_view.create_class_requested.connect(self.new_class)
+        self.dashboard_view = DashboardView(dashboard, roster)
+        self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
+        self.dashboard_view.navigate_requested.connect(self.show_page)
+        self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
+        self.classes_view = ClassesView(roster)
+        self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
+        self.classes_view.class_selected.connect(self.select_class)
+        self.classes_view.subject_selected.connect(self.select_subject)
+        self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))
+        self.classes_view.new_year_requested.connect(self.start_new_year)
+        self.classes_view.edit_class_requested.connect(self.edit_class)
+        self.classes_view.delete_class_requested.connect(self.delete_class)
+        self.classes_view.new_subject_requested.connect(self.new_subject)
+        self.classes_view.edit_subject_requested.connect(self.edit_subject)
+        self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
-            ("Roster", self.roster_view),
+            ("Dashboard", self.dashboard_view),
             ("Attendance", PlaceholderView("Attendance", "Coming in Phase 2.")),
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
+            ("Manage classes", self.classes_view),
             ("Settings", PlaceholderView("Settings", "Coming in Phase 6.")),
         ]
         self.stack = QStackedWidget()
@@ -50,98 +83,251 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(page)
 
         # --- sidebar ---
-        self.class_combo = QComboBox()
-        self.class_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.class_combo.currentIndexChanged.connect(self._on_class_changed)
-
-        class_menu = QMenu(self)
-        class_menu.addAction("New class…", self.new_class)
-        self.edit_class_action = class_menu.addAction("Edit class…", self.edit_class)
-        self.delete_class_action = class_menu.addAction("Delete class", self.delete_class)
-        class_button = QToolButton()
-        class_button.setText("⋯")
-        class_button.setToolTip("Manage classes")
-        class_button.setMenu(class_menu)
-        class_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-
-        class_row = QHBoxLayout()
-        class_row.addWidget(self.class_combo, stretch=1)
-        class_row.addWidget(class_button)
-
         self.nav = QListWidget()
-        for name, _page in self.pages:
+        for row, (name, _page) in enumerate(self.pages):
             self.nav.addItem(name)
+            keys = QKeySequence(f"Ctrl+{row + 1}")
+            self.nav.item(row).setToolTip(
+                f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})"
+            )
+            QShortcut(keys, self, activated=lambda row=row: self.nav.setCurrentRow(row))
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
         sidebar = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.addWidget(QLabel("<b>Class</b>"))
-        sidebar_layout.addLayout(class_row)
-        sidebar_layout.addSpacing(8)
-        sidebar_layout.addWidget(self.nav, stretch=1)
+        QVBoxLayout(sidebar).addWidget(self.nav)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(sidebar)
-        splitter.addWidget(self.stack)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([220, 880])
-        splitter.setCollapsible(0, False)
-        self.setCentralWidget(splitter)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(sidebar)
+        self.splitter.addWidget(self.stack)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([220, 880])
+        self.splitter.setCollapsible(0, False)
+        self.setCentralWidget(self.splitter)
+        self._restore_window_state()
 
         self.statusBar().showMessage(f"Data file: {config.db_path}")
+        self._build_menus()
 
         self.nav.setCurrentRow(0)
-        self.reload_classes()
+        # Read both before select_class() picks (and saves) a subject of its own.
+        saved_class, saved_subject = self._saved_id("class_id"), self._saved_id("subject_id")
+        self.select_class(saved_class)
+        if saved_subject is not None:
+            self.select_subject(saved_subject)
+
+    # --- menus ---------------------------------------------------------------
+
+    def _build_menus(self) -> None:
+        file_menu = self.menuBar().addMenu("&File")
+        backup = file_menu.addAction("&Back up now…", self.back_up_now)
+        backup.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        file_menu.addAction("&Open data folder", self.open_data_folder)
+        file_menu.addSeparator()
+        quit_action = file_menu.addAction("&Quit", self.close)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+
+        help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction("&About Classroom Manager", self.show_about)
+
+    def back_up_now(self) -> None:
+        """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
+        # Not "classroom_…": that prefix marks automatic backups, which get pruned.
+        start = Path.home() / f"Classroom backup {date.today().isoformat()}.db"
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Back up now", str(start), "Classroom Manager backups (*.db)"
+        )
+        if not path:
+            return
+        dest = Path(path) if path.lower().endswith(".db") else Path(path + ".db")
+        if dest.resolve() == self.config.db_path.resolve():
+            QMessageBox.warning(self, "Back up now", "Choose another file than the data file itself.")
+            return
+        try:
+            copy_database(self.config.db_path, dest)
+        except OSError as exc:
+            QMessageBox.warning(self, "Back up now", f"The backup could not be saved:\n{exc}")
+            return
+        self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
+
+    def open_data_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
+
+    def show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Classroom Manager",
+            f"<h3>Classroom Manager {__version__}</h3>"
+            "<p>Classes, attendance, grades and seating for one teacher, offline.</p>"
+            f"<p>Data file:<br>{self.config.db_path}</p>"
+            f"<p>Automatic backups:<br>{self.config.backup_dir}</p>",
+        )
+
+    # --- window state --------------------------------------------------------
+
+    def _restore_window_state(self) -> None:
+        if self.settings is None:
+            return
+        if geometry := self.settings.value("window/geometry"):
+            self.restoreGeometry(geometry)
+        if splitter := self.settings.value("window/splitter"):
+            self.splitter.restoreState(splitter)
+
+    def _saved_id(self, key: str) -> int | None:
+        """A class or subject id saved last session, if any."""
+        value = self.settings.value(f"session/{key}") if self.settings is not None else None
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    def _save_selection(self) -> None:
+        if self.settings is not None:
+            self.settings.setValue("session/class_id", "" if self.class_id is None else self.class_id)
+            self.settings.setValue("session/subject_id", "" if self.subject_id is None else self.subject_id)
+
+    def closeEvent(self, event) -> None:
+        if self.settings is not None:
+            self.settings.setValue("window/geometry", self.saveGeometry())
+            self.settings.setValue("window/splitter", self.splitter.saveState())
+            self.settings.sync()
+        super().closeEvent(event)
+
+    def show_page(self, name: str) -> None:
+        for row, (page_name, _page) in enumerate(self.pages):
+            if page_name == name:
+                self.nav.setCurrentRow(row)
+                return
+
+    def show_subjects(self) -> None:
+        """Open Manage classes on the Subjects tab of the current class."""
+        self.show_page("Manage classes")
+        self.classes_view.tabs.setCurrentWidget(self.classes_view.subject_box)
 
     # --- classes -------------------------------------------------------------
 
-    def current_class_id(self) -> int | None:
-        return self.class_combo.currentData()
+    def select_class(self, class_id: int | None = None) -> None:
+        """Make `class_id` current, or keep the current class, or fall back to the
+        first class of the newest school year.
 
-    def reload_classes(self, select_id: int | None = None) -> None:
-        """Refill the class picker, keeping (or switching to) `select_id`."""
-        select_id = select_id if select_id is not None else self.current_class_id()
-        self.class_combo.blockSignals(True)
-        self.class_combo.clear()
-        for school_class in self.roster.list_classes():
-            self.class_combo.addItem(school_class.display_name, school_class.id)
-        index = self.class_combo.findData(select_id) if select_id is not None else -1
-        self.class_combo.setCurrentIndex(index if index >= 0 else 0)
-        self.class_combo.blockSignals(False)
-        self._on_class_changed()
-
-    def _on_class_changed(self, _index: int = -1) -> None:
-        class_id = self.current_class_id()
-        self.edit_class_action.setEnabled(class_id is not None)
-        self.delete_class_action.setEnabled(class_id is not None)
+        Call it after any change to the classes so every page reloads.
+        """
+        classes = self.roster.list_classes()
+        wanted = class_id if class_id is not None else self.class_id
+        if wanted in [c.id for c in classes]:
+            self.class_id = wanted
+        else:
+            terms = self.roster.list_terms()
+            newest = [c for c in classes if terms and c.term == terms[0]] or classes
+            self.class_id = newest[0].id if newest else None
         for _name, page in self.pages:
-            page.set_class(class_id)
+            page.set_class(self.class_id)
+        self.select_subject()
 
-    def new_class(self) -> None:
-        dialog = ClassDialog(self.roster.save_class, parent=self)
+    def new_class(self, term: str | None = None) -> None:
+        """Ask for a new class, suggesting `term` (default: the newest school year)."""
+        terms = self.roster.list_terms()
+        if term is None:
+            term = terms[0] if terms else ""
+        dialog = ClassDialog(self.roster.save_class, parent=self, terms=terms, default_term=term)
         if dialog.exec() and dialog.saved:
-            self.reload_classes(dialog.saved.id)
+            self.select_class(dialog.saved.id)
+
+    def start_new_year(self, from_term: str = "") -> None:
+        """Copy classes into a new school year, then switch to the first new class."""
+        dialog = NewYearDialog(self.roster, from_term, parent=self)
+        if dialog.exec() and dialog.created:
+            self.select_class(dialog.created[0].id)
 
     def edit_class(self) -> None:
-        class_id = self.current_class_id()
-        school_class = self.roster.get_class(class_id) if class_id is not None else None
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        dialog = ClassDialog(self.roster.save_class, school_class, parent=self)
+        dialog = ClassDialog(
+            self.roster.save_class, school_class, parent=self, terms=self.roster.list_terms()
+        )
         if dialog.exec():
-            self.reload_classes(class_id)
+            self.select_class(school_class.id)
 
     def delete_class(self) -> None:
-        class_id = self.current_class_id()
-        if class_id is None:
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if school_class is None:
             return
-        name = self.class_combo.currentText()
-        answer = QMessageBox.question(self, "Delete class", f"Delete the class {name}?")
+        students = self.roster.list_students(school_class.id, include_inactive=True)
+        subjects = self.roster.list_subjects(school_class.id)
+        also = [
+            f"{len(items)} {noun}{'' if len(items) == 1 else 's'}"
+            for items, noun in ((students, "student"), (subjects, "subject"))
+            if items
+        ]
+        question = f"Delete the class {school_class.display_name}"
+        question += f" with its {' and '.join(also)}?" if also else "?"
+        answer = QMessageBox.question(self, "Delete class", question + "\n\nThis can't be undone.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.roster.delete_class(class_id)
+            self.roster.delete_class(school_class.id)
         except RosterError as exc:
             QMessageBox.information(self, "Delete class", str(exc))
             return
-        self.reload_classes()
+        self.select_class()
+
+    # --- subjects ------------------------------------------------------------
+
+    def select_subject(self, subject_id: int | None = None) -> None:
+        """Make `subject_id` current within the current class.
+
+        Falls back to the subject last picked in this class, then to the first one.
+        Call it after any change to the subjects so every page reloads.
+        """
+        subject_ids = [s.id for s in self.roster.list_subjects(self.class_id)] if self.class_id else []
+        for wanted in (subject_id, self._last_subject.get(self.class_id or 0)):
+            if wanted in subject_ids:
+                self.subject_id = wanted
+                break
+        else:
+            self.subject_id = subject_ids[0] if subject_ids else None
+        if self.class_id is not None and self.subject_id is not None:
+            self._last_subject[self.class_id] = self.subject_id
+        for _name, page in self.pages:
+            if set_subject := getattr(page, "set_subject", None):
+                set_subject(self.subject_id)
+        self._update_title()
+        self._save_selection()
+
+    def new_subject(self) -> None:
+        if self.class_id is None:
+            return
+        dialog = SubjectDialog(self.roster.save_subject, self.class_id, parent=self)
+        if dialog.exec() and dialog.saved:
+            self.select_subject(dialog.saved.id)
+
+    def edit_subject(self) -> None:
+        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
+        if subject is None:
+            return
+        dialog = SubjectDialog(self.roster.save_subject, subject.class_id, subject, parent=self)
+        if dialog.exec():
+            self.select_subject(subject.id)
+
+    def delete_subject(self) -> None:
+        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
+        if subject is None:
+            return
+        answer = QMessageBox.question(self, "Delete subject", f"Delete the subject {subject.name}?")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.roster.delete_subject(subject.id)
+        except RosterError as exc:
+            QMessageBox.information(self, "Delete subject", str(exc))
+            return
+        self.select_subject()
+
+    def _update_title(self) -> None:
+        """Show the current class and subject, now that the sidebar has no pickers."""
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
+        context = " · ".join(
+            x for x in (school_class and school_class.display_name, subject and subject.name) if x
+        )
+        self.setWindowTitle(f"Classroom Manager — {context}" if context else "Classroom Manager")

@@ -67,6 +67,22 @@ class StudentRepository:
                 "UPDATE students SET active = ? WHERE id = ?", (int(active), student_id)
             )
 
+    def set_class(self, student_id: int, class_id: int) -> None:
+        with transaction(self.conn):
+            self.conn.execute("UPDATE students SET class_id = ? WHERE id = ?", (class_id, student_id))
+
+    def has_records(self, student_id: int) -> bool:
+        """True if any attendance, score or seat refers to the student."""
+        row = self.conn.execute(
+            """
+            SELECT EXISTS (SELECT 1 FROM attendance WHERE student_id = :id)
+                OR EXISTS (SELECT 1 FROM scores WHERE student_id = :id)
+                OR EXISTS (SELECT 1 FROM seats WHERE student_id = :id)
+            """,
+            {"id": student_id},
+        ).fetchone()
+        return bool(row[0])
+
     def get(self, student_id: int) -> Student | None:
         row = self.conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
         return _from_row(row) if row else None
@@ -77,6 +93,18 @@ class StudentRepository:
             (class_id, student_no),
         ).fetchone()
         return _from_row(row) if row else None
+
+    def find_by_name(self, class_id: int, first_name: str, last_name: str) -> list[Student]:
+        """Students in the class with this name, ignoring case; inactive ones included."""
+        rows = self.conn.execute(
+            """
+            SELECT * FROM students
+            WHERE class_id = ? AND first_name = ? COLLATE NOCASE AND last_name = ? COLLATE NOCASE
+            ORDER BY id
+            """,
+            (class_id, first_name, last_name),
+        )
+        return [_from_row(r) for r in rows]
 
     def list_for_class(
         self, class_id: int, search: str = "", include_inactive: bool = False

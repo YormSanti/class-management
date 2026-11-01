@@ -14,15 +14,25 @@ class AttendanceStatus(str, Enum):
 
 @dataclass
 class SchoolClass:
+    """A group of students, e.g. 7B. Grades are kept per subject."""
+
     name: str
-    subject: str = ""
     term: str = ""
     id: int | None = None
 
     @property
     def display_name(self) -> str:
-        details = " · ".join(part for part in (self.subject, self.term) if part)
-        return f"{self.name} ({details})" if details else self.name
+        return f"{self.name} ({self.term})" if self.term else self.name
+
+
+@dataclass
+class Subject:
+    """A subject taught to one class, e.g. Mathematics in 7B, with its own gradebook."""
+
+    class_id: int
+    name: str
+    teacher: str = ""  # empty when the app's user teaches it
+    id: int | None = None
 
 
 @dataclass
@@ -46,12 +56,13 @@ class AttendanceRecord:
     date: date
     status: AttendanceStatus
     note: str = ""
+    subject_id: int | None = None  # None = daily (homeroom) attendance
     id: int | None = None
 
 
 @dataclass
 class Category:
-    class_id: int
+    subject_id: int
     name: str
     weight: float
     id: int | None = None
@@ -59,7 +70,7 @@ class Category:
 
 @dataclass
 class Assignment:
-    class_id: int
+    subject_id: int
     category_id: int
     title: str
     max_score: float

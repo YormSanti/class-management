@@ -1,11 +1,14 @@
-"""Class and student management: validation and rules on top of the repositories."""
+"""Class, subject and student management: validation and rules on top of the repositories."""
 
+import re
 import sqlite3
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
-from app.models import SchoolClass, Student
+from app.db.connection import transaction
+from app.models import SchoolClass, Student, Subject
 from app.repositories.class_repo import ClassRepository
 from app.repositories.student_repo import StudentRepository
+from app.repositories.subject_repo import SubjectRepository
 
 
 class RosterError(ValueError):
@@ -16,41 +19,236 @@ def _clean(text: str | None) -> str:
     return (text or "").strip()
 
 
+# "2025-26" style: a full year, a dash or slash, then the next year's last two digits.
+_SHORT_YEAR_RANGE = r"\b(\d{4})(\s*[-/–]\s*)(\d{2})\b"
+
+
+def next_term(term: str) -> str:
+    """Suggest the school year after `term`: "2025-2026" -> "2026-2027", "2026" -> "2027",
+    "2025-26" -> "2026-27".
+
+    Every year in the text moves on by one, keeping the rest as typed.
+    Returns "" when there is no year to move on.
+    """
+    if not re.search(r"\b\d{4}\b", term):
+        return ""
+
+    def bump(m: re.Match[str]) -> str:
+        if m.group(1) is None:
+            return str(int(m.group()) + 1)
+        return f"{int(m.group(1)) + 1}{m.group(2)}{(int(m.group(3)) + 1) % 100:02d}"
+
+    return re.sub(_SHORT_YEAR_RANGE + r"|\b\d{4}\b", bump, term)
+
+
+def move_up(name: str) -> str:
+    """The class name one grade up: "7B" -> "8B", "Grade 7 Blue" -> "Grade 8 Blue".
+
+    Only the first number changes; a name without one stays as it is.
+    """
+    return re.sub(r"\d+", lambda m: str(int(m.group()) + 1), name, count=1)
+
+
+@dataclass
+class PastedStudent:
+    """One student read from a pasted list; `line` is 1-based, for error messages."""
+
+    line: int
+    first_name: str
+    last_name: str
+    student_no: str | None = None
+
+
+_STUDENT_NO = re.compile(r"[A-Za-z]{0,3}[-_]?\d+")  # 7, 007, S007, S-007
+_LIST_NUMBER = re.compile(r"\d+[.)]")  # "1." or "1)" from a numbered list
+
+
+def _parse_name(text: str) -> tuple[str, str] | None:
+    """(first, last) from "Last, First" or "First [Middle] Last"; None if there is one word."""
+    if "," in text:
+        last, _, first = text.partition(",")
+        first, last = first.strip(), last.strip()
+        return (first, last) if first and last else None
+    words = text.split()
+    return (" ".join(words[:-1]), words[-1]) if len(words) >= 2 else None
+
+
+def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
+    """Read students from pasted text, one per line. Returns (students, problems).
+
+    A line can be "First Last", "Last, First", either one after a student number
+    ("007 Ada Lovelace"), or columns copied from a spreadsheet: first and last
+    name, or number, first and last name. Blank lines and a heading row
+    (containing "name") are skipped.
+    """
+    students: list[PastedStudent] = []
+    problems: list[str] = []
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        if "\t" in line:
+            cells = [c.strip() for c in line.split("\t")]
+            cells = [c for c in cells if c]
+            if "name" in line.casefold() and not students and not problems:
+                continue  # header row
+            if len(cells) == 2:
+                students.append(PastedStudent(line_no, cells[0], cells[1]))
+            elif len(cells) == 3:
+                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0]))
+            else:
+                problems.append(f"Line {line_no}: expected first and last name columns: {line}")
+            continue
+
+        student_no = None
+        first_word, _, rest = line.partition(" ")
+        if _LIST_NUMBER.fullmatch(first_word):
+            line = rest.strip()
+        elif _STUDENT_NO.fullmatch(first_word) and rest.strip():
+            student_no, line = first_word, rest.strip()
+        name = _parse_name(line)
+        if name is None:
+            problems.append(f"Line {line_no}: needs a first and a last name: {raw.strip()}")
+        else:
+            students.append(PastedStudent(line_no, name[0], name[1], student_no))
+    return students, problems
+
+
 class RosterService:
-    def __init__(self, classes: ClassRepository, students: StudentRepository):
+    def __init__(
+        self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository
+    ):
         self.classes = classes
         self.students = students
+        self.subjects = subjects
 
     # --- classes ---------------------------------------------------------
 
-    def list_classes(self) -> list[SchoolClass]:
-        return self.classes.list_all()
+    def list_classes(self, term: str | None = None) -> list[SchoolClass]:
+        """All classes, or only those of one school year when `term` is given."""
+        classes = self.classes.list_all()
+        return classes if term is None else [c for c in classes if c.term == term]
+
+    def list_terms(self) -> list[str]:
+        return self.classes.list_terms()
+
+    def class_counts(self) -> dict[int, tuple[int, int]]:
+        """{class id: (active students, subjects)}."""
+        return self.classes.counts()
 
     def get_class(self, class_id: int) -> SchoolClass | None:
         return self.classes.get(class_id)
 
-    def save_class(self, school_class: SchoolClass) -> SchoolClass:
-        """Create the class if it has no id yet, otherwise update it."""
+    def save_class(self, school_class: SchoolClass, first_subject: str = "") -> SchoolClass:
+        """Create the class if it has no id yet, otherwise update it.
+
+        `first_subject`, if given for a new class, is created with it in one step.
+        """
         school_class = replace(
-            school_class,
-            name=_clean(school_class.name),
-            subject=_clean(school_class.subject),
-            term=_clean(school_class.term),
+            school_class, name=_clean(school_class.name), term=_clean(school_class.term)
         )
         if not school_class.name:
             raise RosterError("Class name is required.")
-        if school_class.id is None:
-            return self.classes.add(school_class)
-        self.classes.update(school_class)
+        self._check_name_free(school_class.name, school_class.term, school_class.id)
+        if school_class.id is not None:
+            self.classes.update(school_class)
+            return school_class
+        with transaction(self.classes.conn):
+            school_class = self.classes.add(school_class)
+            if _clean(first_subject):
+                self.save_subject(Subject(class_id=school_class.id, name=first_subject))
         return school_class
 
+    def start_new_year(
+        self, new_term: str, plan: list[tuple[int, str]], copy_students: bool = True
+    ) -> list[SchoolClass]:
+        """Create next year's classes from existing ones, all at once or not at all.
+
+        `plan` lists (existing class id, name for the new class), e.g. (7B's id, "8B").
+        Each new class gets the old class's subjects and teachers and, if
+        `copy_students`, its active students (as new records, so last year's
+        attendance and grades stay with last year's class). Nothing else is copied.
+        """
+        new_term = _clean(new_term)
+        if not new_term:
+            raise RosterError("Enter the new school year, e.g. 2026-2027.")
+        if not plan:
+            raise RosterError("Choose at least one class to copy.")
+        names = [_clean(name) for _id, name in plan]
+        if not all(names):
+            raise RosterError("Every new class needs a name.")
+        seen: set[str] = set()
+        for name in names:
+            if name.casefold() in seen:
+                raise RosterError(f"The name {name} is used twice.")
+            seen.add(name.casefold())
+
+        created = []
+        with transaction(self.classes.conn):
+            for (source_id, _), name in zip(plan, names):
+                if self.classes.get(source_id) is None:
+                    raise RosterError("One of the classes to copy no longer exists.")
+                new_class = self.save_class(SchoolClass(name=name, term=new_term))
+                for subject in self.subjects.list_for_class(source_id):
+                    self.subjects.add(
+                        Subject(class_id=new_class.id, name=subject.name, teacher=subject.teacher)
+                    )
+                if copy_students:
+                    for student in self.students.list_for_class(source_id):
+                        self.students.add(replace(student, id=None, class_id=new_class.id))
+                created.append(new_class)
+        return created
+
+    def _check_name_free(self, name: str, term: str, class_id: int | None) -> None:
+        existing = self.classes.find_by_name(name, term)
+        if existing and existing.id != class_id:
+            year = f" in {term}" if term else " without a school year"
+            raise RosterError(f"There is already a class called {existing.name}{year}.")
+
     def delete_class(self, class_id: int) -> None:
-        """Delete a class only if nothing (students, grades, layouts) refers to it."""
+        """Delete a class with its students and subjects, but only while nothing is
+        recorded for them: no attendance, grades, grade categories or seating.
+
+        This is for undoing a mistake, e.g. a class created in the wrong school year.
+        """
         try:
             self.classes.delete(class_id)
         except sqlite3.IntegrityError:
             raise RosterError(
-                "This class still has students or other records and can't be deleted."
+                "This class has attendance, grades or seating recorded and can't be deleted."
+            ) from None
+
+    # --- subjects --------------------------------------------------------
+
+    def list_subjects(self, class_id: int) -> list[Subject]:
+        return self.subjects.list_for_class(class_id)
+
+    def get_subject(self, subject_id: int) -> Subject | None:
+        return self.subjects.get(subject_id)
+
+    def save_subject(self, subject: Subject) -> Subject:
+        """Validate and create (id is None) or update a subject."""
+        subject = replace(subject, name=_clean(subject.name), teacher=_clean(subject.teacher))
+        if not subject.name:
+            raise RosterError("Subject name is required.")
+        if self.classes.get(subject.class_id) is None:
+            raise RosterError("The selected class no longer exists.")
+        existing = self.subjects.find_by_name(subject.class_id, subject.name)
+        if existing and existing.id != subject.id:
+            raise RosterError(f"This class already has a subject called {existing.name}.")
+
+        if subject.id is None:
+            return self.subjects.add(subject)
+        self.subjects.update(subject)
+        return subject
+
+    def delete_subject(self, subject_id: int) -> None:
+        """Delete a subject only if it has no grades or attendance yet."""
+        try:
+            self.subjects.delete(subject_id)
+        except sqlite3.IntegrityError:
+            raise RosterError(
+                "This subject has grades or attendance and can't be deleted."
             ) from None
 
     # --- students --------------------------------------------------------
@@ -84,6 +282,81 @@ class RosterService:
             return self.students.add(student)
         self.students.update(student)
         return student
+
+    def add_students(self, class_id: int, pasted: list[PastedStudent]) -> list[Student]:
+        """Add several students at once, all or none. A problem in any one of them
+        raises RosterError naming its line, and nothing is added."""
+        added = []
+        with transaction(self.students.conn):
+            for p in pasted:
+                student = Student(
+                    class_id=class_id, first_name=p.first_name, last_name=p.last_name, student_no=p.student_no
+                )
+                try:
+                    added.append(self.save_student(student))
+                except RosterError as exc:
+                    raise RosterError(f"Line {p.line}: {exc}") from None
+        return added
+
+    def transfer_student(self, student_id: int, class_id: int) -> Student:
+        """Move a student to another class, e.g. after a change of homeroom.
+
+        A student with nothing recorded yet simply moves. Otherwise their
+        attendance and grades stay with the old class: that record is made
+        inactive and a new, active one is created in `class_id`. The student
+        number is kept unless another student in the new class has it.
+        Returns the student as they are in the new class.
+        """
+        student = self.students.get(student_id)
+        if student is None:
+            raise RosterError("This student no longer exists.")
+        if self.classes.get(class_id) is None:
+            raise RosterError("The selected class no longer exists.")
+        if student.class_id == class_id:
+            raise RosterError(f"{student.full_name} is already in this class.")
+
+        student_no = student.student_no
+        if student_no and self.students.find_by_student_no(class_id, student_no):
+            student_no = None
+        with transaction(self.students.conn):
+            if not self.students.has_records(student.id):
+                moved = replace(student, class_id=class_id, student_no=student_no, active=True)
+                self.students.update(moved)
+                self.students.set_class(student.id, class_id)
+                return moved
+            self.students.set_active(student.id, False)
+            return self.students.add(
+                replace(student, id=None, class_id=class_id, student_no=student_no, active=True)
+            )
+
+    def suggest_student_no(self, class_id: int) -> str:
+        """The number after the highest one in the class, keeping its prefix and
+        zero padding: "S007" -> "S008". "" if the class uses no numbers yet."""
+        taken = {
+            s.student_no for s in self.students.list_for_class(class_id, include_inactive=True) if s.student_no
+        }
+        best: tuple[int, str, int] | None = None  # (value, prefix, digit count)
+        for number in taken:
+            if m := re.fullmatch(r"(.*?)(\d+)", number):
+                candidate = (int(m.group(2)), m.group(1), len(m.group(2)))
+                if best is None or candidate[0] > best[0]:
+                    best = candidate
+        if best is None:
+            return ""
+        value, prefix, width = best
+        while True:
+            value += 1
+            suggestion = f"{prefix}{value:0{width}d}"
+            if suggestion not in taken:
+                return suggestion
+
+    def same_name_students(self, student: Student) -> list[Student]:
+        """Other students in the same class with the same name, so the UI can ask
+        before adding a second one. Two students may share a name, so this isn't an error."""
+        matches = self.students.find_by_name(
+            student.class_id, _clean(student.first_name), _clean(student.last_name)
+        )
+        return [s for s in matches if s.id != student.id]
 
     def deactivate_student(self, student_id: int) -> None:
         """Hide a student from day-to-day lists. Their history is kept."""

@@ -16,7 +16,8 @@ On first launch you choose where to keep the data (default: your user app-data f
 e.g. `C:\Users\<name>\AppData\Local\ClassroomManager\`). The choice is saved in
 `config.json` in the app's settings folder; delete that file to see the setup dialog again.
 
-Each start copies the database to `<data folder>/backups/` (the 10 newest are kept).
+Each start copies the database to `<data folder>/backups/`. The 10 newest copies are kept,
+plus the last copy of each of the 30 most recent days.
 
 ## Test
 
