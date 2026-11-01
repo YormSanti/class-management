@@ -92,11 +92,22 @@ def test_empty_class_can_be_deleted(roster: RosterService, class_id: int):
     assert roster.list_classes() == []
 
 
-def test_class_with_students_cannot_be_deleted(roster: RosterService, class_id: int):
+def test_class_with_students_but_no_records_can_be_deleted(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace")
-    with pytest.raises(RosterError):
+    gone = _add(roster, class_id, "Alan", "Turing")
+    roster.deactivate_student(gone.id)
+    roster.delete_class(class_id)
+    assert roster.list_classes() == []
+
+
+def test_class_with_attendance_cannot_be_deleted(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    conn.execute(
+        "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
+    )
+    with pytest.raises(RosterError, match="attendance, grades or seating"):
         roster.delete_class(class_id)
-    assert roster.get_class(class_id) is not None
+    assert [s.id for s in roster.list_students(class_id)] == [ada.id]  # nothing was half-deleted
 
 
 def test_new_class_can_get_its_first_subject(roster: RosterService):

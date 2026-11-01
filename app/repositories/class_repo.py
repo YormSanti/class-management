@@ -29,12 +29,13 @@ class ClassRepository:
             )
 
     def delete(self, class_id: int) -> None:
-        """Delete a class and its subjects.
+        """Delete a class with its students and subjects.
 
-        Raises sqlite3.IntegrityError (and deletes nothing) if students, seating,
-        or any subject's grades or attendance still reference them.
+        Raises sqlite3.IntegrityError (and deletes nothing) if seating, or any
+        attendance or grades of its students or subjects, still reference them.
         """
         with transaction(self.conn):
+            self.conn.execute("DELETE FROM students WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 

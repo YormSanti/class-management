@@ -148,9 +148,16 @@ class MainWindow(QMainWindow):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        answer = QMessageBox.question(
-            self, "Delete class", f"Delete the class {school_class.display_name}?"
-        )
+        students = self.roster.list_students(school_class.id, include_inactive=True)
+        subjects = self.roster.list_subjects(school_class.id)
+        also = [
+            f"{len(items)} {noun}{'' if len(items) == 1 else 's'}"
+            for items, noun in ((students, "student"), (subjects, "subject"))
+            if items
+        ]
+        question = f"Delete the class {school_class.display_name}"
+        question += f" with its {' and '.join(also)}?" if also else "?"
+        answer = QMessageBox.question(self, "Delete class", question + "\n\nThis can't be undone.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:

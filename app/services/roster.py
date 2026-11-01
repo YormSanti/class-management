@@ -141,12 +141,16 @@ class RosterService:
             raise RosterError(f"There is already a class called {existing.name}{year}.")
 
     def delete_class(self, class_id: int) -> None:
-        """Delete a class (and its subjects) only if no students, grades or layouts refer to it."""
+        """Delete a class with its students and subjects, but only while nothing is
+        recorded for them: no attendance, grades, grade categories or seating.
+
+        This is for undoing a mistake, e.g. a class created in the wrong school year.
+        """
         try:
             self.classes.delete(class_id)
         except sqlite3.IntegrityError:
             raise RosterError(
-                "This class still has students or other records and can't be deleted."
+                "This class has attendance, grades or seating recorded and can't be deleted."
             ) from None
 
     # --- subjects --------------------------------------------------------
