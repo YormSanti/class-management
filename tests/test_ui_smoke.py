@@ -132,3 +132,22 @@ def test_student_dialog_save_and_add_another(qapp: QApplication, roster: RosterS
     assert dialog.student_no.text() == "04"
     assert dialog.first_name.text() == "" and dialog.status.text() == "Added Grace Hopper."
     assert [s.student_no for s in roster.list_students(class_id)] == ["03", "01", "02"]
+
+
+def test_paste_students_dialog_previews_and_adds(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    assert not dialog._ok.isEnabled()
+
+    dialog.text.setPlainText("Ada Lovelace\nPlato")
+    assert dialog.preview.rowCount() == 1
+    assert "Line 2" in dialog.problems.text()
+    assert not dialog._ok.isEnabled()
+
+    dialog.text.setPlainText("Ada Lovelace\nHopper, Grace")
+    assert dialog._ok.text() == "Add 2 students" and dialog._ok.isEnabled()
+    dialog.accept()
+    assert [s.full_name for s in dialog.added] == ["Ada Lovelace", "Grace Hopper"]
+    assert len(roster.list_students(class_id)) == 2

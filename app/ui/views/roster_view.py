@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from app.models import Student
 from app.services.roster import RosterService
+from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.dialogs.student_dialog import StudentDialog
 
 _Index = QModelIndex | QPersistentModelIndex
@@ -111,6 +112,9 @@ class RosterView(QWidget):
         self.show_inactive.toggled.connect(self.refresh)
         self.add_button = QPushButton("Add student")
         self.add_button.clicked.connect(self.add_student)
+        self.paste_button = QPushButton("Paste list…")
+        self.paste_button.setToolTip("Add many students at once, e.g. copied from a spreadsheet")
+        self.paste_button.clicked.connect(self.paste_students)
         self.edit_button = QPushButton("Edit…")
         self.edit_button.clicked.connect(self.edit_selected)
         self.toggle_active_button = QPushButton("Deactivate")
@@ -121,6 +125,7 @@ class RosterView(QWidget):
         toolbar.addWidget(self.show_inactive)
         toolbar.addSpacing(12)
         toolbar.addWidget(self.add_button)
+        toolbar.addWidget(self.paste_button)
         toolbar.addWidget(self.edit_button)
         toolbar.addWidget(self.toggle_active_button)
 
@@ -220,6 +225,16 @@ class RosterView(QWidget):
             self._select(dialog.added[-1].id)
             self.students_changed.emit()
 
+    def paste_students(self) -> None:
+        if self.class_id is None:
+            return
+        dialog = PasteStudentsDialog(self.roster, self.class_id, parent=self)
+        if dialog.exec() and dialog.added:
+            self.search.clear()
+            self.refresh()
+            self._select(dialog.added[0].id)
+            self.students_changed.emit()
+
     def edit_selected(self) -> None:
         student = self._selected_student()
         if student is None or self.class_id is None:
@@ -276,6 +291,7 @@ class RosterView(QWidget):
         student = self._selected_student()
         has_class = self.class_id is not None
         self.add_button.setEnabled(has_class)
+        self.paste_button.setEnabled(has_class)
         self.edit_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.toggle_active_button.setText(
