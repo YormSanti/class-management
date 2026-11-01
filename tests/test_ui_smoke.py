@@ -290,3 +290,34 @@ def test_back_up_now_copies_the_database(
     copy.close()
     assert "File" in [a.text().replace("&", "") for a in window.menuBar().actions()]
     window.close()
+
+
+def test_dashboard_can_show_every_student_needing_attention(
+    window: MainWindow, roster: RosterService, conn: sqlite3.Connection
+):
+    from datetime import date, timedelta
+
+    from app.ui.views.dashboard_view import ATTENTION_SHOWN
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    today = date.today()
+    for i in range(ATTENTION_SHOWN + 3):
+        sid = roster.save_student(Student(class_id=class_id, first_name=f"S{i}", last_name="Test")).id
+        for days_ago in range(3):
+            day = (today - timedelta(days=days_ago)).isoformat()
+            conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'absent')", (sid, day))
+    window.select_class(class_id)
+    view = window.dashboard_view
+
+    def rows() -> int:
+        layout = view.attention_list
+        widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+        return sum(w.objectName() == "AttentionRow" for w in widgets)
+
+    assert rows() == ATTENTION_SHOWN
+    view._toggle_attention()
+    assert rows() == ATTENTION_SHOWN + 3
+    view.refresh()  # stays expanded for the same class
+    assert rows() == ATTENTION_SHOWN + 3
+    view._toggle_attention()
+    assert rows() == ATTENTION_SHOWN
