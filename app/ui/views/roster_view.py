@@ -205,17 +205,19 @@ class RosterView(QWidget):
     def add_student(self) -> None:
         if self.class_id is None:
             return
+        class_id = self.class_id
         dialog = StudentDialog(
             self.roster.save_student,
             self.class_id,
             parent=self,
             same_name=self.roster.same_name_students,
-            suggested_no=self.roster.suggest_student_no(self.class_id),
+            suggest_no=lambda: self.roster.suggest_student_no(class_id),
         )
-        if dialog.exec() and dialog.saved:
-            self.search.clear()  # make sure the new student is visible
+        dialog.exec()
+        if dialog.added:  # also when cancelled after "Save and add another"
+            self.search.clear()  # make sure the new students are visible
             self.refresh()
-            self._select(dialog.saved.id)
+            self._select(dialog.added[-1].id)
             self.students_changed.emit()
 
     def edit_selected(self) -> None:

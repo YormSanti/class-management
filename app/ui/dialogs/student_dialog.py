@@ -1,11 +1,13 @@
 from collections.abc import Callable
 from dataclasses import replace
 
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
@@ -21,6 +23,10 @@ class StudentDialog(QDialog):
 
     `same_name`, if given, returns other students with the entered name; the
     teacher is asked before a second student with that name is saved.
+    `suggest_no`, if given, pre-fills the student number of each new student.
+
+    When adding, "Save and add another" keeps the dialog open for the next
+    student. `added` lists every student saved, even if the dialog is then cancelled.
     """
 
     def __init__(
@@ -31,7 +37,7 @@ class StudentDialog(QDialog):
         parent: QWidget | None = None,
         *,
         same_name: Callable[[Student], list[Student]] | None = None,
-        suggested_no: str = "",
+        suggest_no: Callable[[], str] | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit student" if student else "Add student")
@@ -40,11 +46,11 @@ class StudentDialog(QDialog):
         self._same_name = same_name
         self._class_id = class_id
         self._original = student
+        self._suggest_no = suggest_no
         self.saved: Student | None = None
+        self.added: list[Student] = []
 
-        self.student_no = QLineEdit((student.student_no or "") if student else suggested_no)
-        if suggested_no and not student:
-            self.student_no.setToolTip("The next free number in this class")
+        self.student_no = QLineEdit((student.student_no or "") if student else self._next_no())
         self.student_no.setPlaceholderText("Optional")
         self.first_name = QLineEdit(student.first_name if student else "")
         self.last_name = QLineEdit(student.last_name if student else "")
@@ -59,9 +65,19 @@ class StudentDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         self._ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        self._another_button = None
+        if student is None:
+            self._another_button = buttons.addButton(
+                "Save && add another", QDialogButtonBox.ButtonRole.ActionRole
+            )
+            self._another_button.clicked.connect(self.save_and_add_another)
         self.first_name.textChanged.connect(self._update_ok)
         self.last_name.textChanged.connect(self._update_ok)
         self._update_ok()
+
+        self.status = QLabel()
+        self.status.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        self.status.hide()
 
         layout = QFormLayout(self)
         layout.addRow("Student #", self.student_no)
@@ -70,14 +86,36 @@ class StudentDialog(QDialog):
         layout.addRow("Notes", self.notes)
         if student:  # new students are always active
             layout.addRow("", self.active)
+        layout.addRow(self.status)
         layout.addRow(buttons)
 
+    def _next_no(self) -> str:
+        return self._suggest_no() if self._suggest_no else ""
+
     def _update_ok(self) -> None:
-        self._ok_button.setEnabled(
-            bool(self.first_name.text().strip() and self.last_name.text().strip())
-        )
+        ready = bool(self.first_name.text().strip() and self.last_name.text().strip())
+        self._ok_button.setEnabled(ready)
+        if self._another_button is not None:
+            self._another_button.setEnabled(ready)
 
     def accept(self) -> None:
+        if self._save_form():
+            super().accept()
+
+    def save_and_add_another(self) -> None:
+        """Save this student, then clear the form for the next one."""
+        if not self._save_form():
+            return
+        self.status.setText(f"Added {self.saved.full_name}.")
+        self.status.show()
+        self.student_no.setText(self._next_no())
+        for field in (self.first_name, self.last_name):
+            field.clear()
+        self.notes.clear()
+        self.first_name.setFocus()
+
+    def _save_form(self) -> bool:
+        """Validate and save the form. False (with a message shown) if it wasn't saved."""
         values = {
             "student_no": self.student_no.text(),
             "first_name": self.first_name.text(),
@@ -90,13 +128,15 @@ class StudentDialog(QDialog):
         else:
             student = Student(class_id=self._class_id, **values)
         if not self._confirm_name(student):
-            return
+            return False
         try:
             self.saved = self._save(student)
         except RosterError as exc:
             QMessageBox.warning(self, self.windowTitle(), str(exc))
-            return
-        super().accept()
+            return False
+        if self._original is None:
+            self.added.append(self.saved)
+        return True
 
     def _confirm_name(self, student: Student) -> bool:
         """Ask before saving a name that another student in the class already has."""

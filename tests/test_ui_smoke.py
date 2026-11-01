@@ -113,3 +113,22 @@ def test_student_dialog_asks_before_saving_a_duplicate_name(
     assert "already has Ada Lovelace" in asked[0]
     assert dialog.saved is None
     assert len(roster.list_students(class_id)) == 1
+
+
+def test_student_dialog_save_and_add_another(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.student_dialog import StudentDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", student_no="01"))
+    dialog = StudentDialog(
+        roster.save_student, class_id, suggest_no=lambda: roster.suggest_student_no(class_id)
+    )
+    assert dialog.student_no.text() == "02"
+    for first, last in (("Alan", "Turing"), ("Grace", "Hopper")):
+        dialog.first_name.setText(first)
+        dialog.last_name.setText(last)
+        dialog.save_and_add_another()
+    assert [s.full_name for s in dialog.added] == ["Alan Turing", "Grace Hopper"]
+    assert dialog.student_no.text() == "04"
+    assert dialog.first_name.text() == "" and dialog.status.text() == "Added Grace Hopper."
+    assert [s.student_no for s in roster.list_students(class_id)] == ["03", "01", "02"]
