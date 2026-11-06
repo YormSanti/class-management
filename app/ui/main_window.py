@@ -16,12 +16,14 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.config import AppConfig
+from app.services.attendance import AttendanceService
 from app.services.backup import copy_database
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
+from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
@@ -40,6 +42,7 @@ class MainWindow(QMainWindow):
         self,
         roster: RosterService,
         dashboard: DashboardService,
+        attendance: AttendanceService,
         config: AppConfig,
         settings: QSettings | None = None,
     ):
@@ -58,6 +61,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
+        self.attendance_view = AttendanceView(attendance, roster)
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)
@@ -71,7 +75,7 @@ class MainWindow(QMainWindow):
         self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
             ("Dashboard", self.dashboard_view),
-            ("Attendance", PlaceholderView("Attendance", "Coming in Phase 2.")),
+            ("Attendance", self.attendance_view),
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
