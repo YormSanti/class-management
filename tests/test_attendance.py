@@ -1,0 +1,167 @@
+import sqlite3
+from datetime import date
+
+import pytest
+
+from app.models import AttendanceStatus, SchoolClass, Student, Subject
+from app.repositories.attendance_repo import AttendanceRepository
+from app.repositories.student_repo import StudentRepository
+from app.repositories.subject_repo import SubjectRepository
+from app.services.attendance import (
+    UNMARKED,
+    AttendanceError,
+    AttendanceService,
+    RegisterRow,
+    school_day,
+)
+from app.services.roster import RosterService
+
+P, L, A, E = AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED
+DAY = date(2026, 11, 6)  # a Friday
+
+
+@pytest.fixture
+def attendance(conn: sqlite3.Connection) -> AttendanceService:
+    return AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+
+
+@pytest.fixture
+def klass(roster: RosterService) -> int:
+    return roster.save_class(SchoolClass(name="7B", term="2026-27"), "Maths").id
+
+
+def _student(roster: RosterService, class_id: int, first: str, last: str) -> int:
+    return roster.save_student(Student(class_id=class_id, first_name=first, last_name=last)).id
+
+
+def test_school_day_skips_weekends():
+    assert school_day(DAY, 1) == date(2026, 11, 9)  # Friday -> Monday
+    assert school_day(date(2026, 11, 9), -1) == DAY
+    assert school_day(DAY, -2) == date(2026, 11, 4)
+    assert school_day(date(2026, 11, 7), 1) == date(2026, 11, 9)  # Saturday -> Monday
+    assert school_day(DAY, 0) == DAY
+
+
+def test_new_register_lists_active_students_unmarked(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    roster.deactivate_student(_student(roster, klass, "Old", "Student"))
+
+    register = attendance.day_register(klass, DAY)
+
+    assert [r.student.id for r in register.rows] == [grace, ada]  # sorted by last name
+    assert all(r.status is None for r in register.rows)
+    assert register.counts()[UNMARKED] == 2
+    assert register.rate is None
+
+
+def test_mark_change_and_clear(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, DAY, P)
+    attendance.mark(ada, DAY, L)
+    assert attendance.day_register(klass, DAY).rows[0].status is L
+
+    attendance.clear(ada, DAY)
+    assert attendance.day_register(klass, DAY).rows[0].status is None
+
+
+def test_changing_status_keeps_note(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, DAY, A)
+    attendance.set_note(ada, DAY, "  Dentist  ")
+    attendance.mark(ada, DAY, E)
+    row = attendance.day_register(klass, DAY).rows[0]
+    assert (row.status, row.note) == (E, "Dentist")
+
+
+def test_note_needs_a_status(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    with pytest.raises(AttendanceError):
+        attendance.set_note(ada, DAY, "Bus late")
+
+
+def test_daily_and_subject_registers_are_separate(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    maths = roster.list_subjects(klass)[0].id
+    attendance.mark(ada, DAY, P)
+    attendance.mark(ada, DAY, A, subject_id=maths)
+
+    assert attendance.day_register(klass, DAY).rows[0].status is P
+    assert attendance.day_register(klass, DAY, maths).rows[0].status is A
+    attendance.clear_day(klass, DAY, maths)
+    assert attendance.day_register(klass, DAY).rows[0].status is P
+    assert attendance.day_register(klass, DAY, maths).rows[0].status is None
+
+
+def test_subject_of_another_class_is_refused(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    other = roster.save_class(SchoolClass(name="8A"))
+    science = roster.save_subject(Subject(class_id=other.id, name="Science")).id
+    with pytest.raises(AttendanceError):
+        attendance.mark(ada, DAY, P, subject_id=science)
+    with pytest.raises(AttendanceError):
+        attendance.day_register(klass, DAY, science)
+
+
+def test_inactive_student_cannot_be_marked(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    roster.deactivate_student(ada)
+    with pytest.raises(AttendanceError, match="inactive"):
+        attendance.mark(ada, DAY, P)
+
+
+def test_mark_unmarked_leaves_marked_students_alone(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    _student(roster, klass, "Grace", "Hopper")
+    _student(roster, klass, "Alan", "Turing")
+    attendance.mark(ada, DAY, A)
+
+    assert attendance.mark_unmarked(klass, DAY) == 2
+    counts = attendance.day_register(klass, DAY).counts()
+    assert counts == {"present": 2, "absent": 1, "late": 0, "excused": 0, UNMARKED: 0}
+    assert attendance.mark_unmarked(klass, DAY) == 0
+
+
+def test_clear_day_only_touches_that_day_and_class(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    other = roster.save_class(SchoolClass(name="8A"))
+    bob = _student(roster, other.id, "Bob", "Builder")
+    attendance.mark(ada, DAY, P)
+    attendance.mark(ada, school_day(DAY, -1), P)
+    attendance.mark(bob, DAY, P)
+
+    assert attendance.clear_day(klass, DAY) == 1
+    assert attendance.day_register(klass, DAY).rows[0].status is None
+    assert attendance.day_register(klass, school_day(DAY, -1)).rows[0].status is P
+    assert attendance.day_register(other.id, DAY).rows[0].status is P
+
+
+def test_rate_ignores_excused_and_unmarked(attendance, roster, klass):
+    ids = [_student(roster, klass, "S", f"N{i}") for i in range(5)]
+    for sid, status in zip(ids, (P, L, A, E)):
+        attendance.mark(sid, DAY, status)
+    assert attendance.day_register(klass, DAY).rate == pytest.approx(200 / 3)
+
+
+def test_recent_counts_cover_last_30_days_of_the_same_register(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    maths = roster.list_subjects(klass)[0].id
+    for back in (0, 5, 29):
+        attendance.mark(ada, date.fromordinal(DAY.toordinal() - back), A)
+    attendance.mark(ada, date.fromordinal(DAY.toordinal() - 30), A)  # outside the window
+    attendance.mark(ada, date.fromordinal(DAY.toordinal() - 1), A, subject_id=maths)  # other register
+    attendance.mark(ada, date.fromordinal(DAY.toordinal() + 1), A)  # after the day shown
+
+    row = attendance.day_register(klass, DAY).rows[0]
+    assert row.recent == {"absent": 3}
+    assert row.recent_text == "3 absences"
+    assert row.recent_tone == "danger"
+
+
+def test_recent_text_and_tone():
+    student = Student(class_id=1, first_name="A", last_name="B")
+    assert RegisterRow(student, None).recent_text == ""
+    row = RegisterRow(student, None, recent={"absent": 1, "late": 3, "excused": 2})
+    assert row.recent_text == "1 absence · 3 late · 2 excused"
+    assert row.recent_tone == "warn"
+    assert RegisterRow(student, None, recent={"late": 2}).recent_tone == ""
