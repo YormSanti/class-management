@@ -431,3 +431,39 @@ def test_attendance_day_buttons_skip_weekends(window: MainWindow, roster: Roster
     assert view.day == date(2026, 11, 6)
     view.today_button.click()
     assert view.day == date.today() and not view.today_button.isEnabled()
+
+
+def test_attendance_month_tab(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from datetime import date
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    assert month.month_label.text() == "November 2026"  # follows the day shown
+    assert len(month.register.days) == 21
+    assert month.table.rowCount() == 3  # two students and the "Absent that day" row
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    assert month.table.item(0, friday).text() == "A"
+    assert month.table.item(2, friday).text() == "1"
+
+    month.prev_button.click()
+    assert month.month_label.text() == "October 2026"
+    view.refresh()  # e.g. coming back to the page keeps the month picked by hand
+    assert month.month_label.text() == "October 2026"
+
+    month.next_button.click()
+    month._open_cell(0, friday - 1)  # double-click Thursday
+    assert view.tabs.currentIndex() == 0 and view.day == date(2026, 11, 5)
+
+    saved = tmp_path / "november"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    month.export_csv()
+    assert (tmp_path / "november.csv").read_text(encoding="utf-8-sig").splitlines()[1].startswith(
+        ",Hopper,Grace,"
+    )

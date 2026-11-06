@@ -1,4 +1,6 @@
+import re
 from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut
@@ -6,6 +8,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDateEdit,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -28,9 +31,11 @@ from app.services.attendance import (
     AttendanceError,
     AttendanceService,
     DayRegister,
+    MonthRegister,
     RegisterRow,
     school_day,
 )
+from app.services.export import write_attendance_csv
 from app.services.roster import RosterService
 from app.ui import style
 
@@ -83,6 +88,228 @@ class StatusButtons(QWidget):
         self.status_clicked.emit(None if status is self.status else status)
 
 
+class MonthView(QWidget):
+    """A month at a glance: students down the side, school days across, totals at the end."""
+
+    day_requested = Signal(object)  # a date to open on the Day tab
+
+    def __init__(self, attendance: AttendanceService, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.attendance = attendance
+        self.class_id: int | None = None
+        self.subject_id: int | None = None
+        self.file_label = ""  # e.g. "7B (2026-27) Maths", for the export file name
+        today = date.today()
+        self.year, self.month = today.year, today.month
+        self.register: MonthRegister | None = None
+
+        self.prev_button = QPushButton("‹")
+        self.prev_button.setToolTip("Previous month")
+        self.prev_button.setFixedWidth(36)
+        self.prev_button.clicked.connect(lambda: self._step(-1))
+        self.month_label = style.label("", 1.1, bold=True)
+        self.month_label.setMinimumWidth(130)
+        self.month_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.next_button = QPushButton("›")
+        self.next_button.setToolTip("Next month")
+        self.next_button.setFixedWidth(36)
+        self.next_button.clicked.connect(lambda: self._step(1))
+        self.export_button = QPushButton("Export CSV…")
+        self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
+        self.export_button.clicked.connect(self.export_csv)
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(4)
+        toolbar.addWidget(self.prev_button)
+        toolbar.addWidget(self.month_label)
+        toolbar.addWidget(self.next_button)
+        toolbar.addSpacing(16)
+        self.legend: list[tuple[QLabel, str | None]] = []
+        for text, letter, name in (
+            ("Present", "", "accent"), ("Late", "L", "warn"), ("Absent", "A", "danger"),
+            ("Excused", "E", "info"), ("Not marked", "·", None),
+        ):  # fmt: skip
+            box = QLabel(letter)
+            box.setFixedSize(16, 16)
+            box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.legend.append((box, name))
+            toolbar.addWidget(box)
+            toolbar.addWidget(style.label(text, 0.9, muted=True))
+            toolbar.addSpacing(8)
+        toolbar.addStretch()
+        toolbar.addWidget(self.export_button)
+
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(30)
+        self.table.setWordWrap(False)
+        self.table.cellDoubleClicked.connect(self._open_cell)
+        self.table.horizontalHeader().sectionDoubleClicked.connect(lambda col: self._open_cell(-1, col))
+
+        hint = style.label(
+            "Double-click a day to open its register. The rate counts present and late out of the "
+            "days marked; excused days count neither way, as on the dashboard.",
+            0.85,
+            muted=True,
+        )
+        hint.setWordWrap(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 12, 0, 0)
+        layout.setSpacing(12)
+        layout.addLayout(toolbar)
+        layout.addWidget(self.table, stretch=1)
+        layout.addWidget(hint)
+
+    def load(self, class_id: int, subject_id: int | None, file_label: str) -> None:
+        self.class_id, self.subject_id, self.file_label = class_id, subject_id, file_label
+        self.refresh()
+
+    def set_month(self, year: int, month: int) -> None:
+        if (year, month) != (self.year, self.month):
+            self.year, self.month = year, month
+            self.refresh()
+
+    def _step(self, months: int) -> None:
+        index = self.year * 12 + self.month - 1 + months
+        self.set_month(index // 12, index % 12 + 1)
+
+    def refresh(self) -> None:
+        if self.class_id is None:
+            return
+        first = date(self.year, self.month, 1)
+        self.month_label.setText(f"{first:%B} {first.year}")
+        self.register = self.attendance.month_register(self.class_id, self.year, self.month, self.subject_id)
+        self._fill()
+
+    def _fill(self) -> None:
+        register = self.register
+        days, recorded = register.days, set(register.recorded_days)
+        totals = ("Abs.", "Late", "Exc.", "Rate")
+        first_total = 1 + len(days)
+        self.table.clear()
+        self.table.setColumnCount(first_total + len(totals))
+        self.table.setRowCount(len(register.rows) + 1)
+        palette = self.palette()
+        muted = style.mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.5)
+
+        self.table.setHorizontalHeaderItem(0, QTableWidgetItem("Student"))
+        for col, day in enumerate(days, start=1):
+            item = QTableWidgetItem(f"{day:%a}"[:2] + f"\n{day.day}")
+            item.setToolTip(f"{day:%A} {day.day} {day:%B} · double-click to open")
+            if day not in recorded:
+                item.setForeground(muted)
+            self.table.setHorizontalHeaderItem(col, item)
+        for col, text in enumerate(totals, start=first_total):
+            self.table.setHorizontalHeaderItem(col, QTableWidgetItem(text))
+
+        looks = {
+            s: (style.soft(self, "accent") if s is AttendanceStatus.PRESENT else _fill(self, style.STATUS_COLOR[s.value]))
+            for s in STATUSES
+        }
+        on_color = QColor(style.on_color(self))
+        for r, row in enumerate(register.rows):
+            name = QTableWidgetItem(row.student.full_name)
+            self.table.setItem(r, 0, name)
+            for col, day in enumerate(days, start=1):
+                status = row.statuses.get(day)
+                item = QTableWidgetItem()
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if status is None:
+                    item.setText("·")
+                    item.setForeground(muted)
+                else:
+                    item.setBackground(looks[status])
+                    if status is not AttendanceStatus.PRESENT:
+                        item.setText(status.value[0].upper())
+                        item.setForeground(on_color)
+                word = status.value.capitalize() if status else "Not marked"
+                item.setToolTip(f"{row.student.full_name}, {day:%a} {day.day} {day:%b}: {word}")
+                self.table.setItem(r, col, item)
+            counts, rate = row.counts(), row.rate
+            values = (counts["absent"], counts["late"], counts["excused"], "—" if rate is None else f"{rate:.0f}%")
+            for col, value in enumerate(values, start=first_total):
+                item = QTableWidgetItem(str(value))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if col == first_total and counts["absent"] >= 2:
+                    item.setForeground(_fill(self, "danger"))
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.table.setItem(r, col, item)
+
+        # last row: how many were absent each day, and the class's totals
+        last = len(register.rows)
+        bold = self.table.font()
+        bold.setBold(True)
+        label = QTableWidgetItem("Absent that day")
+        label.setFont(bold)
+        self.table.setItem(last, 0, label)
+        for col, day in enumerate(days, start=1):
+            n = register.absent_on(day)
+            item = QTableWidgetItem(("–" if n == 0 else str(n)) if day in recorded else "")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setForeground(_fill(self, "danger") if n else muted)
+            self.table.setItem(last, col, item)
+        counts, rate = register.counts(), register.rate
+        values = (counts["absent"], counts["late"], counts["excused"], "—" if rate is None else f"{rate:.0f}%")
+        for col, value in enumerate(values, start=first_total):
+            item = QTableWidgetItem(str(value))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            item.setFont(bold)
+            self.table.setItem(last, col, item)
+
+        head = self.table.horizontalHeader()
+        head.setMinimumSectionSize(24)
+        head.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        head.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        for col in range(1, first_total):
+            self.table.setColumnWidth(col, 27)
+        for col in range(first_total, first_total + len(totals)):
+            head.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        self.export_button.setEnabled(bool(register.rows))
+
+    def _open_cell(self, _row: int, col: int) -> None:
+        if self.register is not None and 1 <= col <= len(self.register.days):
+            self.day_requested.emit(self.register.days[col - 1])
+
+    def export_csv(self) -> None:
+        if self.register is None:
+            return
+        first = date(self.year, self.month, 1)
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
+        try:
+            write_attendance_csv(path, self.register)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
+            return
+        QMessageBox.information(self, "Export attendance", f"Saved {first:%B} {first.year} to\n{path}")
+
+    def apply_style(self) -> None:
+        line = style.border(self).name()
+        # Lines in the background colour keep the coloured cells apart.
+        self.table.setStyleSheet("QTableWidget { gridline-color: palette(base); }")
+        for box, name in self.legend:
+            if name == "accent":
+                box.setStyleSheet(f"background: {_rgba(style.soft(self, name))}; border-radius: 3px;")
+            elif name:
+                box.setStyleSheet(
+                    f"background: {_fill(self, name).name()}; color: {style.on_color(self)};"
+                    " border-radius: 3px; font-size: 9px; font-weight: 700;"
+                )
+            else:
+                muted = self.palette().color(QPalette.ColorRole.PlaceholderText).name()
+                box.setStyleSheet(f"border: 1px solid {line}; border-radius: 3px; color: {muted};")
+
+
 class AttendanceView(QWidget):
     """Take attendance for the current class, one day and one register at a time.
 
@@ -98,6 +325,7 @@ class AttendanceView(QWidget):
         self.register: DayRegister | None = None
         self._subject_for_class: dict[int, int | None] = {}
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
+        self._month_follows: date | None = None
 
         # --- header ---
         self.date_label = style.caption("")
@@ -210,7 +438,10 @@ class AttendanceView(QWidget):
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(day_page, "Day")
+        self.tabs.addTab(day_page, "&Day")
+        self.month_view = MonthView(attendance)
+        self.month_view.day_requested.connect(self.open_day)
+        self.tabs.addTab(self.month_view, "&Month")
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -278,6 +509,10 @@ class AttendanceView(QWidget):
     def set_day(self, day: date) -> None:
         self.date_edit.setDate(QDate(day.year, day.month, day.day))  # dateChanged refreshes
 
+    def open_day(self, day: date) -> None:
+        self.tabs.setCurrentIndex(0)
+        self.set_day(day)
+
     def _fill_registers(self) -> None:
         wanted = self._subject_for_class.get(self.class_id or 0)
         self.register_combo.blockSignals(True)
@@ -306,6 +541,11 @@ class AttendanceView(QWidget):
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
         self.title_label.setText(f"Attendance · {school_class.name}")
         self.today_button.setEnabled(day != date.today())
+        file_label = " ".join(x for x in (school_class.display_name, self.subject_id and self.register_combo.currentText()) if x)
+        if day != self._month_follows:  # the month follows the day, until changed by hand
+            self._month_follows = day
+            self.month_view.year, self.month_view.month = day.year, day.month
+        self.month_view.load(school_class.id, self.subject_id, file_label)
 
         self.register = self.attendance.day_register(school_class.id, day, self.subject_id)
         ids = [row.student.id for row in self.register.rows]
@@ -522,6 +762,7 @@ class AttendanceView(QWidget):
                 """
             )
         self.setStyleSheet("\n".join(rules))
+        self.month_view.apply_style()
         for box, name in self.swatches:
             if name:
                 box.setStyleSheet(f"background: {_fill(self, name).name()}; border-radius: 2px;")
