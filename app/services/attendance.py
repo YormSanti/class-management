@@ -4,6 +4,7 @@ A student with no record for the day is "not marked", which is different from
 present: nothing counts until the teacher marks it. Only active students are listed.
 """
 
+import calendar
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
@@ -85,6 +86,52 @@ class DayRegister:
         return attendance_rate(self.counts())
 
 
+@dataclass
+class MonthRow:
+    student: Student
+    statuses: dict[date, AttendanceStatus] = field(default_factory=dict)
+
+    def counts(self) -> dict[str, int]:
+        counts = {s.value: 0 for s in AttendanceStatus}
+        for status in self.statuses.values():
+            counts[status.value] += 1
+        return counts
+
+    @property
+    def rate(self) -> float | None:
+        return attendance_rate(self.counts())
+
+
+@dataclass
+class MonthRegister:
+    class_id: int
+    year: int
+    month: int
+    subject_id: int | None
+    days: list[date]  # every weekday of the month, plus weekend days with marks
+    rows: list[MonthRow]
+
+    @property
+    def recorded_days(self) -> list[date]:
+        """Days on which at least one student is marked."""
+        marked = {day for row in self.rows for day in row.statuses}
+        return [day for day in self.days if day in marked]
+
+    def absent_on(self, day: date) -> int:
+        return sum(1 for row in self.rows if row.statuses.get(day) is AttendanceStatus.ABSENT)
+
+    def counts(self) -> dict[str, int]:
+        totals = {s.value: 0 for s in AttendanceStatus}
+        for row in self.rows:
+            for status, n in row.counts().items():
+                totals[status] += n
+        return totals
+
+    @property
+    def rate(self) -> float | None:
+        return attendance_rate(self.counts())
+
+
 class AttendanceService:
     def __init__(
         self, attendance: AttendanceRepository, students: StudentRepository, subjects: SubjectRepository
@@ -114,6 +161,23 @@ class AttendanceService:
                 )
             )
         return DayRegister(class_id, day, subject_id, rows)
+
+    def month_register(
+        self, class_id: int, year: int, month: int, subject_id: int | None = None
+    ) -> MonthRegister:
+        """Every active student's marks for one month, sorted by name."""
+        self._check_subject(class_id, subject_id)
+        first = date(year, month, 1)
+        last = date(year, month, calendar.monthrange(year, month)[1])
+        records = self.attendance.for_period(class_id, first, last, subject_id)
+        by_student: dict[int, dict[date, AttendanceStatus]] = {}
+        for r in records:
+            by_student.setdefault(r.student_id, {})[r.date] = r.status
+        marked_days = {r.date for r in records}
+        month_days = [first + timedelta(days=n) for n in range(last.day)]
+        days = [day for day in month_days if day.weekday() < 5 or day in marked_days]
+        rows = [MonthRow(s, by_student.get(s.id, {})) for s in self.students.list_for_class(class_id)]
+        return MonthRegister(class_id, year, month, subject_id, days, rows)
 
     # --- marking -------------------------------------------------------------
 

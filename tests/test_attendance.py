@@ -165,3 +165,35 @@ def test_recent_text_and_tone():
     assert row.recent_text == "1 absence · 3 late · 2 excused"
     assert row.recent_tone == "warn"
     assert RegisterRow(student, None, recent={"late": 2}).recent_tone == ""
+
+
+def test_month_register_lists_weekdays_and_marked_weekends(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    attendance.mark(ada, date(2026, 10, 1), P)
+    attendance.mark(ada, date(2026, 10, 2), A)
+    attendance.mark(grace, date(2026, 10, 2), L)
+    attendance.mark(ada, date(2026, 10, 10), E)  # a Saturday trip
+    attendance.mark(ada, date(2026, 11, 2), A)  # next month
+
+    month = attendance.month_register(klass, 2026, 10)
+
+    assert len(month.days) == 23  # 22 weekdays + the Saturday
+    assert month.days[0] == date(2026, 10, 1) and month.days[-1] == date(2026, 10, 30)
+    assert date(2026, 10, 10) in month.days and date(2026, 10, 11) not in month.days
+    assert month.recorded_days == [date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 10)]
+    hopper, lovelace = month.rows
+    assert lovelace.counts() == {"present": 1, "absent": 1, "late": 0, "excused": 1}
+    assert lovelace.rate == 50
+    assert hopper.statuses == {date(2026, 10, 2): L}
+    assert month.absent_on(date(2026, 10, 2)) == 1
+    assert month.counts() == {"present": 1, "absent": 1, "late": 1, "excused": 1}
+    assert month.rate == pytest.approx(200 / 3)
+
+
+def test_month_register_keeps_registers_apart(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    maths = roster.list_subjects(klass)[0].id
+    attendance.mark(ada, date(2026, 10, 1), A, subject_id=maths)
+    assert attendance.month_register(klass, 2026, 10).recorded_days == []
+    assert attendance.month_register(klass, 2026, 10, maths).rows[0].statuses == {date(2026, 10, 1): A}
