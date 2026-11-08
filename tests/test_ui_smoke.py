@@ -13,12 +13,18 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from app.config import AppConfig  # noqa: E402
 from app.models import SchoolClass, Student, Subject  # noqa: E402
+from app.repositories.attendance_repo import AttendanceRepository  # noqa: E402
 from app.repositories.dashboard_repo import DashboardRepository  # noqa: E402
 from app.repositories.student_repo import StudentRepository  # noqa: E402
 from app.repositories.subject_repo import SubjectRepository  # noqa: E402
+from app.services.attendance import AttendanceService  # noqa: E402
 from app.services.dashboard import DashboardService  # noqa: E402
 from app.services.roster import RosterService  # noqa: E402
 from app.ui.main_window import MainWindow  # noqa: E402
+
+
+def _attendance(conn: sqlite3.Connection) -> AttendanceService:
+    return AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
 
 
 @pytest.fixture(scope="session")
@@ -31,7 +37,7 @@ def window(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ) -> Iterator[MainWindow]:
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path))
+    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
     window.show()
     yield window
     window.close()
@@ -218,6 +224,29 @@ def test_ctrl_number_switches_page(window: MainWindow):
     assert window.nav.item(5).toolTip() == "Manage classes (Ctrl+6)"
 
 
+def test_settings_is_pinned_to_the_bottom_of_the_sidebar(window: MainWindow):
+    top = [window.nav.item(r).text() for r in range(window.nav.count())]
+    assert "Settings" not in top
+    assert [window.nav_bottom.item(r).text() for r in range(window.nav_bottom.count())] == ["Settings"]
+    sidebar = window.nav.parentWidget()
+    assert window.nav_bottom.geometry().bottom() > sidebar.height() - 30  # at the bottom left
+
+    window.nav_bottom.setCurrentRow(0)  # clicking Settings
+    assert window.stack.currentWidget() is window.settings_view
+    assert not window.nav.selectedItems()  # only one page is highlighted
+    window.nav.setCurrentRow(1)
+    assert window.stack.currentWidget() is window.attendance_view
+    assert not window.nav_bottom.selectedItems()
+    window.show_page("Settings")
+    assert window.nav_bottom.currentRow() == 0 and not window.nav.selectedItems()
+    window.nav.setFocus()  # focusing the top list must not jump back to a page there
+    QApplication.processEvents()
+    assert window.stack.currentWidget() is window.settings_view
+    window.nav.item(0).setSelected(True)  # clicking the Dashboard
+    assert window.stack.currentWidget() is window.dashboard_view
+    assert not window.nav_bottom.selectedItems()
+
+
 def test_window_size_and_splitter_are_remembered(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ):
@@ -225,7 +254,7 @@ def test_window_size_and_splitter_are_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     first.show()
     # Restoring keeps the window on screen, and the offscreen screen is only 800x600.
     first.resize(first.minimumSizeHint().width(), 520)
@@ -234,7 +263,7 @@ def test_window_size_and_splitter_are_remembered(
     size, sizes = first.size(), first.splitter.sizes()
     first.close()
 
-    second = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     second.show()
     qapp.processEvents()
     assert second.size() == size and size.height() == 520
@@ -253,17 +282,17 @@ def test_class_and_subject_are_remembered(
     class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027"), "Art").id
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
 
-    first = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     first.select_class(class_id)
     first.select_subject(science)
     first.close()
 
-    second = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     assert (second.class_id, second.subject_id) == (class_id, science)
     second.close()
 
     roster.delete_class(class_id)  # a deleted class falls back to the first one
-    third = MainWindow(roster, dashboard, AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     assert roster.get_class(third.class_id).name == "7A"
     third.close()
 
@@ -280,7 +309,7 @@ def test_back_up_now_copies_the_database(
 
     roster.save_class(SchoolClass(name="7B"))
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, AppConfig(data_dir=db_path.parent))
+    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=db_path.parent))
     usb = tmp_path / "usb"
     usb.mkdir()
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(usb / "before trip"), ""))
@@ -321,3 +350,223 @@ def test_dashboard_can_show_every_student_needing_attention(
     assert rows() == ATTENTION_SHOWN + 3
     view._toggle_attention()
     assert rows() == ATTENTION_SHOWN
+
+
+# --- attendance ----------------------------------------------------------------
+
+
+def _attendance_page(window: MainWindow, roster: RosterService, names=("Ada Lovelace", "Grace Hopper")):
+    from datetime import date
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    for name in names:
+        first, last = name.split()
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name=last))
+    window.select_class(class_id)
+    window.show_page("Attendance")
+    view = window.attendance_view
+    view.set_day(date(2026, 11, 6))
+    return view
+
+
+def _statuses(view) -> list[str | None]:
+    return [row.status.value if row.status else None for row in view.register.rows]
+
+
+def test_attendance_buttons_mark_and_clear(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    assert view.table.rowCount() == 2
+    assert view.count_labels["unmarked"].text() == "2"
+
+    buttons, note = view._row_widgets[0]
+    assert not note.isEnabled()
+    buttons.buttons[AttendanceStatus.LATE].click()
+    assert _statuses(view) == ["late", None]
+    assert buttons.buttons[AttendanceStatus.LATE].isChecked()
+    assert note.isEnabled()
+    assert view.count_labels["late"].text() == "1"
+
+    buttons.buttons[AttendanceStatus.LATE].click()  # clicking the chosen one again clears it
+    assert _statuses(view) == [None, None]
+    assert not buttons.buttons[AttendanceStatus.LATE].isChecked()
+
+
+def test_attendance_keys_mark_and_move_down(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster, ("Ada Lovelace", "Grace Hopper", "Alan Turing"))
+    view.table.setCurrentCell(0, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_A)
+    QTest.keyClick(view.table, Qt.Key.Key_P)
+    assert _statuses(view) == ["absent", "present", None]  # Hopper, Lovelace, Turing
+    assert view.table.currentRow() == 2
+    QTest.keyClick(view.table, Qt.Key.Key_Up)
+    QTest.keyClick(view.table, Qt.Key.Key_Delete)
+    assert _statuses(view) == ["absent", None, None]
+    assert view.status_label.text() == "2 students are not marked yet. They don't count as present."
+
+
+def test_attendance_note_is_saved(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    buttons, note = view._row_widgets[0]
+    buttons.buttons[AttendanceStatus.ABSENT].click()
+    note.setText("Dentist")
+    note.editingFinished.emit()
+    view.refresh()
+    assert view.register.rows[0].note == "Dentist"
+    assert view._row_widgets[0][1].text() == "Dentist"
+
+
+def test_attendance_mark_rest_and_registers(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.mark_rest_button.click()
+    assert _statuses(view) == ["absent", "present"]
+    assert view.status_label.text() == "Everyone is marked."
+    assert not view.mark_rest_button.isEnabled()
+    assert view.rate_label.text() == "50%"
+
+    assert [view.register_combo.itemText(i) for i in range(view.register_combo.count())] == [
+        "Daily (homeroom)",
+        "Maths",
+    ]
+    view.register_combo.setCurrentIndex(1)
+    assert _statuses(view) == [None, None]  # the Maths register is separate
+    window.select_class(window.class_id)
+    assert view.register_combo.currentText() == "Maths"  # remembered for the class
+
+
+def test_attendance_day_buttons_skip_weekends(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    view.next_button.click()
+    assert view.day == date(2026, 11, 9)
+    assert view.date_label.text() == "MONDAY, 9 NOVEMBER 2026"
+    view.prev_button.click()
+    assert view.day == date(2026, 11, 6)
+    view.today_button.click()
+    assert view.day == date.today() and not view.today_button.isEnabled()
+
+
+def test_attendance_class_picker_switches_class(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    older = roster.save_class(SchoolClass(name="6A", term="2025-2026")).id
+    newer = roster.save_class(SchoolClass(name="8C", term="2026-2027")).id
+    roster.save_student(Student(class_id=newer, first_name="Alan", last_name="Turing"))
+    window.select_class(window.class_id)  # reload after adding classes
+
+    names = [view.class_combo.itemText(i) for i in range(view.class_combo.count())]
+    assert names == ["8C (2026-2027)", "6A (2025-2026)", "7B"]  # newest year first
+    assert view.class_combo.currentText() == "7B"
+
+    view.class_combo.setCurrentIndex(0)
+    view.class_combo.activated.emit(0)
+    assert window.class_id == newer
+    assert view.title_label.text() == "Attendance · 8C"
+    assert view.table.rowCount() == 1
+    assert window.windowTitle() == "Classroom Manager — 8C (2026-2027)"
+    assert older in [view.class_combo.itemData(i) for i in range(view.class_combo.count())]
+
+
+def test_attendance_month_tab(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from datetime import date
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    assert month.month_label.text() == "November 2026"  # follows the day shown
+    assert len(month.register.days) == 21
+    assert month.table.rowCount() == 3  # two students and the "Absent that day" row
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    assert month.table.item(0, friday).text() == "A"
+    assert month.table.item(2, friday).text() == "1"
+
+    month.prev_button.click()
+    assert month.month_label.text() == "October 2026"
+    view.refresh()  # e.g. coming back to the page keeps the month picked by hand
+    assert month.month_label.text() == "October 2026"
+
+    month.next_button.click()
+    month._open_cell(0, friday - 1)  # double-click Thursday
+    assert view.tabs.currentIndex() == 0 and view.day == date(2026, 11, 5)
+
+    saved = tmp_path / "november"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    month.export_csv()
+    assert (tmp_path / "november.csv").read_text(encoding="utf-8-sig").splitlines()[1].startswith(
+        ",Hopper,Grace,"
+    )
+
+
+def test_settings_page_shows_data_and_backups(window: MainWindow, db_path: Path):
+    from datetime import datetime
+
+    from app.services.backup import auto_backup
+
+    window.config.backup_dir.mkdir(parents=True, exist_ok=True)
+    for hour in (8, 9):
+        auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, 6, hour, 30))
+    window.show_page("Settings")
+    view = window.settings_view
+    assert view.data_path_label.text() == str(window.config.db_path)
+    assert view.backup_summary.text() == "2 backups · newest Friday 6 November 2026, 09:30"
+    assert view.backup_table.rowCount() == 2
+    assert view.backup_table.item(0, 0).text() == "Fri 6 Nov 2026, 09:30"
+
+
+def test_settings_page_saves_ranking_method(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from app.config import load_config, save_config
+
+    path = tmp_path / "config.json"
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(
+        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+    )
+    try:
+        view = window.settings_view
+        assert view.ranking_buttons["competition"].isChecked()
+        view.ranking_buttons["dense"].click()
+        assert window.config.ranking_method == "dense"
+        assert load_config(path).ranking_method == "dense"
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_settings_page_keeps_old_choice_when_saving_fails(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    def fail(_config):
+        raise OSError("disk full")
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=fail)
+    try:
+        view = window.settings_view
+        view.ranking_buttons["dense"].click()
+        assert warnings and "disk full" in warnings[0]
+        assert view.ranking_buttons["competition"].isChecked()
+        assert window.config.ranking_method == "competition"
+    finally:
+        window.close()
+        window.deleteLater()

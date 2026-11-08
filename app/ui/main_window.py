@@ -1,11 +1,14 @@
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QSplitter,
@@ -16,15 +19,20 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.config import AppConfig
+from app.services.attendance import AttendanceService
 from app.services.backup import copy_database
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
+from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
+from app.ui.views.settings_view import SettingsView
+
+BOTTOM_PAGES = ("Settings",)  # pinned to the bottom of the sidebar
 
 
 class MainWindow(QMainWindow):
@@ -40,10 +48,13 @@ class MainWindow(QMainWindow):
         self,
         roster: RosterService,
         dashboard: DashboardService,
+        attendance: AttendanceService,
         config: AppConfig,
         settings: QSettings | None = None,
+        save_config: Callable[[AppConfig], None] | None = None,
     ):
-        """`settings` keeps window state between sessions; None remembers nothing."""
+        """`settings` keeps window state between sessions; None remembers nothing.
+        `save_config` writes changes made on the Settings page; None keeps them for this session."""
         super().__init__()
         self.roster = roster
         self.config = config
@@ -58,6 +69,11 @@ class MainWindow(QMainWindow):
         self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
+        self.attendance_view = AttendanceView(attendance, roster)
+        self.attendance_view.class_selected.connect(self.select_class)
+        self.settings_view = SettingsView(config, save_config)
+        self.settings_view.back_up_requested.connect(self.back_up_now)
+        self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)
@@ -71,30 +87,42 @@ class MainWindow(QMainWindow):
         self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
             ("Dashboard", self.dashboard_view),
-            ("Attendance", PlaceholderView("Attendance", "Coming in Phase 2.")),
+            ("Attendance", self.attendance_view),
             ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
             ("Manage classes", self.classes_view),
-            ("Settings", PlaceholderView("Settings", "Coming in Phase 6.")),
+            ("Settings", self.settings_view),
         ]
         self.stack = QStackedWidget()
         for _name, page in self.pages:
             self.stack.addWidget(page)
 
         # --- sidebar ---
+        # Two lists sharing one selection: the pages at the top, Settings at the bottom.
         self.nav = QListWidget()
-        for row, (name, _page) in enumerate(self.pages):
-            self.nav.addItem(name)
-            keys = QKeySequence(f"Ctrl+{row + 1}")
-            self.nav.item(row).setToolTip(
-                f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})"
-            )
-            QShortcut(keys, self, activated=lambda row=row: self.nav.setCurrentRow(row))
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav_bottom = QListWidget()
+        for index, (name, _page) in enumerate(self.pages):
+            keys = QKeySequence(f"Ctrl+{index + 1}")
+            item = QListWidgetItem(name)
+            item.setToolTip(f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})")
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            (self.nav_bottom if name in BOTTOM_PAGES else self.nav).addItem(item)
+            QShortcut(keys, self, activated=lambda index=index: self.go_to(index))
+        for nav in (self.nav, self.nav_bottom):
+            # Follow the selection, not the current item: Qt moves the current item
+            # (without selecting it) when an empty list gets focus.
+            nav.itemSelectionChanged.connect(lambda nav=nav: self._nav_picked(nav))
+        self.nav_bottom.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.nav_bottom.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.nav_bottom.setFixedHeight(
+            self.nav_bottom.sizeHintForRow(0) * self.nav_bottom.count() + 2 * self.nav_bottom.frameWidth()
+        )
 
         sidebar = QWidget()
-        QVBoxLayout(sidebar).addWidget(self.nav)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.addWidget(self.nav, stretch=1)
+        sidebar_layout.addWidget(self.nav_bottom)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(sidebar)
@@ -108,7 +136,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Data file: {config.db_path}")
         self._build_menus()
 
-        self.nav.setCurrentRow(0)
+        self.go_to(0)
         # Read both before select_class() picks (and saves) a subject of its own.
         saved_class, saved_subject = self._saved_id("class_id"), self._saved_id("subject_id")
         self.select_class(saved_class)
@@ -192,10 +220,25 @@ class MainWindow(QMainWindow):
             self.settings.sync()
         super().closeEvent(event)
 
+    def go_to(self, index: int) -> None:
+        """Show page `index` of `self.pages` and highlight it in the sidebar."""
+        self.stack.setCurrentIndex(index)
+        for nav in (self.nav, self.nav_bottom):
+            rows = [r for r in range(nav.count()) if nav.item(r).data(Qt.ItemDataRole.UserRole) == index]
+            with QSignalBlocker(nav):
+                if rows:
+                    nav.setCurrentRow(rows[0])
+                else:
+                    nav.clearSelection()
+
+    def _nav_picked(self, nav: QListWidget) -> None:
+        if selected := nav.selectedItems():
+            self.go_to(selected[0].data(Qt.ItemDataRole.UserRole))
+
     def show_page(self, name: str) -> None:
-        for row, (page_name, _page) in enumerate(self.pages):
+        for index, (page_name, _page) in enumerate(self.pages):
             if page_name == name:
-                self.nav.setCurrentRow(row)
+                self.go_to(index)
                 return
 
     def show_subjects(self) -> None:

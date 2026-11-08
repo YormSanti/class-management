@@ -1,7 +1,7 @@
 from datetime import date
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QHelpEvent, QPainter, QPalette
+from PySide6.QtGui import QColor, QHelpEvent, QPainter, QPalette
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -33,69 +33,12 @@ from app.services.dashboard import (
     letter_grade,
 )
 from app.services.roster import RosterService
+from app.ui import style
+from app.ui.style import Panel
 
-# (light theme, dark theme) colours for statuses; neutrals come from the palette.
-_COLORS = {
-    "accent": ("#2F6B4F", "#6FBF97"),
-    "warn": ("#B7791F", "#E0A84A"),
-    "danger": ("#B9412E", "#E57A66"),
-    "info": ("#3F659C", "#7FA3D9"),
-}
-_STATUS_COLOR = {PRESENT: "accent", LATE: "warn", ABSENT: "danger", EXCUSED: "info"}
 _KIND_COLOR = {"absent": "danger", "grades": "warn", "missing": "info", "late": "warn"}
 _KIND_LABEL = {"absent": "Attendance", "grades": "Grades", "missing": "Missing", "late": "Late"}
 ATTENTION_SHOWN = 5
-
-
-def _is_dark(widget: QWidget) -> bool:
-    return widget.palette().color(QPalette.ColorRole.Window).lightness() < 128
-
-
-def _color(widget: QWidget, name: str) -> QColor:
-    light, dark = _COLORS[name]
-    return QColor(dark if _is_dark(widget) else light)
-
-
-def _soft(widget: QWidget, name: str) -> QColor:
-    """The status colour washed into the background, for pills and avatars."""
-    color = _color(widget, name)
-    color.setAlpha(40)
-    return color
-
-
-def _mix(a: QColor, b: QColor, amount: float) -> QColor:
-    return QColor(
-        round(a.red() + (b.red() - a.red()) * amount),
-        round(a.green() + (b.green() - a.green()) * amount),
-        round(a.blue() + (b.blue() - a.blue()) * amount),
-    )
-
-
-def _label(text: str = "", size: float = 1.0, bold: bool = False, muted: bool = False) -> QLabel:
-    label = QLabel(text)
-    font = label.font()
-    font.setPointSizeF(font.pointSizeF() * size)
-    font.setBold(bold)
-    label.setFont(font)
-    if muted:
-        label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
-    return label
-
-
-def _caption(text: str) -> QLabel:
-    """Small uppercase heading, e.g. table column names."""
-    label = _label(text.upper(), 0.78, bold=True, muted=True)
-    font = label.font()
-    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.6)
-    label.setFont(font)
-    return label
-
-
-def _set_color(label: QLabel, color: QColor) -> None:
-    palette = label.palette()
-    palette.setColor(QPalette.ColorRole.WindowText, color)
-    label.setPalette(palette)
-    label.setForegroundRole(QPalette.ColorRole.WindowText)
 
 
 def _clear(layout: QGridLayout | QVBoxLayout | QHBoxLayout) -> None:
@@ -113,28 +56,6 @@ def _percent(value: float | None) -> str:
 
 def _short_date(day: date | None) -> str:
     return f"{day.day} {day:%b}" if day else "No date"
-
-
-class Panel(QFrame):
-    """A bordered card with an optional title row."""
-
-    def __init__(self, title: str = "", subtitle: str = "", parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setObjectName("Panel")
-        self.body = QVBoxLayout(self)
-        self.body.setContentsMargins(20, 18, 20, 18)
-        self.body.setSpacing(12)
-        if title:
-            self.header = QHBoxLayout()
-            titles = QVBoxLayout()
-            titles.setSpacing(2)
-            titles.addWidget(_label(title, 1.15, bold=True))
-            if subtitle:
-                sub = _label(subtitle, 0.85, muted=True)
-                sub.setWordWrap(True)
-                titles.addWidget(sub)
-            self.header.addLayout(titles, stretch=1)
-            self.body.addLayout(self.header)
 
 
 class Meter(QWidget):
@@ -161,11 +82,11 @@ class Meter(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         radius = self._height / 2
         palette = self.palette()
-        painter.setBrush(_mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.08))
+        painter.setBrush(style.mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.08))
         painter.drawRoundedRect(QRectF(self.rect()), radius, radius)
         fraction = max(0.0, min(1.0, self.value / self.maximum))
         if fraction:
-            painter.setBrush(_color(self, self.color))
+            painter.setBrush(style.color(self, self.color))
             painter.drawRoundedRect(QRectF(0, 0, self.width() * fraction, self.height()), radius, radius)
 
 
@@ -226,9 +147,9 @@ class AttendanceChart(QWidget):
                 if not n:
                     continue
                 height = column.height() * n / biggest
-                color = _color(self, _STATUS_COLOR[status])
+                color = style.color(self, style.STATUS_COLOR[status])
                 if status == PRESENT and not is_today:
-                    color = _mix(palette.color(QPalette.ColorRole.Base), color, 0.5)
+                    color = style.mix(palette.color(QPalette.ColorRole.Base), color, 0.5)
                 painter.setBrush(color)
                 painter.drawRect(QRectF(column.left(), y - height, column.width(), height))
                 y -= height
@@ -258,8 +179,8 @@ class DashboardView(QWidget):
         self._attention_expanded = False
 
         # --- header ---
-        self.date_label = _caption("")
-        self.title_label = _label("", 1.9)
+        self.date_label = style.caption("")
+        self.title_label = style.label("", 1.9)
         titles = QVBoxLayout()
         titles.setSpacing(4)
         titles.addWidget(self.date_label)
@@ -293,9 +214,9 @@ class DashboardView(QWidget):
             cell = QVBoxLayout()
             cell.setContentsMargins(20, 16, 20, 16)
             cell.setSpacing(4)
-            value, sub = _label("—", 2.1), _label("", 0.85, muted=True)
+            value, sub = style.label("—", 2.1), style.label("", 0.85, muted=True)
             sub.setWordWrap(True)
-            cell.addWidget(_label(name, 0.92, muted=True))
+            cell.addWidget(style.label(name, 0.92, muted=True))
             cell.addWidget(value)
             cell.addWidget(sub)
             cell.addStretch()
@@ -310,9 +231,9 @@ class DashboardView(QWidget):
         for status in (PRESENT, LATE, ABSENT, EXCUSED):
             swatch = QLabel()
             swatch.setFixedSize(10, 10)
-            self.legend_swatches.append((swatch, _STATUS_COLOR[status]))
+            self.legend_swatches.append((swatch, style.STATUS_COLOR[status]))
             legend.addWidget(swatch)
-            legend.addWidget(_label(status.capitalize(), 0.85, muted=True))
+            legend.addWidget(style.label(status.capitalize(), 0.85, muted=True))
         legend.addStretch()
         chart_panel.body.addLayout(legend)
         self.chart = AttendanceChart()
@@ -321,7 +242,7 @@ class DashboardView(QWidget):
         attention_panel = Panel("Needs attention")
         attention_panel.setMinimumWidth(280)
         attention_panel.setMaximumWidth(380)
-        self.attention_count = _label("", 0.85, muted=True)
+        self.attention_count = style.label("", 0.85, muted=True)
         attention_panel.header.addWidget(self.attention_count)
         self.attention_list = QVBoxLayout()
         self.attention_list.setSpacing(0)
@@ -352,12 +273,12 @@ class DashboardView(QWidget):
         for row, (letter, lower) in enumerate(GRADE_SCALE):
             upper = 100 if row == 0 else bounds[row - 1] - 1
             meter = Meter("accent", height=12)
-            count = _label("0", bold=True)
+            count = style.label("0", bold=True)
             count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            grades_grid.addWidget(_label(letter, 1.15, bold=True), row, 0)
+            grades_grid.addWidget(style.label(letter, 1.15, bold=True), row, 0)
             grades_grid.addWidget(meter, row, 1)
             grades_grid.addWidget(count, row, 2)
-            grades_grid.addWidget(_label(f"{lower:.0f}–{upper:.0f}" if lower else f"below {bounds[row - 1]:.0f}", 0.85, muted=True), row, 3)
+            grades_grid.addWidget(style.label(f"{lower:.0f}–{upper:.0f}" if lower else f"below {bounds[row - 1]:.0f}", 0.85, muted=True), row, 3)
             self.grade_rows[letter] = (meter, count)
         grades_grid.setColumnStretch(1, 1)
         grades_panel.body.addLayout(grades_grid)
@@ -456,24 +377,10 @@ class DashboardView(QWidget):
     # --- helpers ---------------------------------------------------------------
 
     def _apply_style(self) -> None:
-        palette = self.palette()
-        self._border = _mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.14)
-        accent = _color(self, "accent")
-        self.setStyleSheet(
-            f"""
-            #DashboardContent {{ background: palette(window); }}
-            #Panel {{ background: palette(base); border: 1px solid {self._border.name()}; border-radius: 10px; }}
-            #Panel QLabel {{ background: transparent; }}
-            #Divider {{ background: {self._border.name()}; }}
-            QPushButton#Primary {{
-                background: {accent.name()}; color: {'#10241A' if _is_dark(self) else 'white'};
-                border: none; border-radius: 6px; padding: 7px 16px; font-weight: 600;
-            }}
-            QPushButton#Primary:hover {{ background: {accent.darker(115).name()}; }}
-            """
-        )
+        self._border = style.border(self)
+        self.setStyleSheet("#DashboardContent { background: palette(window); }" + style.card_stylesheet(self))
         for swatch, color in self.legend_swatches:
-            swatch.setStyleSheet(f"background: {_color(self, color).name()}; border-radius: 2px;")
+            swatch.setStyleSheet(f"background: {style.color(self, color).name()}; border-radius: 2px;")
 
     def _show_kpis(self, s: DashboardSummary) -> None:
         value, sub = self.kpis["Active students"]
@@ -491,7 +398,7 @@ class DashboardView(QWidget):
             change = s.week_rate - s.previous_week_rate
             sub.setText(f"{change:+.1f} pts vs last week")
             if abs(change) >= 0.05:
-                _set_color(sub, _color(self, "accent" if change > 0 else "danger"))
+                style.set_color(sub, style.color(self, "accent" if change > 0 else "danger"))
 
         value, sub = self.kpis["Class average"]
         value.setText(_percent(s.class_average))
@@ -504,7 +411,7 @@ class DashboardView(QWidget):
         sub.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         if s.missing_total:
             sub.setText("Scores missing on past assignments")
-            _set_color(sub, _color(self, "warn"))
+            style.set_color(sub, style.color(self, "warn"))
         else:
             sub.setText("Nothing missing")
 
@@ -517,12 +424,12 @@ class DashboardView(QWidget):
         _clear(self.attention_list)
         self.attention_count.setText(f"{len(items)} student{'' if len(items) == 1 else 's'}" if items else "")
         if not items:
-            self.attention_list.addWidget(_label("Nobody needs attention right now.", muted=True))
+            self.attention_list.addWidget(style.label("Nobody needs attention right now.", muted=True))
             return
 
         shown = items if self._attention_expanded else items[:ATTENTION_SHOWN]
         for i, item in enumerate(shown):
-            color, soft = _color(self, _KIND_COLOR[item.kind]), _soft(self, _KIND_COLOR[item.kind])
+            color, soft = style.color(self, _KIND_COLOR[item.kind]), style.soft(self, _KIND_COLOR[item.kind])
             row = QFrame()
             row.setObjectName("AttentionRow")
             if i:
@@ -532,17 +439,17 @@ class DashboardView(QWidget):
             row_layout.setSpacing(12)
 
             initials = (item.student.first_name[:1] + item.student.last_name[:1]).upper()
-            avatar = _label(initials, 0.85, bold=True)
+            avatar = style.label(initials, 0.85, bold=True)
             avatar.setFixedSize(34, 34)
             avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
             avatar.setStyleSheet(f"background: {soft.name(QColor.NameFormat.HexArgb)}; color: {color.name()}; border: none; border-radius: 17px;")
 
             text = QVBoxLayout()
             text.setSpacing(1)
-            text.addWidget(_label(item.student.full_name, bold=True))
-            text.addWidget(_label(item.reason, 0.85, muted=True))
+            text.addWidget(style.label(item.student.full_name, bold=True))
+            text.addWidget(style.label(item.reason, 0.85, muted=True))
 
-            badge = _label(_KIND_LABEL[item.kind], 0.8, bold=True)
+            badge = style.label(_KIND_LABEL[item.kind], 0.8, bold=True)
             badge.setStyleSheet(
                 f"background: {soft.name(QColor.NameFormat.HexArgb)}; color: {color.name()}; border: none; border-radius: 9px; padding: 2px 8px;"
             )
@@ -557,7 +464,7 @@ class DashboardView(QWidget):
                 text = "Show fewer"
             else:
                 text = f"+ {len(items) - ATTENTION_SHOWN} more · Show all"
-            more = _label(f'<a href="toggle">{text}</a>', 0.85, muted=True)
+            more = style.label(f'<a href="toggle">{text}</a>', 0.85, muted=True)
             more.setContentsMargins(0, 8, 0, 0)
             more.linkActivated.connect(lambda _link: self._toggle_attention())
             self.attention_list.addWidget(more)
@@ -566,32 +473,32 @@ class DashboardView(QWidget):
         grid = self.assignments_grid
         _clear(grid)
         if not assignments:
-            grid.addWidget(_label("No assignments yet. They will show up here once you add them.", muted=True), 0, 0)
+            grid.addWidget(style.label("No assignments yet. They will show up here once you add them.", muted=True), 0, 0)
             return
 
         headers = ("Assignment", "Subject", "Date", "Submitted", "Average")
         for col, text in enumerate(headers):
-            caption = _caption(text)
+            caption = style.caption(text)
             if col == 4:
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(caption, 0, col)
         for row, a in enumerate(assignments, start=1):
-            grid.addWidget(_label(a.title, bold=True), row, 0)
-            subject = _label(a.subject, 0.92, muted=True)
+            grid.addWidget(style.label(a.title, bold=True), row, 0)
+            subject = style.label(a.subject, 0.92, muted=True)
             subject.setToolTip(a.category)
             grid.addWidget(subject, row, 1)
-            grid.addWidget(_label(_short_date(a.date), 0.92, muted=True), row, 2)
+            grid.addWidget(style.label(_short_date(a.date), 0.92, muted=True), row, 2)
 
             submitted = QHBoxLayout()
             submitted.setSpacing(8)
             meter = Meter(width=70, height=6)
             meter.set_value(a.submitted, active_students, "accent" if a.submitted >= active_students else "warn")
             submitted.addWidget(meter)
-            submitted.addWidget(_label(f"{a.submitted}/{active_students}", 0.92, muted=True))
+            submitted.addWidget(style.label(f"{a.submitted}/{active_students}", 0.92, muted=True))
             submitted.addStretch()
             grid.addLayout(submitted, row, 3)
 
-            average = _label("—" if a.average_percent is None else f"{a.average_percent:.0f}%", bold=True)
+            average = style.label("—" if a.average_percent is None else f"{a.average_percent:.0f}%", bold=True)
             average.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             grid.addWidget(average, row, 4)
         grid.setColumnStretch(0, 1)
@@ -607,20 +514,20 @@ class DashboardView(QWidget):
         grid = self.subjects_grid
         _clear(grid)
         if not subjects:
-            hint = _label('No subjects yet. Add them in <a href="subjects">Manage classes</a>.', muted=True)
+            hint = style.label('No subjects yet. Add them in <a href="subjects">Manage classes</a>.', muted=True)
             hint.setWordWrap(True)
             hint.linkActivated.connect(lambda _link: self.manage_subjects_requested.emit())
             grid.addWidget(hint, 0, 0)
             return
 
         for col, text in enumerate(("Subject", "Teacher", "Class average", f"Below {LOW_AVERAGE:.0f}%")):
-            caption = _caption(text)
+            caption = style.caption(text)
             if col == 3:
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(caption, 0, col)
         for row, s in enumerate(subjects, start=1):
-            grid.addWidget(_label(s.subject.name, bold=True), row, 0)
-            grid.addWidget(_label(s.subject.teacher or "You", 0.92, muted=True), row, 1)
+            grid.addWidget(style.label(s.subject.name, bold=True), row, 0)
+            grid.addWidget(style.label(s.subject.teacher or "You", 0.92, muted=True), row, 1)
 
             average = QHBoxLayout()
             average.setSpacing(10)
@@ -629,14 +536,14 @@ class DashboardView(QWidget):
                 color = "danger" if s.average < LOW_AVERAGE else "warn" if s.average < 70 else "accent"
                 meter.set_value(s.average, 100, color)
             average.addWidget(meter, stretch=1)
-            value = _label("No scores" if s.average is None else f"{s.average:.0f}% {letter_grade(s.average)}", 0.92, bold=s.average is not None, muted=s.average is None)
+            value = style.label("No scores" if s.average is None else f"{s.average:.0f}% {letter_grade(s.average)}", 0.92, bold=s.average is not None, muted=s.average is None)
             value.setMinimumWidth(64)
             average.addWidget(value)
             grid.addLayout(average, row, 2)
 
-            below = _label(str(s.below_pass) if s.scored else "—", bold=bool(s.below_pass), muted=not s.below_pass)
+            below = style.label(str(s.below_pass) if s.scored else "—", bold=bool(s.below_pass), muted=not s.below_pass)
             below.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if s.below_pass:
-                _set_color(below, _color(self, "danger"))
+                style.set_color(below, style.color(self, "danger"))
             grid.addWidget(below, row, 3)
         grid.setColumnStretch(2, 1)
