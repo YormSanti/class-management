@@ -753,3 +753,67 @@ def test_settings_page_restores_a_backup(
     finally:
         window.close()
         window.deleteLater()
+
+
+def _window_saving_config(conn, roster, tmp_path, path):
+    from app.config import save_config
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    return MainWindow(
+        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+    )
+
+
+def test_settings_page_moves_data(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.config import load_config
+
+    roster.save_class(SchoolClass(name="7B"))
+    config_path = tmp_path / "config.json"
+    new_dir = tmp_path / "usb" / "Classroom"
+    new_dir.mkdir(parents=True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(new_dir))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    window = _window_saving_config(conn, roster, tmp_path, config_path)
+    window.show()
+    closed = []
+    window.settings_view.close_requested.connect(lambda: closed.append(True))
+    try:
+        window.settings_view.move_button.click()
+        copied = sqlite3.connect(new_dir / "classroom.db")
+        assert [r[0] for r in copied.execute("SELECT name FROM classes")] == ["7B"]
+        copied.close()
+        assert load_config(config_path).data_dir == new_dir
+        assert window.config.data_dir == new_dir and closed
+        assert not window.isVisible()  # the app closes to start again on the new folder
+    finally:
+        window.deleteLater()
+
+
+def test_settings_page_switches_to_existing_data_without_overwriting(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.config import load_config
+
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "classroom.db").write_bytes(b"theirs")
+    questions = []
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(other))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    window = _window_saving_config(conn, roster, tmp_path, tmp_path / "config.json")
+    try:
+        window.settings_view.move_data()
+        assert "already has Classroom Manager data" in questions[0]
+        assert (other / "classroom.db").read_bytes() == b"theirs"
+        assert load_config(tmp_path / "config.json").data_dir == other
+    finally:
+        window.close()
+        window.deleteLater()

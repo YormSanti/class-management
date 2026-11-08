@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
         self.attendance_view.class_selected.connect(self.select_class)
         self.settings_view = SettingsView(config, save_config, restore_backup)
         self.settings_view.restored.connect(self._data_replaced)
+        self.settings_view.close_requested.connect(self.close)
         self.settings_view.back_up_requested.connect(self.back_up_now)
         self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
         self.classes_view = ClassesView(roster)

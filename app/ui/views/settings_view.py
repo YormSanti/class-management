@@ -8,6 +8,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -22,12 +23,13 @@ from PySide6.QtWidgets import (
 )
 
 from app import __version__
-from app.config import RANKING_METHODS, AppConfig, settings_dir
+from app.config import DB_FILENAME, RANKING_METHODS, AppConfig, prepare_data_dir, settings_dir
 from app.services.backup import (
     KEEP_AUTO_BACKUPS,
     KEEP_DAILY_BACKUPS,
     BackupError,
     backup_time,
+    copy_database,
     list_auto_backups,
 )
 from app.ui import style
@@ -61,6 +63,7 @@ class SettingsView(QWidget):
     back_up_requested = Signal()
     config_changed = Signal(object)  # AppConfig
     restored = Signal()  # the data was replaced by a backup's
+    close_requested = Signal()  # the data folder changed; the app must start again to use it
 
     def __init__(
         self,
@@ -84,8 +87,13 @@ class SettingsView(QWidget):
         back_up.setObjectName("Primary")
         back_up.setToolTip("Save a copy anywhere, e.g. on a USB stick (Ctrl+Shift+B)")
         back_up.clicked.connect(self.back_up_requested)
+        self.move_button = QPushButton("Move data…")
+        self.move_button.setToolTip("Keep your data in another folder, e.g. a synced or USB drive")
+        self.move_button.clicked.connect(self.move_data)
+        self.move_button.setVisible(save is not None)  # the new folder must be remembered
         data_buttons = QHBoxLayout()
         data_buttons.addWidget(open_data)
+        data_buttons.addWidget(self.move_button)
         data_buttons.addStretch()
         data_buttons.addWidget(back_up)
         data.body.addWidget(style.caption("Data file"))
@@ -226,6 +234,51 @@ class SettingsView(QWidget):
         rows = sum(self.backup_table.rowHeight(i) for i in range(len(shown)))
         self.backup_table.setFixedHeight(header + rows + 2 * self.backup_table.frameWidth())
         self._update_restore()
+
+    def move_data(self) -> None:
+        """Copy the data into another folder (or switch to the data already there), remember
+        that folder and close the app, which then opens on the new folder."""
+        if self.save is None:
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Move data to", str(self.config.data_dir.parent))
+        if not folder:
+            return
+        new_dir = Path(folder)
+        if new_dir.resolve() == self.config.data_dir.resolve():
+            QMessageBox.information(self, "Move data", "Your data is already in that folder.")
+            return
+        target = new_dir / DB_FILENAME
+        if target.exists():
+            question = (
+                f"{new_dir} already has Classroom Manager data.\n\nSwitch to the data in that folder? "
+                "Your current data stays where it is, untouched."
+            )
+        else:
+            question = (
+                f"Copy your data to {new_dir} and use it from there?\n\nThe current data file stays "
+                "where it is as a spare copy. The app closes afterwards; open it again to continue."
+            )
+        if QMessageBox.question(self, "Move data", question) != QMessageBox.StandardButton.Yes:
+            return
+        if not target.exists():
+            try:
+                prepare_data_dir(new_dir)
+                copy_database(self.config.db_path, target)
+            except (OSError, sqlite3.Error) as exc:
+                QMessageBox.warning(self, "Move data", f"Your data could not be copied there:\n{exc}")
+                return
+        changed = replace(self.config, data_dir=new_dir)
+        try:
+            self.save(changed)
+        except OSError as exc:
+            QMessageBox.warning(self, "Move data", f"The new folder could not be remembered:\n{exc}")
+            return
+        self.config = changed
+        self.config_changed.emit(changed)
+        QMessageBox.information(
+            self, "Move data", f"Your data is now kept in\n{new_dir}\n\nThe app will close; open it again to continue."
+        )
+        self.close_requested.emit()
 
     def _selected_backup(self) -> Path | None:
         rows = self.backup_table.selectionModel().selectedRows()
