@@ -143,6 +143,29 @@ class MonthRegister:
         return attendance_rate(self.counts())
 
 
+@dataclass
+class StudentHistory:
+    """Every mark of one student in one register, newest first."""
+
+    student: Student
+    records: list[AttendanceRecord]
+
+    def counts(self) -> dict[str, int]:
+        counts = {s.value: 0 for s in AttendanceStatus}
+        for record in self.records:
+            counts[record.status.value] += 1
+        return counts
+
+    @property
+    def rate(self) -> float | None:
+        return attendance_rate(self.counts())
+
+    @property
+    def not_present(self) -> list[AttendanceRecord]:
+        """The days the student was absent, late or excused."""
+        return [r for r in self.records if r.status is not AttendanceStatus.PRESENT]
+
+
 class AttendanceService:
     def __init__(
         self, attendance: AttendanceRepository, students: StudentRepository, subjects: SubjectRepository
@@ -189,6 +212,13 @@ class AttendanceService:
         days = [day for day in month_days if day.weekday() < 5 or day in marked_days]
         rows = [MonthRow(s, by_student.get(s.id, {})) for s in self.students.list_for_class(class_id)]
         return MonthRegister(class_id, year, month, subject_id, days, rows)
+
+    def student_history(self, student_id: int, subject_id: int | None = None) -> StudentHistory:
+        student = self.students.get(student_id)
+        if student is None:
+            raise AttendanceError("That student no longer exists.")
+        self._check_subject(student.class_id, subject_id)
+        return StudentHistory(student, self.attendance.for_student(student_id, subject_id))
 
     # --- marking -------------------------------------------------------------
 

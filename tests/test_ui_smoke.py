@@ -510,6 +510,33 @@ def test_attendance_undo(window: MainWindow, roster: RosterService, monkeypatch)
     assert view.day == date(2026, 11, 6) and _statuses(view) == [None, None]
 
 
+def test_attendance_history_dialog(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.set_day(date(2026, 11, 5))
+    view._row_widgets[0][0].buttons[AttendanceStatus.PRESENT].click()
+
+    shown = []
+
+    def pick_first_day(dialog):
+        shown.append(dialog)
+        dialog.table.cellDoubleClicked.emit(0, 0)
+        return dialog.result()
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", pick_first_day)
+    view.table.cellDoubleClicked.emit(0, 1)
+    dialog = shown[0]
+    assert dialog.windowTitle() == "Attendance · Grace Hopper"
+    assert dialog.totals_label.text() == "1 present · 1 absent · 0 late · 0 excused · attendance 50%"
+    assert dialog.table.rowCount() == 1 and dialog.table.item(0, 1).text() == "Absent"
+    assert view.day == date(2026, 11, 6)  # the day picked in the dialog opened
+
+
 def test_attendance_warns_about_future_and_weekend_days(window: MainWindow, roster: RosterService):
     from datetime import date, timedelta
 

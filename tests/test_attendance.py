@@ -233,3 +233,29 @@ def test_snapshot_and_restore_undo_a_day(roster: RosterService, conn: sqlite3.Co
     assert (rows[ada].status, rows[ada].note) == (AttendanceStatus.LATE, "Bus")
     assert rows[alan].status is None
     assert service.day_register(class_id, date(2026, 11, 5)).rows[0].status == AttendanceStatus.ABSENT
+
+
+def test_student_history(roster: RosterService, conn: sqlite3.Connection):
+    from app.repositories.attendance_repo import AttendanceRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.models import AttendanceStatus, SchoolClass, Student, Subject
+
+    service = AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    service.mark(ada, date(2026, 11, 2), AttendanceStatus.PRESENT)
+    service.mark(ada, date(2026, 11, 3), AttendanceStatus.ABSENT)
+    service.set_note(ada, date(2026, 11, 3), "Flu")
+    service.mark(ada, date(2026, 11, 4), AttendanceStatus.LATE)
+    service.mark(ada, date(2026, 11, 4), AttendanceStatus.ABSENT, maths)  # another register
+
+    history = service.student_history(ada)
+    assert [r.date.day for r in history.records] == [4, 3, 2]
+    assert [(r.date.day, r.note) for r in history.not_present] == [(4, ""), (3, "Flu")]
+    assert history.counts() == {"present": 1, "absent": 1, "late": 1, "excused": 0}
+    assert round(history.rate) == 67
+    assert [r.date.day for r in service.student_history(ada, maths).records] == [4]
+    with pytest.raises(AttendanceError):
+        service.student_history(999)

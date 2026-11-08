@@ -39,6 +39,7 @@ from app.services.attendance import (
 from app.services.export import write_attendance_csv
 from app.services.roster import RosterService
 from app.ui import style
+from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
@@ -440,10 +441,11 @@ class AttendanceView(QWidget):
         head.setSectionResizeMode(COL_NOTE, QHeaderView.ResizeMode.Stretch)
         head.setSectionResizeMode(COL_RECENT, QHeaderView.ResizeMode.ResizeToContents)
         self.table.installEventFilter(self)
+        self.table.cellDoubleClicked.connect(lambda row, _col: self.show_history(row))
 
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · "
-            "N writes a note · Alt+← → change day",
+            "N writes a note · H or double-click shows a student's history · Alt+← → change day",
             0.85,
             muted=True,
         )
@@ -756,6 +758,19 @@ class AttendanceView(QWidget):
             self.attendance.clear_day(self.class_id, self.day, self.subject_id)
             self.refresh()
 
+    def show_history(self, i: int) -> None:
+        """Show student `i`'s marks in this register; a day picked there opens on the Day tab."""
+        if self.register is None or not 0 <= i < len(self.register.rows):
+            return
+        try:
+            history = self.attendance.student_history(self.register.rows[i].student.id, self.subject_id)
+        except AttendanceError as exc:
+            QMessageBox.information(self, "Attendance", str(exc))
+            return
+        dialog = AttendanceHistoryDialog(history, self.register_combo.currentText(), self)
+        if dialog.exec() and dialog.chosen_day is not None:
+            self.set_day(dialog.chosen_day)
+
     # --- undo ----------------------------------------------------------------
 
     def _remember(self, what: str) -> None:
@@ -815,6 +830,9 @@ class AttendanceView(QWidget):
                     return True
                 if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                     self._set_status(i, None)
+                    return True
+                if key == Qt.Key.Key_H:
+                    self.show_history(i)
                     return True
                 if key in (Qt.Key.Key_N, Qt.Key.Key_Return, Qt.Key.Key_Enter):
                     note = self._row_widgets[i][1]
