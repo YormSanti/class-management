@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.attendance_view = AttendanceView(attendance, roster)
+        self.attendance_view.class_selected.connect(self.select_class)
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)

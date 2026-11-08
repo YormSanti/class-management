@@ -315,7 +315,10 @@ class AttendanceView(QWidget):
 
     Every click is saved straight away. The register is the daily (homeroom) one
     unless the teacher picks a subject; the choice is remembered per class.
+    The class picker switches the current class for the whole window.
     """
+
+    class_selected = Signal(int)
 
     def __init__(self, attendance: AttendanceService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -335,6 +338,12 @@ class AttendanceView(QWidget):
         titles.addWidget(self.date_label)
         titles.addWidget(self.title_label)
 
+        self.class_combo = QComboBox()
+        self.class_combo.setMinimumWidth(160)
+        self.class_combo.activated.connect(self._class_picked)
+        class_label = QLabel("C&lass")
+        class_label.setBuddy(self.class_combo)
+
         self.register_combo = QComboBox()
         self.register_combo.setMinimumWidth(180)
         self.register_combo.currentIndexChanged.connect(self._register_changed)
@@ -344,6 +353,9 @@ class AttendanceView(QWidget):
         header = QHBoxLayout()
         header.addLayout(titles)
         header.addStretch()
+        header.addWidget(class_label, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.class_combo, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addSpacing(12)
         header.addWidget(register_label, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.register_combo, alignment=Qt.AlignmentFlag.AlignBottom)
 
@@ -499,6 +511,7 @@ class AttendanceView(QWidget):
 
     def set_class(self, class_id: int | None) -> None:
         self.class_id = class_id
+        self._fill_classes()
         self._fill_registers()
         self.refresh()
 
@@ -512,6 +525,25 @@ class AttendanceView(QWidget):
     def open_day(self, day: date) -> None:
         self.tabs.setCurrentIndex(0)
         self.set_day(day)
+
+    def _fill_classes(self) -> None:
+        """Every class, newest school year first, then by name."""
+        terms = self.roster.list_terms()
+        classes = sorted(
+            self.roster.list_classes(),
+            key=lambda c: terms.index(c.term) if c.term in terms else len(terms),
+        )  # stable, so classes stay sorted by name within a year
+        self.class_combo.blockSignals(True)
+        self.class_combo.clear()
+        for school_class in classes:
+            self.class_combo.addItem(school_class.display_name, school_class.id)
+        self.class_combo.setCurrentIndex(self.class_combo.findData(self.class_id))
+        self.class_combo.blockSignals(False)
+
+    def _class_picked(self) -> None:
+        class_id = self.class_combo.currentData()
+        if class_id is not None and class_id != self.class_id:
+            self.class_selected.emit(class_id)
 
     def _fill_registers(self) -> None:
         wanted = self._subject_for_class.get(self.class_id or 0)

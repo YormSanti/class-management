@@ -433,6 +433,26 @@ def test_attendance_day_buttons_skip_weekends(window: MainWindow, roster: Roster
     assert view.day == date.today() and not view.today_button.isEnabled()
 
 
+def test_attendance_class_picker_switches_class(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    older = roster.save_class(SchoolClass(name="6A", term="2025-2026")).id
+    newer = roster.save_class(SchoolClass(name="8C", term="2026-2027")).id
+    roster.save_student(Student(class_id=newer, first_name="Alan", last_name="Turing"))
+    window.select_class(window.class_id)  # reload after adding classes
+
+    names = [view.class_combo.itemText(i) for i in range(view.class_combo.count())]
+    assert names == ["8C (2026-2027)", "6A (2025-2026)", "7B"]  # newest year first
+    assert view.class_combo.currentText() == "7B"
+
+    view.class_combo.setCurrentIndex(0)
+    view.class_combo.activated.emit(0)
+    assert window.class_id == newer
+    assert view.title_label.text() == "Attendance · 8C"
+    assert view.table.rowCount() == 1
+    assert window.windowTitle() == "Classroom Manager — 8C (2026-2027)"
+    assert older in [view.class_combo.itemData(i) for i in range(view.class_combo.count())]
+
+
 def test_attendance_month_tab(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
     from datetime import date
 
