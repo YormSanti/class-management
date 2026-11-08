@@ -244,3 +244,34 @@ def test_low_grades_name_the_subject(service, roster, conn, class_id, maths):
     # Ada's overall average is 70%, but she is failing Science.
     reasons = {i.student.first_name: i.reason for i in service.summary(class_id, TODAY).attention}
     assert reasons == {"Ada": "Science average is 50%", "Alan": "Below 60% in 2 subjects"}
+
+
+def test_today_register_status():
+    from app.services.dashboard import today_register
+
+    friday, saturday = date(2026, 11, 6), date(2026, 11, 7)
+    assert today_register(saturday, {}, 25) is None
+    assert today_register(friday, {}, 0) is None
+    assert today_register(friday, {}, 25) == ("Today's register hasn't been taken yet.", "warn")
+    assert today_register(friday, {"present": 10, "late": 2}, 25) == (
+        "Today's register: 12 of 25 students marked.", "warn",
+    )
+    assert today_register(friday, {"present": 23, "absent": 1, "late": 1}, 25) == (
+        "Today's register is done: 23 present · 1 late · 1 absent.", "accent",
+    )
+
+
+def test_summary_has_todays_daily_register(service, roster, conn, class_id, maths):
+    from app.models import AttendanceStatus, Student
+    from app.repositories.attendance_repo import AttendanceRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.attendance import AttendanceService
+
+    attendance = AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    student = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    today = date(2026, 11, 6)
+    attendance.mark(student, today, AttendanceStatus.LATE)
+    attendance.mark(student, today, AttendanceStatus.ABSENT, maths)  # a subject's register doesn't count
+    attendance.mark(student, date(2026, 11, 5), AttendanceStatus.ABSENT)
+    assert service.summary(class_id, today).today_counts == {"late": 1}

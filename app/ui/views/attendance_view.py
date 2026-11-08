@@ -1,9 +1,10 @@
+import calendar
 import re
 from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.models import AttendanceStatus
+from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
     UNMARKED,
     AttendanceError,
@@ -33,15 +34,19 @@ from app.services.attendance import (
     DayRegister,
     MonthRegister,
     RegisterRow,
+    day_warning,
     school_day,
 )
-from app.services.export import write_attendance_csv
+from app.services.export import attendance_month_html, write_attendance_csv, write_attendance_summary_csv
 from app.services.roster import RosterService
 from app.ui import style
+from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+from app.ui.dialogs.period_dialog import PeriodDialog
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
 COL_NO, COL_NAME, COL_STATUS, COL_NOTE, COL_RECENT = range(5)
+UNDO_LIMIT = 50
 
 
 def _fill(widget: QWidget, name: str) -> QColor:
@@ -117,6 +122,12 @@ class MonthView(QWidget):
         self.export_button = QPushButton("Export CSV…")
         self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
+        self.export_period_button = QPushButton("Export period…")
+        self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
+        self.export_period_button.clicked.connect(self.export_period)
+        self.pdf_button = QPushButton("Save PDF…")
+        self.pdf_button.setToolTip("Save this month as a PDF to print or share")
+        self.pdf_button.clicked.connect(self.save_pdf)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(4)
@@ -137,6 +148,8 @@ class MonthView(QWidget):
             toolbar.addWidget(style.label(text, 0.9, muted=True))
             toolbar.addSpacing(8)
         toolbar.addStretch()
+        toolbar.addWidget(self.pdf_button)
+        toolbar.addWidget(self.export_period_button)
         toolbar.addWidget(self.export_button)
 
         self.table = QTableWidget()
@@ -293,6 +306,63 @@ class MonthView(QWidget):
             return
         QMessageBox.information(self, "Export attendance", f"Saved {first:%B} {first.year} to\n{path}")
 
+    def save_pdf(self) -> None:
+        """Save the month register as a landscape A4 PDF, ready to print."""
+        if self.register is None:
+            return
+        first = date(self.year, self.month, 1)
+        title = f"{self.file_label} · attendance {first:%B} {first.year}"
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Save PDF", str(Path.home() / f"{safe_name}.pdf"), "PDF files (*.pdf)"
+        )
+        if not path:
+            return
+        path = Path(path) if path.lower().endswith(".pdf") else Path(path + ".pdf")
+        writer = QPdfWriter(str(path))
+        writer.setTitle(title)
+        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        writer.setPageOrientation(QPageLayout.Orientation.Landscape)
+        document = QTextDocument()
+        document.setHtml(attendance_month_html(self.register, title))
+        document.print_(writer)
+        del writer  # finishes the file
+        if not path.exists() or path.stat().st_size == 0:
+            QMessageBox.warning(self, "Save PDF", f"The PDF could not be saved to\n{path}")
+            return
+        QMessageBox.information(self, "Save PDF", f"Saved {first:%B} {first.year} to\n{path}")
+
+    def export_period(self) -> None:
+        """Ask for the first and last day, then save each student's totals for them."""
+        if self.class_id is None:
+            return
+        first = date(self.year, self.month, 1)
+        last = date(self.year, self.month, calendar.monthrange(self.year, self.month)[1])
+        dialog = PeriodDialog("Export attendance for a period", first, last, self)
+        if not dialog.exec():
+            return
+        start, end = dialog.start, dialog.end
+        try:
+            summary = self.attendance.period_summary(self.class_id, start, end, self.subject_id)
+        except AttendanceError as exc:
+            QMessageBox.information(self, "Export attendance", str(exc))
+            return
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {start} to {end}")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
+        try:
+            write_attendance_summary_csv(path, summary)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
+            return
+        QMessageBox.information(
+            self, "Export attendance", f"Saved {summary.recorded_days} recorded days to\n{path}"
+        )
+
     def apply_style(self) -> None:
         line = style.border(self).name()
         # Lines in the background colour keep the coloured cells apart.
@@ -329,6 +399,8 @@ class AttendanceView(QWidget):
         self._subject_for_class: dict[int, int | None] = {}
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
         self._month_follows: date | None = None
+        # (day, subject id, register before the change, what the change was), newest last
+        self._undo: list[tuple[date, int | None, list[AttendanceRecord], str]] = []
 
         # --- header ---
         self.date_label = style.caption("")
@@ -386,6 +458,10 @@ class AttendanceView(QWidget):
         date_row.addStretch()
         date_row.addWidget(style.label("Every change is saved as you go", 0.9, muted=True))
 
+        self.day_notice = style.label("", bold=True)
+        self.day_notice.setWordWrap(True)
+        self.day_notice.hide()
+
         # totals
         totals = QFrame()
         totals.setObjectName("Panel")
@@ -404,6 +480,8 @@ class AttendanceView(QWidget):
 
         # actions
         self.status_label = style.label("", bold=True)
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.clicked.connect(self.undo)
         self.clear_button = QPushButton("Clear the day…")
         self.clear_button.clicked.connect(self.clear_day)
         self.mark_rest_button = QPushButton("Mark the rest present")
@@ -411,6 +489,7 @@ class AttendanceView(QWidget):
         self.mark_rest_button.clicked.connect(self.mark_rest_present)
         actions = QHBoxLayout()
         actions.addWidget(self.status_label, stretch=1)
+        actions.addWidget(self.undo_button)
         actions.addWidget(self.clear_button)
         actions.addWidget(self.mark_rest_button)
 
@@ -429,10 +508,11 @@ class AttendanceView(QWidget):
         head.setSectionResizeMode(COL_NOTE, QHeaderView.ResizeMode.Stretch)
         head.setSectionResizeMode(COL_RECENT, QHeaderView.ResizeMode.ResizeToContents)
         self.table.installEventFilter(self)
+        self.table.cellDoubleClicked.connect(lambda row, _col: self.show_history(row))
 
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · "
-            "N writes a note · Alt+← → change day",
+            "N writes a note · H or double-click shows a student's history · Alt+← → change day",
             0.85,
             muted=True,
         )
@@ -443,6 +523,7 @@ class AttendanceView(QWidget):
         day_layout.setContentsMargins(0, 12, 0, 0)
         day_layout.setSpacing(12)
         day_layout.addLayout(date_row)
+        day_layout.addWidget(self.day_notice)
         day_layout.addWidget(totals)
         day_layout.addLayout(actions)
         day_layout.addWidget(self.table, stretch=1)
@@ -477,6 +558,10 @@ class AttendanceView(QWidget):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(lambda step=step: self.set_day(school_day(self.day, step)))
+        undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
+        undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        undo.activated.connect(self.undo)
+        self._update_undo()
 
         self._apply_style()
 
@@ -510,6 +595,9 @@ class AttendanceView(QWidget):
         return self.register_combo.currentData()
 
     def set_class(self, class_id: int | None) -> None:
+        if class_id != self.class_id:
+            self._undo.clear()  # undo stays within one class
+            self._update_undo()
         self.class_id = class_id
         self._fill_classes()
         self._fill_registers()
@@ -573,6 +661,10 @@ class AttendanceView(QWidget):
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
         self.title_label.setText(f"Attendance · {school_class.name}")
         self.today_button.setEnabled(day != date.today())
+        warning = day_warning(day, date.today())
+        self.day_notice.setText(warning or "")
+        self.day_notice.setVisible(warning is not None)
+        style.set_color(self.day_notice, _fill(self, "warn"))
         file_label = " ".join(x for x in (school_class.display_name, self.subject_id and self.register_combo.currentText()) if x)
         if day != self._month_follows:  # the month follows the day, until changed by hand
             self._month_follows = day
@@ -683,12 +775,17 @@ class AttendanceView(QWidget):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
+        if status == row.status:
+            return
+        name = row.student.full_name
+        self._remember(f"clear {name}" if status is None else f"mark {name} {status.value}")
         try:
             if status is None:
                 self.attendance.clear(row.student.id, self.day, self.subject_id)
             else:
                 self.attendance.mark(row.student.id, self.day, status, self.subject_id)
         except AttendanceError as exc:
+            self._forget()
             QMessageBox.information(self, "Attendance", str(exc))
         self.refresh()
 
@@ -699,15 +796,18 @@ class AttendanceView(QWidget):
         text = self._row_widgets[i][1].text().strip()
         if row.status is None or text == row.note:
             return
+        self._remember(f"note for {row.student.full_name}")
         try:
             self.attendance.set_note(row.student.id, self.day, text, self.subject_id)
         except AttendanceError as exc:
+            self._forget()
             QMessageBox.information(self, "Attendance", str(exc))
         row.note = text  # editingFinished can fire twice (Return, then losing focus)
 
     def mark_rest_present(self) -> None:
         if self.class_id is None:
             return
+        self._remember("mark the rest present")
         self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
         self.refresh()
 
@@ -721,8 +821,69 @@ class AttendanceView(QWidget):
             f"in the {self.register_combo.currentText()} register?",
         )
         if answer == QMessageBox.StandardButton.Yes:
+            self._remember("clear the day")
             self.attendance.clear_day(self.class_id, self.day, self.subject_id)
             self.refresh()
+
+    def show_history(self, i: int) -> None:
+        """Show student `i`'s marks in this register; a day picked there opens on the Day tab."""
+        if self.register is None or not 0 <= i < len(self.register.rows):
+            return
+        try:
+            history = self.attendance.student_history(self.register.rows[i].student.id, self.subject_id)
+        except AttendanceError as exc:
+            QMessageBox.information(self, "Attendance", str(exc))
+            return
+        dialog = AttendanceHistoryDialog(history, self.register_combo.currentText(), self)
+        if dialog.exec() and dialog.chosen_day is not None:
+            self.set_day(dialog.chosen_day)
+
+    # --- undo ----------------------------------------------------------------
+
+    def _remember(self, what: str) -> None:
+        """Keep the register as it is now, before a change, so undo() can bring it back."""
+        if self.class_id is None:
+            return
+        before = self.attendance.snapshot(self.class_id, self.day, self.subject_id)
+        self._undo.append((self.day, self.subject_id, before, what))
+        del self._undo[:-UNDO_LIMIT]
+        self._update_undo()
+
+    def clear_undo(self) -> None:
+        self._undo.clear()
+        self._update_undo()
+
+    def _forget(self) -> None:
+        """Drop the last remembered register, when the change it was kept for failed."""
+        if self._undo:
+            self._undo.pop()
+        self._update_undo()
+
+    def undo(self) -> None:
+        """Undo the newest change, showing the day and register it was made in."""
+        if not self._undo or self.class_id is None:
+            return
+        day, subject_id, before, _what = self._undo.pop()
+        self._update_undo()
+        if subject_id != self.subject_id:
+            index = self.register_combo.findData(subject_id)
+            if index < 0:  # the subject was deleted since
+                self.undo()
+                return
+            self.register_combo.setCurrentIndex(index)
+        if day != self.day:
+            self.set_day(day)
+        try:
+            self.attendance.restore(self.class_id, day, subject_id, before)
+        except AttendanceError as exc:
+            QMessageBox.information(self, "Undo", str(exc))
+        self.refresh()
+
+    def _update_undo(self) -> None:
+        self.undo_button.setEnabled(bool(self._undo))
+        keys = QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText)
+        what = f": {self._undo[-1][3]}" if self._undo else ""
+        self.undo_button.setToolTip(f"Undo{what} ({keys})")
 
     # --- keyboard ------------------------------------------------------------
 
@@ -740,6 +901,9 @@ class AttendanceView(QWidget):
                     return True
                 if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                     self._set_status(i, None)
+                    return True
+                if key == Qt.Key.Key_H:
+                    self.show_history(i)
                     return True
                 if key in (Qt.Key.Key_N, Qt.Key.Key_Return, Qt.Key.Key_Enter):
                     note = self._row_widgets[i][1]

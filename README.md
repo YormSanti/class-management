@@ -15,9 +15,11 @@ python main.py
 On first launch you choose where to keep the data (default: your user app-data folder,
 e.g. `C:\Users\<name>\AppData\Local\ClassroomManager\`). The choice is saved in
 `config.json` in the app's settings folder; delete that file to see the setup dialog again.
+To keep the data somewhere else later, use **Settings → Move data…**.
 
 Each start copies the database to `<data folder>/backups/`. The 10 newest copies are kept,
 plus the last copy of each of the 30 most recent days.
+To go back to one, select it on the Settings page and press **Restore…**.
 
 ## Test
 

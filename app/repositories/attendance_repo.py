@@ -78,6 +78,14 @@ class AttendanceRepository:
             )
         return cur.rowcount
 
+    def replace_day(
+        self, class_id: int, day: date, subject_id: int | None, records: list[AttendanceRecord]
+    ) -> None:
+        """Make the day's register for the class's active students exactly `records`."""
+        with transaction(self.conn):
+            self.delete_day(class_id, day, subject_id)
+            self.save_many(records)
+
     def for_period(
         self, class_id: int, start: date, end: date, subject_id: int | None
     ) -> list[AttendanceRecord]:
@@ -91,6 +99,14 @@ class AttendanceRepository:
             ORDER BY a.date, a.student_id
             """,
             (class_id, start.isoformat(), end.isoformat(), subject_id),
+        )
+        return [_from_row(r) for r in rows]
+
+    def for_student(self, student_id: int, subject_id: int | None) -> list[AttendanceRecord]:
+        """Every record of one student in one register, newest first."""
+        rows = self.conn.execute(
+            f"SELECT * FROM attendance WHERE student_id = ? AND {_SAME_REGISTER} ORDER BY date DESC",
+            (student_id, subject_id),
         )
         return [_from_row(r) for r in rows]
 

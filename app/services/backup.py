@@ -7,12 +7,18 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from app.db.connection import SCHEMA_VERSION, find_problems, init_db
+
 AUTO_BACKUP_PREFIX = "classroom_"
 TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 KEEP_AUTO_BACKUPS = 10  # the newest ones, whatever their date
 KEEP_DAILY_BACKUPS = 30  # plus the last one of each of this many days
 
 log = logging.getLogger(__name__)
+
+
+class BackupError(Exception):
+    """A user-facing error; the message is safe to show in the UI."""
 
 
 def copy_database(src: Path, dest: Path) -> None:
@@ -112,3 +118,36 @@ def auto_backup(
     prune_auto_backups(backup_dir, keep, keep_days)
     log.info("Automatic backup written to %s", dest)
     return dest
+
+
+def restore_backup(backup: Path, conn: sqlite3.Connection, db_path: Path, backup_dir: Path) -> Path:
+    """Replace the data in the open database `conn` (the file `db_path`) with `backup`.
+
+    The current data is first saved as a new automatic backup, returned, so the restore
+    can itself be undone. Nothing is pruned, so the backup being restored stays put.
+    Raises BackupError if the backup is damaged or from a newer version of the app.
+    """
+    if problems := find_problems(backup):
+        raise BackupError(f"This backup is damaged and can't be restored:\n{problems[0]}")
+    check = sqlite3.connect(backup.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        version = check.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        check.close()
+    if version > SCHEMA_VERSION:
+        raise BackupError("This backup was made by a newer version of the app.")
+
+    stamp = datetime.now().strftime(TIMESTAMP_FORMAT)
+    safety = backup_dir / f"{AUTO_BACKUP_PREFIX}{stamp}.db"
+    if safety.exists() or safety == backup:
+        safety = safety.with_name(f"{AUTO_BACKUP_PREFIX}{stamp}-before-restore.db")
+    copy_database(db_path, safety)
+
+    source = sqlite3.connect(backup)
+    try:
+        source.backup(conn)
+    finally:
+        source.close()
+    init_db(conn)  # an older backup is brought up to date
+    log.info("Restored %s (current data saved to %s)", backup, safety)
+    return safety

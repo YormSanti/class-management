@@ -52,9 +52,11 @@ class MainWindow(QMainWindow):
         config: AppConfig,
         settings: QSettings | None = None,
         save_config: Callable[[AppConfig], None] | None = None,
+        restore_backup: Callable[[Path], Path] | None = None,
     ):
         """`settings` keeps window state between sessions; None remembers nothing.
-        `save_config` writes changes made on the Settings page; None keeps them for this session."""
+        `save_config` writes changes made on the Settings page; None keeps them for this session.
+        `restore_backup` replaces the data with a backup's (see SettingsView); None hides Restore."""
         super().__init__()
         self.roster = roster
         self.config = config
@@ -71,7 +73,9 @@ class MainWindow(QMainWindow):
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
-        self.settings_view = SettingsView(config, save_config)
+        self.settings_view = SettingsView(config, save_config, restore_backup)
+        self.settings_view.restored.connect(self._data_replaced)
+        self.settings_view.close_requested.connect(self.close)
         self.settings_view.back_up_requested.connect(self.back_up_now)
         self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
         self.classes_view = ClassesView(roster)
@@ -142,6 +146,8 @@ class MainWindow(QMainWindow):
         self.select_class(saved_class)
         if saved_subject is not None:
             self.select_subject(saved_subject)
+        if self.settings is not None:
+            self.show_page(str(self.settings.value("session/page", "")))  # last session's page
 
     # --- menus ---------------------------------------------------------------
 
@@ -217,6 +223,7 @@ class MainWindow(QMainWindow):
         if self.settings is not None:
             self.settings.setValue("window/geometry", self.saveGeometry())
             self.settings.setValue("window/splitter", self.splitter.saveState())
+            self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
             self.settings.sync()
         super().closeEvent(event)
 
@@ -245,6 +252,11 @@ class MainWindow(QMainWindow):
         """Open Manage classes on the Subjects tab of the current class."""
         self.show_page("Manage classes")
         self.classes_view.tabs.setCurrentWidget(self.classes_view.subject_box)
+
+    def _data_replaced(self) -> None:
+        """Reload every page after the whole database was swapped, e.g. by a restore."""
+        self.attendance_view.clear_undo()  # its snapshots belong to the old data
+        self.select_class(self.class_id)
 
     # --- classes -------------------------------------------------------------
 

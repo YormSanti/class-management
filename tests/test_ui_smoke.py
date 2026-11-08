@@ -271,6 +271,28 @@ def test_window_size_and_splitter_are_remembered(
     second.close()
 
 
+def test_last_page_is_remembered(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.show_page("Settings")
+    first.close()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.stack.currentWidget() is second.settings_view
+    assert second.nav_bottom.selectedItems()
+    second.close()
+
+    settings.setValue("session/page", "No such page")  # e.g. a page renamed in a later version
+    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert third.stack.currentWidget() is third.dashboard_view
+    third.close()
+
+
 def test_class_and_subject_are_remembered(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ):
@@ -456,6 +478,77 @@ def test_attendance_day_buttons_skip_weekends(window: MainWindow, roster: Roster
     assert view.day == date.today() and not view.today_button.isEnabled()
 
 
+def test_attendance_undo(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    assert not view.undo_button.isEnabled()
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    note = view._row_widgets[0][1]
+    note.setText("Dentist")
+    note.editingFinished.emit()
+    view.mark_rest_button.click()
+    assert view.undo_button.toolTip().startswith("Undo: mark the rest present")
+
+    view.undo()
+    assert _statuses(view) == ["absent", None]
+    view.undo()
+    assert view.register.rows[0].note == ""
+    view.undo()
+    assert _statuses(view) == [None, None] and not view.undo_button.isEnabled()
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    view.mark_rest_button.click()
+    view.set_day(date(2026, 11, 9))  # undo goes back to the day the change was made
+    view.clear_day()  # nothing to clear on the 9th, but it is remembered all the same
+    view.undo()
+    view.undo()
+    assert view.day == date(2026, 11, 6) and _statuses(view) == [None, None]
+
+
+def test_attendance_history_dialog(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.set_day(date(2026, 11, 5))
+    view._row_widgets[0][0].buttons[AttendanceStatus.PRESENT].click()
+
+    shown = []
+
+    def pick_first_day(dialog):
+        shown.append(dialog)
+        dialog.table.cellDoubleClicked.emit(0, 0)
+        return dialog.result()
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", pick_first_day)
+    view.table.cellDoubleClicked.emit(0, 1)
+    dialog = shown[0]
+    assert dialog.windowTitle() == "Attendance · Grace Hopper"
+    assert dialog.totals_label.text() == "1 present · 1 absent · 0 late · 0 excused · attendance 50%"
+    assert dialog.table.rowCount() == 1 and dialog.table.item(0, 1).text() == "Absent"
+    assert view.day == date(2026, 11, 6)  # the day picked in the dialog opened
+
+
+def test_attendance_warns_about_future_and_weekend_days(window: MainWindow, roster: RosterService):
+    from datetime import date, timedelta
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026, in the past
+    assert view.day_notice.isHidden()
+    view.set_day(date(2026, 11, 7))
+    assert not view.day_notice.isHidden()
+    assert view.day_notice.text().startswith("Saturday is a weekend day")
+    view.set_day(date.today() + timedelta(days=1))
+    assert view.day_notice.text().startswith("This day is in the future (tomorrow)")
+
+
 def test_attendance_class_picker_switches_class(window: MainWindow, roster: RosterService):
     view = _attendance_page(window, roster)
     older = roster.save_class(SchoolClass(name="6A", term="2025-2026")).id
@@ -570,3 +663,209 @@ def test_settings_page_keeps_old_choice_when_saving_fails(
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_attendance_export_period(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    import csv
+    from datetime import date
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.mark_rest_button.click()
+    month = view.month_view
+    assert (month.year, month.month) == (2026, 11)
+
+    def pick_period(dialog):
+        assert (dialog.start, dialog.end) == (date(2026, 11, 1), date(2026, 11, 30))  # the shown month
+        dialog.end_edit.setDate(dialog.start_edit.date().addDays(-1))
+        assert not dialog.buttons.buttons()[0].isEnabled()  # the end is before the start
+        dialog.start_edit.setDate(dialog.start_edit.date().addMonths(-2))  # 1 September
+        dialog.end_edit.setDate(dialog.end_edit.date().addMonths(1))  # 30 November
+        return True
+
+    saved = tmp_path / "term.csv"
+    monkeypatch.setattr(PeriodDialog, "exec", pick_period)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    month.export_period()
+    with saved.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[1][1:] == ["Hopper", "Grace", "0", "0", "1", "0", "0", "0"]
+    assert rows[2][1:] == ["Lovelace", "Ada", "1", "0", "0", "0", "0", "100"]
+
+
+def test_attendance_month_saves_pdf(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    view = _attendance_page(window, roster)
+    view.mark_rest_button.click()
+    saved = tmp_path / "november"
+    shown = []
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: shown.append(args[2]))
+    view.month_view.save_pdf()
+    pdf = tmp_path / "november.pdf"  # the extension is added
+    assert pdf.read_bytes().startswith(b"%PDF")
+    assert shown and shown[0].startswith("Saved November 2026")
+
+
+def test_settings_page_restores_a_backup(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, db_path: Path, tmp_path: Path, monkeypatch
+):
+    from datetime import datetime
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services.backup import auto_backup, restore_backup
+
+    config = AppConfig(data_dir=tmp_path)
+    seventh = roster.save_class(SchoolClass(name="7B")).id
+    auto_backup(db_path, config.backup_dir, now=datetime(2026, 11, 2, 8, 0))
+    eighth = roster.save_class(SchoolClass(name="8C")).id
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(
+        roster, dashboard, _attendance(conn), config,
+        restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+    )  # fmt: skip
+    questions, infos = [], []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    try:
+        window.select_class(eighth)
+        view = window.settings_view
+        window.show_page("Settings")
+        assert not view.restore_button.isEnabled()
+        view.backup_table.selectRow(0)
+        assert view.restore_button.isEnabled()
+        view.restore_button.click()
+
+        assert "Monday 2 November 2026 at 08:00" in questions[0]
+        assert [c.name for c in roster.list_classes()] == ["7B"]
+        assert window.class_id == seventh  # 8C is gone, so the window falls back to 7B
+        assert view.backup_table.rowCount() == 2  # the data from before the restore was kept
+        assert infos and infos[0].startswith("Your data is back as it was")
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def _window_saving_config(conn, roster, tmp_path, path):
+    from app.config import save_config
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    return MainWindow(
+        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+    )
+
+
+def test_settings_page_moves_data(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.config import load_config
+
+    roster.save_class(SchoolClass(name="7B"))
+    config_path = tmp_path / "config.json"
+    new_dir = tmp_path / "usb" / "Classroom"
+    new_dir.mkdir(parents=True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(new_dir))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    window = _window_saving_config(conn, roster, tmp_path, config_path)
+    window.show()
+    closed = []
+    window.settings_view.close_requested.connect(lambda: closed.append(True))
+    try:
+        window.settings_view.move_button.click()
+        copied = sqlite3.connect(new_dir / "classroom.db")
+        assert [r[0] for r in copied.execute("SELECT name FROM classes")] == ["7B"]
+        copied.close()
+        assert load_config(config_path).data_dir == new_dir
+        assert window.config.data_dir == new_dir and closed
+        assert not window.isVisible()  # the app closes to start again on the new folder
+    finally:
+        window.deleteLater()
+
+
+def test_settings_page_switches_to_existing_data_without_overwriting(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.config import load_config
+
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "classroom.db").write_bytes(b"theirs")
+    questions = []
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(other))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    window = _window_saving_config(conn, roster, tmp_path, tmp_path / "config.json")
+    try:
+        window.settings_view.move_data()
+        assert "already has Classroom Manager data" in questions[0]
+        assert (other / "classroom.db").read_bytes() == b"theirs"
+        assert load_config(tmp_path / "config.json").data_dir == other
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_settings_page_switches_theme(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from app.config import load_config
+    from app.ui import style
+
+    config_path = tmp_path / "config.json"
+    window = _window_saving_config(conn, roster, tmp_path, config_path)
+    window.show()
+    view = window.settings_view
+    try:
+        assert view.theme_buttons["system"].isChecked()
+        view.theme_buttons["dark"].click()
+        qapp.processEvents()  # widgets get the new palette from the event loop
+        assert style.is_dark(window.attendance_view)
+        assert qapp.style().name().lower() == "fusion"
+        assert load_config(config_path).theme == "dark"
+        view.theme_buttons["light"].click()
+        qapp.processEvents()
+        assert not style.is_dark(window.attendance_view)
+    finally:
+        view.theme_buttons["system"].click()  # leave the app as other tests expect it
+        qapp.processEvents()
+        window.close()
+        window.deleteLater()
+
+
+def test_dashboard_says_whether_todays_register_is_taken(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+    from app.ui.views import dashboard_view
+
+    class Friday(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 6)
+
+    monkeypatch.setattr(dashboard_view, "date", Friday)
+    view = _attendance_page(window, roster)  # on Friday 6 November 2026
+    dashboard = window.dashboard_view
+    dashboard.refresh()
+    assert dashboard.today_label.text() == "Today's register hasn't been taken yet."
+    view._row_widgets[0][0].buttons[AttendanceStatus.LATE].click()
+    dashboard.refresh()
+    assert dashboard.today_label.text() == "Today's register: 1 of 2 students marked."
+    view.mark_rest_button.click()
+    dashboard.refresh()
+    assert dashboard.today_label.text() == "Today's register is done: 1 present · 1 late."
+    assert not dashboard.today_label.isHidden()

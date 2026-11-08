@@ -12,6 +12,7 @@ from app.services.attendance import (
     AttendanceError,
     AttendanceService,
     RegisterRow,
+    day_warning,
     school_day,
 )
 from app.services.roster import RosterService
@@ -197,3 +198,89 @@ def test_month_register_keeps_registers_apart(attendance, roster, klass):
     attendance.mark(ada, date(2026, 10, 1), A, subject_id=maths)
     assert attendance.month_register(klass, 2026, 10).recorded_days == []
     assert attendance.month_register(klass, 2026, 10, maths).rows[0].statuses == {date(2026, 10, 1): A}
+
+
+def test_day_warning_for_future_and_weekend_days():
+    friday = date(2026, 11, 6)
+    assert day_warning(friday, friday) is None
+    assert day_warning(date(2026, 11, 2), friday) is None  # an earlier weekday
+    assert day_warning(date(2026, 11, 7), friday) == "This day is in the future (tomorrow). Check the date before marking."
+    assert day_warning(date(2026, 11, 9), friday).startswith("This day is in the future (in 3 days)")
+    assert day_warning(date(2026, 10, 31), friday) == "Saturday is a weekend day. Check the date before marking."
+
+
+def test_snapshot_and_restore_undo_a_day(roster: RosterService, conn: sqlite3.Connection):
+    from app.repositories.attendance_repo import AttendanceRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.models import AttendanceStatus, SchoolClass, Student
+
+    service = AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing")).id
+    day = date(2026, 11, 6)
+    service.mark(ada, day, AttendanceStatus.LATE)
+    service.set_note(ada, day, "Bus")
+    before = service.snapshot(class_id, day)
+
+    service.mark_unmarked(class_id, day)
+    service.mark(ada, day, AttendanceStatus.ABSENT)
+    service.mark(ada, date(2026, 11, 5), AttendanceStatus.ABSENT)  # another day is left alone
+    service.restore(class_id, day, None, before)
+
+    rows = {r.student.id: r for r in service.day_register(class_id, day).rows}
+    assert (rows[ada].status, rows[ada].note) == (AttendanceStatus.LATE, "Bus")
+    assert rows[alan].status is None
+    assert service.day_register(class_id, date(2026, 11, 5)).rows[0].status == AttendanceStatus.ABSENT
+
+
+def test_student_history(roster: RosterService, conn: sqlite3.Connection):
+    from app.repositories.attendance_repo import AttendanceRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.models import AttendanceStatus, SchoolClass, Student, Subject
+
+    service = AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    service.mark(ada, date(2026, 11, 2), AttendanceStatus.PRESENT)
+    service.mark(ada, date(2026, 11, 3), AttendanceStatus.ABSENT)
+    service.set_note(ada, date(2026, 11, 3), "Flu")
+    service.mark(ada, date(2026, 11, 4), AttendanceStatus.LATE)
+    service.mark(ada, date(2026, 11, 4), AttendanceStatus.ABSENT, maths)  # another register
+
+    history = service.student_history(ada)
+    assert [r.date.day for r in history.records] == [4, 3, 2]
+    assert [(r.date.day, r.note) for r in history.not_present] == [(4, ""), (3, "Flu")]
+    assert history.counts() == {"present": 1, "absent": 1, "late": 1, "excused": 0}
+    assert round(history.rate) == 67
+    assert [r.date.day for r in service.student_history(ada, maths).records] == [4]
+    with pytest.raises(AttendanceError):
+        service.student_history(999)
+
+
+def test_period_summary(roster: RosterService, conn: sqlite3.Connection):
+    from app.repositories.attendance_repo import AttendanceRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.models import AttendanceStatus, SchoolClass, Student
+
+    service = AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing")).id
+    service.mark(ada, date(2026, 9, 30), AttendanceStatus.ABSENT)  # before the period
+    service.mark(ada, date(2026, 10, 1), AttendanceStatus.PRESENT)
+    service.mark(ada, date(2026, 10, 2), AttendanceStatus.LATE)
+    service.mark(alan, date(2026, 10, 2), AttendanceStatus.ABSENT)
+
+    summary = service.period_summary(class_id, date(2026, 10, 1), date(2026, 10, 31))
+    assert summary.recorded_days == 2
+    ada_row, alan_row = summary.rows
+    assert ada_row.counts == {"present": 1, "absent": 0, "late": 1, "excused": 0}
+    assert (ada_row.unmarked, ada_row.rate) == (0, 100)
+    assert (alan_row.unmarked, alan_row.rate) == (1, 0)
+    with pytest.raises(AttendanceError):
+        service.period_summary(class_id, date(2026, 10, 31), date(2026, 10, 1))

@@ -37,6 +37,17 @@ def school_day(day: date, step: int) -> date:
     return day
 
 
+def day_warning(day: date, today: date) -> str | None:
+    """Why marking `day` may be a mistake: it hasn't happened yet, or it's a weekend."""
+    if day > today:
+        days = (day - today).days
+        when = "tomorrow" if days == 1 else f"in {days} days"
+        return f"This day is in the future ({when}). Check the date before marking."
+    if day.weekday() >= 5:
+        return f"{day:%A} is a weekend day. Check the date before marking."
+    return None
+
+
 @dataclass
 class RegisterRow:
     student: Student
@@ -132,6 +143,52 @@ class MonthRegister:
         return attendance_rate(self.counts())
 
 
+@dataclass
+class StudentHistory:
+    """Every mark of one student in one register, newest first."""
+
+    student: Student
+    records: list[AttendanceRecord]
+
+    def counts(self) -> dict[str, int]:
+        counts = {s.value: 0 for s in AttendanceStatus}
+        for record in self.records:
+            counts[record.status.value] += 1
+        return counts
+
+    @property
+    def rate(self) -> float | None:
+        return attendance_rate(self.counts())
+
+    @property
+    def not_present(self) -> list[AttendanceRecord]:
+        """The days the student was absent, late or excused."""
+        return [r for r in self.records if r.status is not AttendanceStatus.PRESENT]
+
+
+@dataclass
+class PeriodRow:
+    student: Student
+    counts: dict[str, int]  # status -> days, every status present
+    unmarked: int  # recorded days on which this student has no mark
+
+    @property
+    def rate(self) -> float | None:
+        return attendance_rate(self.counts)
+
+
+@dataclass
+class PeriodSummary:
+    """Each active student's totals between two dates, e.g. for a term report."""
+
+    class_id: int
+    start: date
+    end: date
+    subject_id: int | None
+    recorded_days: int  # days on which at least one student is marked
+    rows: list[PeriodRow]
+
+
 class AttendanceService:
     def __init__(
         self, attendance: AttendanceRepository, students: StudentRepository, subjects: SubjectRepository
@@ -179,6 +236,32 @@ class AttendanceService:
         rows = [MonthRow(s, by_student.get(s.id, {})) for s in self.students.list_for_class(class_id)]
         return MonthRegister(class_id, year, month, subject_id, days, rows)
 
+    def period_summary(
+        self, class_id: int, start: date, end: date, subject_id: int | None = None
+    ) -> PeriodSummary:
+        """Totals per active student for the days from `start` to `end`, both included."""
+        if end < start:
+            raise AttendanceError("The end date is before the start date.")
+        self._check_subject(class_id, subject_id)
+        records = self.attendance.for_period(class_id, start, end, subject_id)
+        recorded = len({r.date for r in records})
+        by_student: dict[int, dict[str, int]] = {}
+        for r in records:
+            counts = by_student.setdefault(r.student_id, {s.value: 0 for s in AttendanceStatus})
+            counts[r.status.value] += 1
+        rows = []
+        for student in self.students.list_for_class(class_id):
+            counts = by_student.get(student.id, {s.value: 0 for s in AttendanceStatus})
+            rows.append(PeriodRow(student, counts, recorded - sum(counts.values())))
+        return PeriodSummary(class_id, start, end, subject_id, recorded, rows)
+
+    def student_history(self, student_id: int, subject_id: int | None = None) -> StudentHistory:
+        student = self.students.get(student_id)
+        if student is None:
+            raise AttendanceError("That student no longer exists.")
+        self._check_subject(student.class_id, subject_id)
+        return StudentHistory(student, self.attendance.for_student(student_id, subject_id))
+
     # --- marking -------------------------------------------------------------
 
     def mark(
@@ -225,6 +308,20 @@ class AttendanceService:
         """Remove the whole register for the day, notes included; returns how many."""
         self._check_subject(class_id, subject_id)
         return self.attendance.delete_day(class_id, day, subject_id)
+
+    # --- undo ----------------------------------------------------------------
+
+    def snapshot(self, class_id: int, day: date, subject_id: int | None = None) -> list[AttendanceRecord]:
+        """The day's register as it is now, to hand back to restore() for undo."""
+        self._check_subject(class_id, subject_id)
+        return self.attendance.for_period(class_id, day, day, subject_id)
+
+    def restore(
+        self, class_id: int, day: date, subject_id: int | None, records: list[AttendanceRecord]
+    ) -> None:
+        """Put the day's register back to a snapshot: marks and notes made since are undone."""
+        self._check_subject(class_id, subject_id)
+        self.attendance.replace_day(class_id, day, subject_id, records)
 
     # --- checks --------------------------------------------------------------
 
