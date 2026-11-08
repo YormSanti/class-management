@@ -172,7 +172,7 @@ def main() -> int:
     attendance = AttendanceService(AttendanceRepository(conn), students, subjects)
     # Window layout lives next to config.json, never in the (possibly shared) data folder.
     settings = QSettings(str(settings_dir() / "window.ini"), QSettings.Format.IniFormat)
-    window = MainWindow(roster, dashboard, attendance, config, settings)
+    window = MainWindow(roster, dashboard, attendance, config, settings, save_config)
     window.show()
     try:
         return app.exec()

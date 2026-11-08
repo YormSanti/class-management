@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.db.connection import transaction
-from app.services.backup import auto_backup, copy_database, list_auto_backups
+from app.services.backup import auto_backup, backup_time, copy_database, list_auto_backups
 
 
 def _class_names(path: Path) -> list[str]:
@@ -87,3 +87,8 @@ def test_copy_database_replaces_existing_file(db_path: Path, conn: sqlite3.Conne
     copy_database(db_path, dest)
     assert _class_names(dest) == ["8A"]
     assert not dest.with_name("copy.db.tmp").exists()
+
+
+def test_backup_time_is_read_from_the_name(tmp_path: Path):
+    assert backup_time(tmp_path / "classroom_2026-09-01_08-05-30.db") == datetime(2026, 9, 1, 8, 5, 30)
+    assert backup_time(tmp_path / "classroom_notes.db") is None

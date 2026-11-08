@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
+from app.ui.views.settings_view import SettingsView
 
 BOTTOM_PAGES = ("Settings",)  # pinned to the bottom of the sidebar
 
@@ -49,8 +51,10 @@ class MainWindow(QMainWindow):
         attendance: AttendanceService,
         config: AppConfig,
         settings: QSettings | None = None,
+        save_config: Callable[[AppConfig], None] | None = None,
     ):
-        """`settings` keeps window state between sessions; None remembers nothing."""
+        """`settings` keeps window state between sessions; None remembers nothing.
+        `save_config` writes changes made on the Settings page; None keeps them for this session."""
         super().__init__()
         self.roster = roster
         self.config = config
@@ -67,6 +71,9 @@ class MainWindow(QMainWindow):
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
+        self.settings_view = SettingsView(config, save_config)
+        self.settings_view.back_up_requested.connect(self.back_up_now)
+        self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.class_selected.connect(self.select_class)
@@ -85,7 +92,7 @@ class MainWindow(QMainWindow):
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
             ("Manage classes", self.classes_view),
-            ("Settings", PlaceholderView("Settings", "Coming in Phase 6.")),
+            ("Settings", self.settings_view),
         ]
         self.stack = QStackedWidget()
         for _name, page in self.pages:

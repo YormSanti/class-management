@@ -50,6 +50,14 @@ def list_auto_backups(backup_dir: Path) -> list[Path]:
     return sorted(backup_dir.glob(f"{AUTO_BACKUP_PREFIX}*.db"), reverse=True)
 
 
+def backup_time(path: Path) -> datetime | None:
+    """When an automatic backup was made, read from its name; None if the name isn't one of ours."""
+    try:
+        return datetime.strptime(path.stem[len(AUTO_BACKUP_PREFIX) :], TIMESTAMP_FORMAT)
+    except ValueError:
+        return None
+
+
 def _backup_day(path: Path) -> str:
     """"2026-09-01" from "classroom_2026-09-01_08-00-00.db"."""
     return path.name[len(AUTO_BACKUP_PREFIX) : len(AUTO_BACKUP_PREFIX) + 10]

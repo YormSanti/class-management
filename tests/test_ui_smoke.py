@@ -232,7 +232,7 @@ def test_settings_is_pinned_to_the_bottom_of_the_sidebar(window: MainWindow):
     assert window.nav_bottom.geometry().bottom() > sidebar.height() - 30  # at the bottom left
 
     window.nav_bottom.setCurrentRow(0)  # clicking Settings
-    assert window.stack.currentWidget() is window.pages[-1][1]
+    assert window.stack.currentWidget() is window.settings_view
     assert not window.nav.selectedItems()  # only one page is highlighted
     window.nav.setCurrentRow(1)
     assert window.stack.currentWidget() is window.attendance_view
@@ -241,7 +241,7 @@ def test_settings_is_pinned_to_the_bottom_of_the_sidebar(window: MainWindow):
     assert window.nav_bottom.currentRow() == 0 and not window.nav.selectedItems()
     window.nav.setFocus()  # focusing the top list must not jump back to a page there
     QApplication.processEvents()
-    assert window.stack.currentWidget() is window.pages[-1][1]
+    assert window.stack.currentWidget() is window.settings_view
     window.nav.item(0).setSelected(True)  # clicking the Dashboard
     assert window.stack.currentWidget() is window.dashboard_view
     assert not window.nav_bottom.selectedItems()
@@ -510,3 +510,63 @@ def test_attendance_month_tab(window: MainWindow, roster: RosterService, tmp_pat
     assert (tmp_path / "november.csv").read_text(encoding="utf-8-sig").splitlines()[1].startswith(
         ",Hopper,Grace,"
     )
+
+
+def test_settings_page_shows_data_and_backups(window: MainWindow, db_path: Path):
+    from datetime import datetime
+
+    from app.services.backup import auto_backup
+
+    window.config.backup_dir.mkdir(parents=True, exist_ok=True)
+    for hour in (8, 9):
+        auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, 6, hour, 30))
+    window.show_page("Settings")
+    view = window.settings_view
+    assert view.data_path_label.text() == str(window.config.db_path)
+    assert view.backup_summary.text() == "2 backups · newest Friday 6 November 2026, 09:30"
+    assert view.backup_table.rowCount() == 2
+    assert view.backup_table.item(0, 0).text() == "Fri 6 Nov 2026, 09:30"
+
+
+def test_settings_page_saves_ranking_method(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from app.config import load_config, save_config
+
+    path = tmp_path / "config.json"
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(
+        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+    )
+    try:
+        view = window.settings_view
+        assert view.ranking_buttons["competition"].isChecked()
+        view.ranking_buttons["dense"].click()
+        assert window.config.ranking_method == "dense"
+        assert load_config(path).ranking_method == "dense"
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_settings_page_keeps_old_choice_when_saving_fails(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    def fail(_config):
+        raise OSError("disk full")
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=fail)
+    try:
+        view = window.settings_view
+        view.ranking_buttons["dense"].click()
+        assert warnings and "disk full" in warnings[0]
+        assert view.ranking_buttons["competition"].isChecked()
+        assert window.config.ranking_method == "competition"
+    finally:
+        window.close()
+        window.deleteLater()
