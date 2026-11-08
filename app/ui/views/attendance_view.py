@@ -1,3 +1,4 @@
+import calendar
 import re
 from datetime import date
 from pathlib import Path
@@ -36,10 +37,11 @@ from app.services.attendance import (
     day_warning,
     school_day,
 )
-from app.services.export import write_attendance_csv
+from app.services.export import write_attendance_csv, write_attendance_summary_csv
 from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+from app.ui.dialogs.period_dialog import PeriodDialog
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
@@ -120,6 +122,9 @@ class MonthView(QWidget):
         self.export_button = QPushButton("Export CSV…")
         self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
+        self.export_period_button = QPushButton("Export period…")
+        self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
+        self.export_period_button.clicked.connect(self.export_period)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(4)
@@ -140,6 +145,7 @@ class MonthView(QWidget):
             toolbar.addWidget(style.label(text, 0.9, muted=True))
             toolbar.addSpacing(8)
         toolbar.addStretch()
+        toolbar.addWidget(self.export_period_button)
         toolbar.addWidget(self.export_button)
 
         self.table = QTableWidget()
@@ -295,6 +301,37 @@ class MonthView(QWidget):
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
         QMessageBox.information(self, "Export attendance", f"Saved {first:%B} {first.year} to\n{path}")
+
+    def export_period(self) -> None:
+        """Ask for the first and last day, then save each student's totals for them."""
+        if self.class_id is None:
+            return
+        first = date(self.year, self.month, 1)
+        last = date(self.year, self.month, calendar.monthrange(self.year, self.month)[1])
+        dialog = PeriodDialog("Export attendance for a period", first, last, self)
+        if not dialog.exec():
+            return
+        start, end = dialog.start, dialog.end
+        try:
+            summary = self.attendance.period_summary(self.class_id, start, end, self.subject_id)
+        except AttendanceError as exc:
+            QMessageBox.information(self, "Export attendance", str(exc))
+            return
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {start} to {end}")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
+        try:
+            write_attendance_summary_csv(path, summary)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
+            return
+        QMessageBox.information(
+            self, "Export attendance", f"Saved {summary.recorded_days} recorded days to\n{path}"
+        )
 
     def apply_style(self) -> None:
         line = style.border(self).name()

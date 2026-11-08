@@ -166,6 +166,29 @@ class StudentHistory:
         return [r for r in self.records if r.status is not AttendanceStatus.PRESENT]
 
 
+@dataclass
+class PeriodRow:
+    student: Student
+    counts: dict[str, int]  # status -> days, every status present
+    unmarked: int  # recorded days on which this student has no mark
+
+    @property
+    def rate(self) -> float | None:
+        return attendance_rate(self.counts)
+
+
+@dataclass
+class PeriodSummary:
+    """Each active student's totals between two dates, e.g. for a term report."""
+
+    class_id: int
+    start: date
+    end: date
+    subject_id: int | None
+    recorded_days: int  # days on which at least one student is marked
+    rows: list[PeriodRow]
+
+
 class AttendanceService:
     def __init__(
         self, attendance: AttendanceRepository, students: StudentRepository, subjects: SubjectRepository
@@ -212,6 +235,25 @@ class AttendanceService:
         days = [day for day in month_days if day.weekday() < 5 or day in marked_days]
         rows = [MonthRow(s, by_student.get(s.id, {})) for s in self.students.list_for_class(class_id)]
         return MonthRegister(class_id, year, month, subject_id, days, rows)
+
+    def period_summary(
+        self, class_id: int, start: date, end: date, subject_id: int | None = None
+    ) -> PeriodSummary:
+        """Totals per active student for the days from `start` to `end`, both included."""
+        if end < start:
+            raise AttendanceError("The end date is before the start date.")
+        self._check_subject(class_id, subject_id)
+        records = self.attendance.for_period(class_id, start, end, subject_id)
+        recorded = len({r.date for r in records})
+        by_student: dict[int, dict[str, int]] = {}
+        for r in records:
+            counts = by_student.setdefault(r.student_id, {s.value: 0 for s in AttendanceStatus})
+            counts[r.status.value] += 1
+        rows = []
+        for student in self.students.list_for_class(class_id):
+            counts = by_student.get(student.id, {s.value: 0 for s in AttendanceStatus})
+            rows.append(PeriodRow(student, counts, recorded - sum(counts.values())))
+        return PeriodSummary(class_id, start, end, subject_id, recorded, rows)
 
     def student_history(self, student_id: int, subject_id: int | None = None) -> StudentHistory:
         student = self.students.get(student_id)

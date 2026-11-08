@@ -663,3 +663,37 @@ def test_settings_page_keeps_old_choice_when_saving_fails(
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_attendance_export_period(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    import csv
+    from datetime import date
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.mark_rest_button.click()
+    month = view.month_view
+    assert (month.year, month.month) == (2026, 11)
+
+    def pick_period(dialog):
+        assert (dialog.start, dialog.end) == (date(2026, 11, 1), date(2026, 11, 30))  # the shown month
+        dialog.end_edit.setDate(dialog.start_edit.date().addDays(-1))
+        assert not dialog.buttons.buttons()[0].isEnabled()  # the end is before the start
+        dialog.start_edit.setDate(dialog.start_edit.date().addMonths(-2))  # 1 September
+        dialog.end_edit.setDate(dialog.end_edit.date().addMonths(1))  # 30 November
+        return True
+
+    saved = tmp_path / "term.csv"
+    monkeypatch.setattr(PeriodDialog, "exec", pick_period)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    month.export_period()
+    with saved.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[1][1:] == ["Hopper", "Grace", "0", "0", "1", "0", "0", "0"]
+    assert rows[2][1:] == ["Lovelace", "Ada", "1", "0", "0", "0", "0", "100"]

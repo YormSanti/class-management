@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from app.models import Student
-from app.services.attendance import MonthRegister
+from app.services.attendance import MonthRegister, PeriodSummary
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
 
@@ -48,4 +48,18 @@ def write_attendance_csv(path: Path, register: MonthRegister) -> None:
         line += [row.statuses[day].value[0].upper() if day in row.statuses else "" for day in register.days]
         line += [counts["absent"], counts["late"], counts["excused"], "" if rate is None else round(rate)]
         rows.append(line)
+    _write_csv(path, rows)
+
+
+def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
+    """Save each student's totals for a period, e.g. a term, with their attendance rate."""
+    rows: list[Sequence[object]] = [
+        ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"]
+    ]
+    for row in summary.rows:
+        s, c, rate = row.student, row.counts, row.rate
+        rows.append(
+            [s.student_no or "", s.last_name, s.first_name, c["present"], c["late"], c["absent"], c["excused"],
+             row.unmarked, "" if rate is None else round(rate)]
+        )  # fmt: skip
     _write_csv(path, rows)

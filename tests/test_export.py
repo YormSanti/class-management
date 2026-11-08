@@ -55,3 +55,27 @@ def test_attendance_csv(tmp_path: Path):
         ["03", "Dubois", "Chloé", "P", "A", "1", "0", "0", "50"],
         ["", "Lovelace", "Ada", "", "", "0", "0", "0", ""],
     ]
+
+
+def test_attendance_summary_csv(tmp_path: Path):
+    from app.services.attendance import PeriodRow, PeriodSummary
+    from app.services.export import write_attendance_summary_csv
+
+    counts = {"present": 8, "absent": 1, "late": 1, "excused": 0}
+    none = {"present": 0, "absent": 0, "late": 0, "excused": 0}
+    summary = PeriodSummary(
+        class_id=1, start=date(2026, 10, 1), end=date(2026, 10, 31), subject_id=None, recorded_days=10,
+        rows=[
+            PeriodRow(Student(class_id=1, first_name="Chloé", last_name="Dubois", student_no="03"), counts, 0),
+            PeriodRow(Student(class_id=1, first_name="Ada", last_name="Lovelace"), none, 10),
+        ],
+    )  # fmt: skip
+    path = tmp_path / "term.csv"
+    write_attendance_summary_csv(path, summary)
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows == [
+        ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"],
+        ["03", "Dubois", "Chloé", "8", "1", "1", "0", "0", "90"],
+        ["", "Lovelace", "Ada", "0", "0", "0", "0", "10", ""],
+    ]
