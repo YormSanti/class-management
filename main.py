@@ -26,7 +26,7 @@ from app.repositories.dashboard_repo import DashboardRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
 from app.services.attendance import AttendanceService
-from app.services.backup import auto_backup
+from app.services.backup import auto_backup, restore_backup
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterService
 from app.ui.dialogs.setup_dialog import SetupDialog
@@ -172,7 +172,15 @@ def main() -> int:
     attendance = AttendanceService(AttendanceRepository(conn), students, subjects)
     # Window layout lives next to config.json, never in the (possibly shared) data folder.
     settings = QSettings(str(settings_dir() / "window.ini"), QSettings.Format.IniFormat)
-    window = MainWindow(roster, dashboard, attendance, config, settings, save_config)
+    window = MainWindow(
+        roster,
+        dashboard,
+        attendance,
+        config,
+        settings,
+        save_config,
+        restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+    )
     window.show()
     try:
         return app.exec()

@@ -1,5 +1,7 @@
+import sqlite3
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -21,7 +23,13 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.config import RANKING_METHODS, AppConfig, settings_dir
-from app.services.backup import KEEP_AUTO_BACKUPS, KEEP_DAILY_BACKUPS, backup_time, list_auto_backups
+from app.services.backup import (
+    KEEP_AUTO_BACKUPS,
+    KEEP_DAILY_BACKUPS,
+    BackupError,
+    backup_time,
+    list_auto_backups,
+)
 from app.ui import style
 
 RANKING_CHOICES = {
@@ -46,17 +54,26 @@ class SettingsView(QWidget):
     """Where the data lives, its backups, how rankings share places, and about the app.
 
     `save` writes the config (config.json); None keeps changes for this session only.
+    `restore` puts a backup's data in place of the current data and returns where the
+    current data was saved first; None hides the Restore button.
     """
 
     back_up_requested = Signal()
     config_changed = Signal(object)  # AppConfig
+    restored = Signal()  # the data was replaced by a backup's
 
     def __init__(
-        self, config: AppConfig, save: Callable[[AppConfig], None] | None = None, parent: QWidget | None = None
+        self,
+        config: AppConfig,
+        save: Callable[[AppConfig], None] | None = None,
+        restore: Callable[[Path], Path] | None = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.config = config
         self.save = save
+        self.restore = restore
+        self._shown_backups: list[Path] = []
 
         # --- your data ---
         data = style.Panel("Your data", "Everything is kept in one file on this computer.")
@@ -85,8 +102,9 @@ class SettingsView(QWidget):
         self.backup_table = QTableWidget(0, 2)
         self.backup_table.setHorizontalHeaderLabels(["Made", "Size"])
         self.backup_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.backup_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.backup_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.backup_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.backup_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.backup_table.itemSelectionChanged.connect(self._update_restore)
         self.backup_table.verticalHeader().setVisible(False)
         self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.backup_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -94,11 +112,16 @@ class SettingsView(QWidget):
         open_backups = QPushButton("Open backups folder")
         open_backups.clicked.connect(lambda: _open_folder(self.config.backup_dir))
         backup_buttons = QHBoxLayout()
+        self.restore_button = QPushButton("Restore…")
+        self.restore_button.setToolTip("Replace your data with the selected backup")
+        self.restore_button.clicked.connect(self.restore_selected)
+        self.restore_button.setVisible(restore is not None)
         backup_buttons.addWidget(self.backup_summary, stretch=1)
+        backup_buttons.addWidget(self.restore_button)
         backup_buttons.addWidget(open_backups)
         restore_hint = style.label(
-            "To go back to a backup, quit the app and copy the backup over the data file "
-            "(keep the name classroom.db).",
+            "To go back to a backup, select it and press Restore. Your data as it is now is "
+            "saved as a new backup first, so a restore can be undone the same way.",
             0.85,
             muted=True,
         )
@@ -183,6 +206,8 @@ class SettingsView(QWidget):
         else:
             self.backup_summary.setText("No automatic backups yet")
         shown = found[:SHOWN_BACKUPS]
+        self._shown_backups = shown
+        self.backup_table.clearSelection()
         self.backup_table.setRowCount(len(shown))
         for i, path in enumerate(shown):
             made = backup_time(path)
@@ -200,6 +225,44 @@ class SettingsView(QWidget):
         header = self.backup_table.horizontalHeader().height()
         rows = sum(self.backup_table.rowHeight(i) for i in range(len(shown)))
         self.backup_table.setFixedHeight(header + rows + 2 * self.backup_table.frameWidth())
+        self._update_restore()
+
+    def _selected_backup(self) -> Path | None:
+        rows = self.backup_table.selectionModel().selectedRows()
+        return self._shown_backups[rows[0].row()] if rows else None
+
+    def _update_restore(self) -> None:
+        self.restore_button.setEnabled(self._selected_backup() is not None)
+
+    def restore_selected(self) -> None:
+        """Ask, then replace the data with the selected backup's."""
+        backup = self._selected_backup()
+        if backup is None or self.restore is None:
+            return
+        made = backup_time(backup)
+        when = f"{made:%A} {made.day} {made:%B %Y} at {made:%H:%M}" if made else backup.name
+        answer = QMessageBox.question(
+            self,
+            "Restore backup",
+            f"Replace all your data with the backup made on {when}?\n\n"
+            "Your data as it is now is saved as a new backup first, so you can go back to it.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.restore(backup)
+        except (BackupError, OSError, sqlite3.Error) as exc:
+            QMessageBox.warning(self, "Restore backup", f"The backup could not be restored:\n{exc}")
+            self.refresh()
+            return
+        self.refresh()
+        self.restored.emit()
+        QMessageBox.information(
+            self,
+            "Restore backup",
+            f"Your data is back as it was on {when}.\n\n"
+            "The data from just before is the newest backup in the list.",
+        )
 
     # --- changes ---------------------------------------------------------------
 

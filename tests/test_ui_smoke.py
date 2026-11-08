@@ -712,3 +712,44 @@ def test_attendance_month_saves_pdf(window: MainWindow, roster: RosterService, t
     pdf = tmp_path / "november.pdf"  # the extension is added
     assert pdf.read_bytes().startswith(b"%PDF")
     assert shown and shown[0].startswith("Saved November 2026")
+
+
+def test_settings_page_restores_a_backup(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, db_path: Path, tmp_path: Path, monkeypatch
+):
+    from datetime import datetime
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services.backup import auto_backup, restore_backup
+
+    config = AppConfig(data_dir=tmp_path)
+    seventh = roster.save_class(SchoolClass(name="7B")).id
+    auto_backup(db_path, config.backup_dir, now=datetime(2026, 11, 2, 8, 0))
+    eighth = roster.save_class(SchoolClass(name="8C")).id
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(
+        roster, dashboard, _attendance(conn), config,
+        restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+    )  # fmt: skip
+    questions, infos = [], []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    try:
+        window.select_class(eighth)
+        view = window.settings_view
+        window.show_page("Settings")
+        assert not view.restore_button.isEnabled()
+        view.backup_table.selectRow(0)
+        assert view.restore_button.isEnabled()
+        view.restore_button.click()
+
+        assert "Monday 2 November 2026 at 08:00" in questions[0]
+        assert [c.name for c in roster.list_classes()] == ["7B"]
+        assert window.class_id == seventh  # 8C is gone, so the window falls back to 7B
+        assert view.backup_table.rowCount() == 2  # the data from before the restore was kept
+        assert infos and infos[0].startswith("Your data is back as it was")
+    finally:
+        window.close()
+        window.deleteLater()

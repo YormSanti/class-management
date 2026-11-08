@@ -849,6 +849,10 @@ class AttendanceView(QWidget):
         del self._undo[:-UNDO_LIMIT]
         self._update_undo()
 
+    def clear_undo(self) -> None:
+        self._undo.clear()
+        self._update_undo()
+
     def _forget(self) -> None:
         """Drop the last remembered register, when the change it was kept for failed."""
         if self._undo:
