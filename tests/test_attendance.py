@@ -207,3 +207,29 @@ def test_day_warning_for_future_and_weekend_days():
     assert day_warning(date(2026, 11, 7), friday) == "This day is in the future (tomorrow). Check the date before marking."
     assert day_warning(date(2026, 11, 9), friday).startswith("This day is in the future (in 3 days)")
     assert day_warning(date(2026, 10, 31), friday) == "Saturday is a weekend day. Check the date before marking."
+
+
+def test_snapshot_and_restore_undo_a_day(roster: RosterService, conn: sqlite3.Connection):
+    from app.repositories.attendance_repo import AttendanceRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.models import AttendanceStatus, SchoolClass, Student
+
+    service = AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing")).id
+    day = date(2026, 11, 6)
+    service.mark(ada, day, AttendanceStatus.LATE)
+    service.set_note(ada, day, "Bus")
+    before = service.snapshot(class_id, day)
+
+    service.mark_unmarked(class_id, day)
+    service.mark(ada, day, AttendanceStatus.ABSENT)
+    service.mark(ada, date(2026, 11, 5), AttendanceStatus.ABSENT)  # another day is left alone
+    service.restore(class_id, day, None, before)
+
+    rows = {r.student.id: r for r in service.day_register(class_id, day).rows}
+    assert (rows[ada].status, rows[ada].note) == (AttendanceStatus.LATE, "Bus")
+    assert rows[alan].status is None
+    assert service.day_register(class_id, date(2026, 11, 5)).rows[0].status == AttendanceStatus.ABSENT

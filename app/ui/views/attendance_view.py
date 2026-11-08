@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.models import AttendanceStatus
+from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
     UNMARKED,
     AttendanceError,
@@ -43,6 +43,7 @@ from app.ui import style
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
 COL_NO, COL_NAME, COL_STATUS, COL_NOTE, COL_RECENT = range(5)
+UNDO_LIMIT = 50
 
 
 def _fill(widget: QWidget, name: str) -> QColor:
@@ -330,6 +331,8 @@ class AttendanceView(QWidget):
         self._subject_for_class: dict[int, int | None] = {}
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
         self._month_follows: date | None = None
+        # (day, subject id, register before the change, what the change was), newest last
+        self._undo: list[tuple[date, int | None, list[AttendanceRecord], str]] = []
 
         # --- header ---
         self.date_label = style.caption("")
@@ -409,6 +412,8 @@ class AttendanceView(QWidget):
 
         # actions
         self.status_label = style.label("", bold=True)
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.clicked.connect(self.undo)
         self.clear_button = QPushButton("Clear the day…")
         self.clear_button.clicked.connect(self.clear_day)
         self.mark_rest_button = QPushButton("Mark the rest present")
@@ -416,6 +421,7 @@ class AttendanceView(QWidget):
         self.mark_rest_button.clicked.connect(self.mark_rest_present)
         actions = QHBoxLayout()
         actions.addWidget(self.status_label, stretch=1)
+        actions.addWidget(self.undo_button)
         actions.addWidget(self.clear_button)
         actions.addWidget(self.mark_rest_button)
 
@@ -483,6 +489,10 @@ class AttendanceView(QWidget):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(lambda step=step: self.set_day(school_day(self.day, step)))
+        undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
+        undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        undo.activated.connect(self.undo)
+        self._update_undo()
 
         self._apply_style()
 
@@ -516,6 +526,9 @@ class AttendanceView(QWidget):
         return self.register_combo.currentData()
 
     def set_class(self, class_id: int | None) -> None:
+        if class_id != self.class_id:
+            self._undo.clear()  # undo stays within one class
+            self._update_undo()
         self.class_id = class_id
         self._fill_classes()
         self._fill_registers()
@@ -693,12 +706,17 @@ class AttendanceView(QWidget):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
+        if status == row.status:
+            return
+        name = row.student.full_name
+        self._remember(f"clear {name}" if status is None else f"mark {name} {status.value}")
         try:
             if status is None:
                 self.attendance.clear(row.student.id, self.day, self.subject_id)
             else:
                 self.attendance.mark(row.student.id, self.day, status, self.subject_id)
         except AttendanceError as exc:
+            self._forget()
             QMessageBox.information(self, "Attendance", str(exc))
         self.refresh()
 
@@ -709,15 +727,18 @@ class AttendanceView(QWidget):
         text = self._row_widgets[i][1].text().strip()
         if row.status is None or text == row.note:
             return
+        self._remember(f"note for {row.student.full_name}")
         try:
             self.attendance.set_note(row.student.id, self.day, text, self.subject_id)
         except AttendanceError as exc:
+            self._forget()
             QMessageBox.information(self, "Attendance", str(exc))
         row.note = text  # editingFinished can fire twice (Return, then losing focus)
 
     def mark_rest_present(self) -> None:
         if self.class_id is None:
             return
+        self._remember("mark the rest present")
         self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
         self.refresh()
 
@@ -731,8 +752,52 @@ class AttendanceView(QWidget):
             f"in the {self.register_combo.currentText()} register?",
         )
         if answer == QMessageBox.StandardButton.Yes:
+            self._remember("clear the day")
             self.attendance.clear_day(self.class_id, self.day, self.subject_id)
             self.refresh()
+
+    # --- undo ----------------------------------------------------------------
+
+    def _remember(self, what: str) -> None:
+        """Keep the register as it is now, before a change, so undo() can bring it back."""
+        if self.class_id is None:
+            return
+        before = self.attendance.snapshot(self.class_id, self.day, self.subject_id)
+        self._undo.append((self.day, self.subject_id, before, what))
+        del self._undo[:-UNDO_LIMIT]
+        self._update_undo()
+
+    def _forget(self) -> None:
+        """Drop the last remembered register, when the change it was kept for failed."""
+        if self._undo:
+            self._undo.pop()
+        self._update_undo()
+
+    def undo(self) -> None:
+        """Undo the newest change, showing the day and register it was made in."""
+        if not self._undo or self.class_id is None:
+            return
+        day, subject_id, before, _what = self._undo.pop()
+        self._update_undo()
+        if subject_id != self.subject_id:
+            index = self.register_combo.findData(subject_id)
+            if index < 0:  # the subject was deleted since
+                self.undo()
+                return
+            self.register_combo.setCurrentIndex(index)
+        if day != self.day:
+            self.set_day(day)
+        try:
+            self.attendance.restore(self.class_id, day, subject_id, before)
+        except AttendanceError as exc:
+            QMessageBox.information(self, "Undo", str(exc))
+        self.refresh()
+
+    def _update_undo(self) -> None:
+        self.undo_button.setEnabled(bool(self._undo))
+        keys = QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText)
+        what = f": {self._undo[-1][3]}" if self._undo else ""
+        self.undo_button.setToolTip(f"Undo{what} ({keys})")
 
     # --- keyboard ------------------------------------------------------------
 

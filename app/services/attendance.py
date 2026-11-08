@@ -237,6 +237,20 @@ class AttendanceService:
         self._check_subject(class_id, subject_id)
         return self.attendance.delete_day(class_id, day, subject_id)
 
+    # --- undo ----------------------------------------------------------------
+
+    def snapshot(self, class_id: int, day: date, subject_id: int | None = None) -> list[AttendanceRecord]:
+        """The day's register as it is now, to hand back to restore() for undo."""
+        self._check_subject(class_id, subject_id)
+        return self.attendance.for_period(class_id, day, day, subject_id)
+
+    def restore(
+        self, class_id: int, day: date, subject_id: int | None, records: list[AttendanceRecord]
+    ) -> None:
+        """Put the day's register back to a snapshot: marks and notes made since are undone."""
+        self._check_subject(class_id, subject_id)
+        self.attendance.replace_day(class_id, day, subject_id, records)
+
     # --- checks --------------------------------------------------------------
 
     def _check_subject(self, class_id: int, subject_id: int | None) -> None:

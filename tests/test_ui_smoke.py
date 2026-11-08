@@ -478,6 +478,38 @@ def test_attendance_day_buttons_skip_weekends(window: MainWindow, roster: Roster
     assert view.day == date.today() and not view.today_button.isEnabled()
 
 
+def test_attendance_undo(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    assert not view.undo_button.isEnabled()
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    note = view._row_widgets[0][1]
+    note.setText("Dentist")
+    note.editingFinished.emit()
+    view.mark_rest_button.click()
+    assert view.undo_button.toolTip().startswith("Undo: mark the rest present")
+
+    view.undo()
+    assert _statuses(view) == ["absent", None]
+    view.undo()
+    assert view.register.rows[0].note == ""
+    view.undo()
+    assert _statuses(view) == [None, None] and not view.undo_button.isEnabled()
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    view.mark_rest_button.click()
+    view.set_day(date(2026, 11, 9))  # undo goes back to the day the change was made
+    view.clear_day()  # nothing to clear on the 9th, but it is remembered all the same
+    view.undo()
+    view.undo()
+    assert view.day == date(2026, 11, 6) and _statuses(view) == [None, None]
+
+
 def test_attendance_warns_about_future_and_weekend_days(window: MainWindow, roster: RosterService):
     from datetime import date, timedelta
 

@@ -78,6 +78,14 @@ class AttendanceRepository:
             )
         return cur.rowcount
 
+    def replace_day(
+        self, class_id: int, day: date, subject_id: int | None, records: list[AttendanceRecord]
+    ) -> None:
+        """Make the day's register for the class's active students exactly `records`."""
+        with transaction(self.conn):
+            self.delete_day(class_id, day, subject_id)
+            self.save_many(records)
+
     def for_period(
         self, class_id: int, start: date, end: date, subject_id: int | None
     ) -> list[AttendanceRecord]:
