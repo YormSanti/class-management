@@ -478,6 +478,18 @@ def test_attendance_day_buttons_skip_weekends(window: MainWindow, roster: Roster
     assert view.day == date.today() and not view.today_button.isEnabled()
 
 
+def test_attendance_warns_about_future_and_weekend_days(window: MainWindow, roster: RosterService):
+    from datetime import date, timedelta
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026, in the past
+    assert view.day_notice.isHidden()
+    view.set_day(date(2026, 11, 7))
+    assert not view.day_notice.isHidden()
+    assert view.day_notice.text().startswith("Saturday is a weekend day")
+    view.set_day(date.today() + timedelta(days=1))
+    assert view.day_notice.text().startswith("This day is in the future (tomorrow)")
+
+
 def test_attendance_class_picker_switches_class(window: MainWindow, roster: RosterService):
     view = _attendance_page(window, roster)
     older = roster.save_class(SchoolClass(name="6A", term="2025-2026")).id

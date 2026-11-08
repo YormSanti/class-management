@@ -12,6 +12,7 @@ from app.services.attendance import (
     AttendanceError,
     AttendanceService,
     RegisterRow,
+    day_warning,
     school_day,
 )
 from app.services.roster import RosterService
@@ -197,3 +198,12 @@ def test_month_register_keeps_registers_apart(attendance, roster, klass):
     attendance.mark(ada, date(2026, 10, 1), A, subject_id=maths)
     assert attendance.month_register(klass, 2026, 10).recorded_days == []
     assert attendance.month_register(klass, 2026, 10, maths).rows[0].statuses == {date(2026, 10, 1): A}
+
+
+def test_day_warning_for_future_and_weekend_days():
+    friday = date(2026, 11, 6)
+    assert day_warning(friday, friday) is None
+    assert day_warning(date(2026, 11, 2), friday) is None  # an earlier weekday
+    assert day_warning(date(2026, 11, 7), friday) == "This day is in the future (tomorrow). Check the date before marking."
+    assert day_warning(date(2026, 11, 9), friday).startswith("This day is in the future (in 3 days)")
+    assert day_warning(date(2026, 10, 31), friday) == "Saturday is a weekend day. Check the date before marking."

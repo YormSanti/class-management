@@ -37,6 +37,17 @@ def school_day(day: date, step: int) -> date:
     return day
 
 
+def day_warning(day: date, today: date) -> str | None:
+    """Why marking `day` may be a mistake: it hasn't happened yet, or it's a weekend."""
+    if day > today:
+        days = (day - today).days
+        when = "tomorrow" if days == 1 else f"in {days} days"
+        return f"This day is in the future ({when}). Check the date before marking."
+    if day.weekday() >= 5:
+        return f"{day:%A} is a weekend day. Check the date before marking."
+    return None
+
+
 @dataclass
 class RegisterRow:
     student: Student

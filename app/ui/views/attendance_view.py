@@ -33,6 +33,7 @@ from app.services.attendance import (
     DayRegister,
     MonthRegister,
     RegisterRow,
+    day_warning,
     school_day,
 )
 from app.services.export import write_attendance_csv
@@ -386,6 +387,10 @@ class AttendanceView(QWidget):
         date_row.addStretch()
         date_row.addWidget(style.label("Every change is saved as you go", 0.9, muted=True))
 
+        self.day_notice = style.label("", bold=True)
+        self.day_notice.setWordWrap(True)
+        self.day_notice.hide()
+
         # totals
         totals = QFrame()
         totals.setObjectName("Panel")
@@ -443,6 +448,7 @@ class AttendanceView(QWidget):
         day_layout.setContentsMargins(0, 12, 0, 0)
         day_layout.setSpacing(12)
         day_layout.addLayout(date_row)
+        day_layout.addWidget(self.day_notice)
         day_layout.addWidget(totals)
         day_layout.addLayout(actions)
         day_layout.addWidget(self.table, stretch=1)
@@ -573,6 +579,10 @@ class AttendanceView(QWidget):
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
         self.title_label.setText(f"Attendance · {school_class.name}")
         self.today_button.setEnabled(day != date.today())
+        warning = day_warning(day, date.today())
+        self.day_notice.setText(warning or "")
+        self.day_notice.setVisible(warning is not None)
+        style.set_color(self.day_notice, _fill(self, "warn"))
         file_label = " ".join(x for x in (school_class.display_name, self.subject_id and self.register_combo.currentText()) if x)
         if day != self._month_follows:  # the month follows the day, until changed by hand
             self._month_follows = day
