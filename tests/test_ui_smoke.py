@@ -224,6 +224,23 @@ def test_ctrl_number_switches_page(window: MainWindow):
     assert window.nav.item(5).toolTip() == "Manage classes (Ctrl+6)"
 
 
+def test_settings_is_pinned_to_the_bottom_of_the_sidebar(window: MainWindow):
+    top = [window.nav.item(r).text() for r in range(window.nav.count())]
+    assert "Settings" not in top
+    assert [window.nav_bottom.item(r).text() for r in range(window.nav_bottom.count())] == ["Settings"]
+    sidebar = window.nav.parentWidget()
+    assert window.nav_bottom.geometry().bottom() > sidebar.height() - 30  # at the bottom left
+
+    window.nav_bottom.setCurrentRow(0)  # clicking Settings
+    assert window.stack.currentWidget() is window.pages[-1][1]
+    assert window.nav.currentRow() == -1  # only one page is highlighted
+    window.nav.setCurrentRow(1)
+    assert window.stack.currentWidget() is window.attendance_view
+    assert window.nav_bottom.currentRow() == -1
+    window.show_page("Settings")
+    assert window.nav_bottom.currentRow() == 0 and window.nav.currentRow() == -1
+
+
 def test_window_size_and_splitter_are_remembered(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ):

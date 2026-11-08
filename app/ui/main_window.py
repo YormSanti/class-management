@@ -1,11 +1,13 @@
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QSplitter,
@@ -27,6 +29,8 @@ from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.placeholder_view import PlaceholderView
+
+BOTTOM_PAGES = ("Settings",)  # pinned to the bottom of the sidebar
 
 
 class MainWindow(QMainWindow):
@@ -88,18 +92,30 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(page)
 
         # --- sidebar ---
+        # Two lists sharing one selection: the pages at the top, Settings at the bottom.
         self.nav = QListWidget()
-        for row, (name, _page) in enumerate(self.pages):
-            self.nav.addItem(name)
-            keys = QKeySequence(f"Ctrl+{row + 1}")
-            self.nav.item(row).setToolTip(
-                f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})"
+        self.nav_bottom = QListWidget()
+        for index, (name, _page) in enumerate(self.pages):
+            keys = QKeySequence(f"Ctrl+{index + 1}")
+            item = QListWidgetItem(name)
+            item.setToolTip(f"{name} ({keys.toString(QKeySequence.SequenceFormat.NativeText)})")
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            (self.nav_bottom if name in BOTTOM_PAGES else self.nav).addItem(item)
+            QShortcut(keys, self, activated=lambda index=index: self.go_to(index))
+        for nav in (self.nav, self.nav_bottom):
+            nav.currentItemChanged.connect(
+                lambda current, _previous: current and self.go_to(current.data(Qt.ItemDataRole.UserRole))
             )
-            QShortcut(keys, self, activated=lambda row=row: self.nav.setCurrentRow(row))
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav_bottom.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.nav_bottom.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.nav_bottom.setFixedHeight(
+            self.nav_bottom.sizeHintForRow(0) * self.nav_bottom.count() + 2 * self.nav_bottom.frameWidth()
+        )
 
         sidebar = QWidget()
-        QVBoxLayout(sidebar).addWidget(self.nav)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.addWidget(self.nav, stretch=1)
+        sidebar_layout.addWidget(self.nav_bottom)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(sidebar)
@@ -113,7 +129,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Data file: {config.db_path}")
         self._build_menus()
 
-        self.nav.setCurrentRow(0)
+        self.go_to(0)
         # Read both before select_class() picks (and saves) a subject of its own.
         saved_class, saved_subject = self._saved_id("class_id"), self._saved_id("subject_id")
         self.select_class(saved_class)
@@ -197,10 +213,18 @@ class MainWindow(QMainWindow):
             self.settings.sync()
         super().closeEvent(event)
 
+    def go_to(self, index: int) -> None:
+        """Show page `index` of `self.pages` and highlight it in the sidebar."""
+        self.stack.setCurrentIndex(index)
+        for nav in (self.nav, self.nav_bottom):
+            rows = [r for r in range(nav.count()) if nav.item(r).data(Qt.ItemDataRole.UserRole) == index]
+            with QSignalBlocker(nav):
+                nav.setCurrentRow(rows[0] if rows else -1)
+
     def show_page(self, name: str) -> None:
-        for row, (page_name, _page) in enumerate(self.pages):
+        for index, (page_name, _page) in enumerate(self.pages):
             if page_name == name:
-                self.nav.setCurrentRow(row)
+                self.go_to(index)
                 return
 
     def show_subjects(self) -> None:
