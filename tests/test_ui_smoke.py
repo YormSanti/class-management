@@ -271,6 +271,28 @@ def test_window_size_and_splitter_are_remembered(
     second.close()
 
 
+def test_last_page_is_remembered(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.show_page("Settings")
+    first.close()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.stack.currentWidget() is second.settings_view
+    assert second.nav_bottom.selectedItems()
+    second.close()
+
+    settings.setValue("session/page", "No such page")  # e.g. a page renamed in a later version
+    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert third.stack.currentWidget() is third.dashboard_view
+    third.close()
+
+
 def test_class_and_subject_are_remembered(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ):

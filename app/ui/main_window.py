@@ -142,6 +142,8 @@ class MainWindow(QMainWindow):
         self.select_class(saved_class)
         if saved_subject is not None:
             self.select_subject(saved_subject)
+        if self.settings is not None:
+            self.show_page(str(self.settings.value("session/page", "")))  # last session's page
 
     # --- menus ---------------------------------------------------------------
 
@@ -217,6 +219,7 @@ class MainWindow(QMainWindow):
         if self.settings is not None:
             self.settings.setValue("window/geometry", self.saveGeometry())
             self.settings.setValue("window/splitter", self.splitter.saveState())
+            self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
             self.settings.sync()
         super().closeEvent(event)
 
