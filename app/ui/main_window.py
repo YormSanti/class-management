@@ -103,9 +103,9 @@ class MainWindow(QMainWindow):
             (self.nav_bottom if name in BOTTOM_PAGES else self.nav).addItem(item)
             QShortcut(keys, self, activated=lambda index=index: self.go_to(index))
         for nav in (self.nav, self.nav_bottom):
-            nav.currentItemChanged.connect(
-                lambda current, _previous: current and self.go_to(current.data(Qt.ItemDataRole.UserRole))
-            )
+            # Follow the selection, not the current item: Qt moves the current item
+            # (without selecting it) when an empty list gets focus.
+            nav.itemSelectionChanged.connect(lambda nav=nav: self._nav_picked(nav))
         self.nav_bottom.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.nav_bottom.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.nav_bottom.setFixedHeight(
@@ -219,7 +219,14 @@ class MainWindow(QMainWindow):
         for nav in (self.nav, self.nav_bottom):
             rows = [r for r in range(nav.count()) if nav.item(r).data(Qt.ItemDataRole.UserRole) == index]
             with QSignalBlocker(nav):
-                nav.setCurrentRow(rows[0] if rows else -1)
+                if rows:
+                    nav.setCurrentRow(rows[0])
+                else:
+                    nav.clearSelection()
+
+    def _nav_picked(self, nav: QListWidget) -> None:
+        if selected := nav.selectedItems():
+            self.go_to(selected[0].data(Qt.ItemDataRole.UserRole))
 
     def show_page(self, name: str) -> None:
         for index, (page_name, _page) in enumerate(self.pages):

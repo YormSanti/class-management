@@ -233,12 +233,18 @@ def test_settings_is_pinned_to_the_bottom_of_the_sidebar(window: MainWindow):
 
     window.nav_bottom.setCurrentRow(0)  # clicking Settings
     assert window.stack.currentWidget() is window.pages[-1][1]
-    assert window.nav.currentRow() == -1  # only one page is highlighted
+    assert not window.nav.selectedItems()  # only one page is highlighted
     window.nav.setCurrentRow(1)
     assert window.stack.currentWidget() is window.attendance_view
-    assert window.nav_bottom.currentRow() == -1
+    assert not window.nav_bottom.selectedItems()
     window.show_page("Settings")
-    assert window.nav_bottom.currentRow() == 0 and window.nav.currentRow() == -1
+    assert window.nav_bottom.currentRow() == 0 and not window.nav.selectedItems()
+    window.nav.setFocus()  # focusing the top list must not jump back to a page there
+    QApplication.processEvents()
+    assert window.stack.currentWidget() is window.pages[-1][1]
+    window.nav.item(0).setSelected(True)  # clicking the Dashboard
+    assert window.stack.currentWidget() is window.dashboard_view
+    assert not window.nav_bottom.selectedItems()
 
 
 def test_window_size_and_splitter_are_remembered(
