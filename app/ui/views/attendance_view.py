@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -37,7 +37,7 @@ from app.services.attendance import (
     day_warning,
     school_day,
 )
-from app.services.export import write_attendance_csv, write_attendance_summary_csv
+from app.services.export import attendance_month_html, write_attendance_csv, write_attendance_summary_csv
 from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
@@ -125,6 +125,9 @@ class MonthView(QWidget):
         self.export_period_button = QPushButton("Export period…")
         self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
         self.export_period_button.clicked.connect(self.export_period)
+        self.pdf_button = QPushButton("Save PDF…")
+        self.pdf_button.setToolTip("Save this month as a PDF to print or share")
+        self.pdf_button.clicked.connect(self.save_pdf)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(4)
@@ -145,6 +148,7 @@ class MonthView(QWidget):
             toolbar.addWidget(style.label(text, 0.9, muted=True))
             toolbar.addSpacing(8)
         toolbar.addStretch()
+        toolbar.addWidget(self.pdf_button)
         toolbar.addWidget(self.export_period_button)
         toolbar.addWidget(self.export_button)
 
@@ -301,6 +305,32 @@ class MonthView(QWidget):
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
         QMessageBox.information(self, "Export attendance", f"Saved {first:%B} {first.year} to\n{path}")
+
+    def save_pdf(self) -> None:
+        """Save the month register as a landscape A4 PDF, ready to print."""
+        if self.register is None:
+            return
+        first = date(self.year, self.month, 1)
+        title = f"{self.file_label} · attendance {first:%B} {first.year}"
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Save PDF", str(Path.home() / f"{safe_name}.pdf"), "PDF files (*.pdf)"
+        )
+        if not path:
+            return
+        path = Path(path) if path.lower().endswith(".pdf") else Path(path + ".pdf")
+        writer = QPdfWriter(str(path))
+        writer.setTitle(title)
+        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        writer.setPageOrientation(QPageLayout.Orientation.Landscape)
+        document = QTextDocument()
+        document.setHtml(attendance_month_html(self.register, title))
+        document.print_(writer)
+        del writer  # finishes the file
+        if not path.exists() or path.stat().st_size == 0:
+            QMessageBox.warning(self, "Save PDF", f"The PDF could not be saved to\n{path}")
+            return
+        QMessageBox.information(self, "Save PDF", f"Saved {first:%B} {first.year} to\n{path}")
 
     def export_period(self) -> None:
         """Ask for the first and last day, then save each student's totals for them."""

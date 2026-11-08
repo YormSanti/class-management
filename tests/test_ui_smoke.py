@@ -697,3 +697,18 @@ def test_attendance_export_period(window: MainWindow, roster: RosterService, tmp
         rows = list(csv.reader(f))
     assert rows[1][1:] == ["Hopper", "Grace", "0", "0", "1", "0", "0", "0"]
     assert rows[2][1:] == ["Lovelace", "Ada", "1", "0", "0", "0", "0", "100"]
+
+
+def test_attendance_month_saves_pdf(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    view = _attendance_page(window, roster)
+    view.mark_rest_button.click()
+    saved = tmp_path / "november"
+    shown = []
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: shown.append(args[2]))
+    view.month_view.save_pdf()
+    pdf = tmp_path / "november.pdf"  # the extension is added
+    assert pdf.read_bytes().startswith(b"%PDF")
+    assert shown and shown[0].startswith("Saved November 2026")

@@ -79,3 +79,21 @@ def test_attendance_summary_csv(tmp_path: Path):
         ["03", "Dubois", "Chloé", "8", "1", "1", "0", "0", "90"],
         ["", "Lovelace", "Ada", "0", "0", "0", "0", "10", ""],
     ]
+
+
+def test_attendance_month_html():
+    from app.services.export import attendance_month_html
+
+    days = [date(2026, 10, 1), date(2026, 10, 2)]
+    register = MonthRegister(
+        class_id=1, year=2026, month=10, subject_id=None, days=days,
+        rows=[
+            MonthRow(Student(class_id=1, first_name="Chloé", last_name="O<Brien", student_no="03"),
+                     {days[0]: AttendanceStatus.PRESENT, days[1]: AttendanceStatus.ABSENT}),
+        ],
+    )  # fmt: skip
+    page = attendance_month_html(register, "7B · October 2026")
+    assert "<h2" in page and "7B · October 2026" in page
+    assert "O&lt;Brien, Chloé" in page  # names are escaped
+    assert "Thu<br>1" in page and "Fri<br>2" in page
+    assert "1 student · 2 days recorded · attendance 50%" in page

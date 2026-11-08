@@ -1,6 +1,7 @@
 """Write app data to files the teacher can open elsewhere, e.g. in a spreadsheet."""
 
 import csv
+import html
 import os
 import tempfile
 from collections.abc import Sequence
@@ -63,3 +64,47 @@ def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
              row.unmarked, "" if rate is None else round(rate)]
         )  # fmt: skip
     _write_csv(path, rows)
+
+
+STATUS_MARK = {"present": "/", "late": "L", "absent": "A", "excused": "E"}
+
+
+def attendance_month_html(register: MonthRegister, title: str) -> str:
+    """A printable month register: students down the side, days across, totals on the right.
+
+    Present is "/", late "L", absent "A", excused "E"; a blank cell is not marked.
+    """
+    days = register.days
+    cell = 'style="border: 1px solid #999; padding: 2px 3px; text-align: center;"'
+    name_cell = 'style="border: 1px solid #999; padding: 2px 6px; text-align: left;"'
+    head = [f"<th {cell}>No.</th>", f"<th {name_cell}>Student</th>"]
+    head += [f"<th {cell}>{day:%a}<br>{day.day}</th>" for day in days]
+    head += [f"<th {cell}>{label}</th>" for label in ("Abs", "Late", "Exc", "%")]
+    lines = ["<tr>" + "".join(head) + "</tr>"]
+    for n, row in enumerate(register.rows, start=1):
+        counts, rate = row.counts(), row.rate
+        cells = [f"<td {cell}>{html.escape(row.student.student_no or str(n))}</td>"]
+        cells.append(f"<td {name_cell}>{html.escape(row.student.last_name)}, {html.escape(row.student.first_name)}</td>")
+        for day in days:
+            status = row.statuses.get(day)
+            cells.append(f"<td {cell}>{STATUS_MARK[status.value] if status else ''}</td>")
+        cells += [f"<td {cell}>{counts[k]}</td>" for k in ("absent", "late", "excused")]
+        cells.append(f"<td {cell}>{'' if rate is None else round(rate)}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    absent = [f"<td {cell}>{register.absent_on(day) or ''}</td>" for day in days]
+    lines.append(
+        f'<tr><td {cell}></td><td {name_cell}><b>Absent</b></td>{"".join(absent)}'
+        + f"<td {cell}></td>" * 4 + "</tr>"
+    )
+    rate = register.rate
+    students, recorded = len(register.rows), len(register.recorded_days)
+    summary = f"{students} student{'' if students == 1 else 's'} · {recorded} day{'' if recorded == 1 else 's'} recorded"
+    if rate is not None:
+        summary += f" · attendance {rate:.0f}%"
+    return (
+        '<html><body style="font-family: sans-serif; font-size: 8pt;">'
+        f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
+        f'<p style="color: #555;">{summary}. Present /, late L, absent A, excused E; blank = not marked.</p>'
+        '<table width="100%" style="border-collapse: collapse;" cellspacing="0">' + "".join(lines) + "</table>"
+        "</body></html>"
+    )
