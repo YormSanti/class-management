@@ -31,6 +31,7 @@ from app.services.dashboard import DashboardService
 from app.services.roster import RosterService
 from app.ui.dialogs.setup_dialog import SetupDialog
 from app.ui.main_window import MainWindow
+from app.ui.theme import apply_theme
 
 log = logging.getLogger("classroom")
 
@@ -123,6 +124,7 @@ def main() -> int:
     config = _resolve_config()
     if config is None:
         return 0
+    apply_theme(app, config.theme)
 
     problems = find_problems(config.db_path)
     if problems:

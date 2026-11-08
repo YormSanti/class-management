@@ -10,7 +10,7 @@ def test_missing_config_means_first_launch(tmp_path: Path):
 
 def test_save_and_load_round_trip(tmp_path: Path):
     path = tmp_path / "settings" / "config.json"
-    config = AppConfig(data_dir=tmp_path / "data", ranking_method="dense")
+    config = AppConfig(data_dir=tmp_path / "data", ranking_method="dense", theme="dark")
     save_config(config, path)
 
     assert load_config(path) == config
@@ -40,3 +40,11 @@ def test_prepare_data_dir_creates_folder(tmp_path: Path):
     prepare_data_dir(target)
     assert target.is_dir()
     assert list(target.iterdir()) == []  # write probe cleaned up
+
+
+def test_theme_defaults_to_system(tmp_path: Path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"data_dir": str(tmp_path)}))
+    assert load_config(path).theme == "system"  # config.json from before themes existed
+    path.write_text(json.dumps({"data_dir": str(tmp_path), "theme": "purple"}))
+    assert load_config(path).theme == "system"

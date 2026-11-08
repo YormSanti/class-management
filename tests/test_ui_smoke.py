@@ -817,3 +817,30 @@ def test_settings_page_switches_to_existing_data_without_overwriting(
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_settings_page_switches_theme(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from app.config import load_config
+    from app.ui import style
+
+    config_path = tmp_path / "config.json"
+    window = _window_saving_config(conn, roster, tmp_path, config_path)
+    window.show()
+    view = window.settings_view
+    try:
+        assert view.theme_buttons["system"].isChecked()
+        view.theme_buttons["dark"].click()
+        qapp.processEvents()  # widgets get the new palette from the event loop
+        assert style.is_dark(window.attendance_view)
+        assert qapp.style().name().lower() == "fusion"
+        assert load_config(config_path).theme == "dark"
+        view.theme_buttons["light"].click()
+        qapp.processEvents()
+        assert not style.is_dark(window.attendance_view)
+    finally:
+        view.theme_buttons["system"].click()  # leave the app as other tests expect it
+        qapp.processEvents()
+        window.close()
+        window.deleteLater()

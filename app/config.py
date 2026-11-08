@@ -19,6 +19,7 @@ DB_FILENAME = "classroom.db"
 BACKUP_DIRNAME = "backups"
 
 RANKING_METHODS = ("competition", "dense")
+THEMES = ("system", "light", "dark")
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ log = logging.getLogger(__name__)
 class AppConfig:
     data_dir: Path
     ranking_method: str = "competition"
+    theme: str = "system"
 
     @property
     def db_path(self) -> Path:
@@ -70,7 +72,10 @@ def load_config(path: Path | None = None) -> AppConfig | None:
     ranking_method = raw.get("ranking_method", "competition")
     if ranking_method not in RANKING_METHODS:
         ranking_method = "competition"
-    return AppConfig(data_dir=data_dir, ranking_method=ranking_method)
+    theme = raw.get("theme", "system")
+    if theme not in THEMES:
+        theme = "system"
+    return AppConfig(data_dir=data_dir, ranking_method=ranking_method, theme=theme)
 
 
 def save_config(config: AppConfig, path: Path | None = None) -> None:

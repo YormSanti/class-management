@@ -7,6 +7,7 @@ from PySide6.QtCore import QEvent, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QButtonGroup,
     QFileDialog,
     QHBoxLayout,
@@ -33,6 +34,7 @@ from app.services.backup import (
     list_auto_backups,
 )
 from app.ui import style
+from app.ui.theme import THEME_LABELS, apply_theme
 
 RANKING_CHOICES = {
     "competition": ("Shared places skip the next place", "1, 2, 2, 4: two students share 2nd, the next is 4th"),
@@ -53,7 +55,7 @@ def _open_folder(path) -> None:
 
 
 class SettingsView(QWidget):
-    """Where the data lives, its backups, how rankings share places, and about the app.
+    """Where the data lives, its backups, the app's look, how rankings share places, and about the app.
 
     `save` writes the config (config.json); None keeps changes for this session only.
     `restore` puts a backup's data in place of the current data and returns where the
@@ -155,7 +157,27 @@ class SettingsView(QWidget):
             choice.addWidget(hint)
             rankings.body.addLayout(choice)
         self.ranking_buttons[config.ranking_method].setChecked(True)
-        self.ranking_group.buttonToggled.connect(self._ranking_toggled)
+        self.ranking_group.buttonToggled.connect(
+            lambda button, checked: checked and self._choose("ranking_method", self.ranking_buttons, button)
+        )
+
+        # --- appearance ---
+        appearance = style.Panel("Appearance")
+        self.theme_group = QButtonGroup(self)
+        self.theme_buttons: dict[str, QRadioButton] = {}
+        theme_row = QHBoxLayout()
+        theme_row.setSpacing(20)
+        for theme, title in THEME_LABELS.items():
+            button = QRadioButton(title)
+            self.theme_buttons[theme] = button
+            self.theme_group.addButton(button)
+            theme_row.addWidget(button)
+        theme_row.addStretch()
+        appearance.body.addLayout(theme_row)
+        self.theme_buttons[config.theme].setChecked(True)
+        self.theme_group.buttonToggled.connect(
+            lambda button, checked: checked and self._choose("theme", self.theme_buttons, button)
+        )
 
         # --- about ---
         about = style.Panel("About")
@@ -179,7 +201,7 @@ class SettingsView(QWidget):
         column.setSpacing(16)
         column.addWidget(style.caption("Classroom Manager"))
         column.addWidget(style.label("Settings", 1.9))
-        for panel in (data, backups, rankings, about):
+        for panel in (data, backups, appearance, rankings, about):
             column.addWidget(panel)
         column.addStretch()
         content.setMaximumWidth(760)
@@ -319,21 +341,22 @@ class SettingsView(QWidget):
 
     # --- changes ---------------------------------------------------------------
 
-    def _ranking_toggled(self, button: QRadioButton, checked: bool) -> None:
-        if not checked:
+    def _choose(self, field: str, buttons: dict[str, QRadioButton], button: QRadioButton) -> None:
+        """Save the option picked with `button` as the config's `field`, and use it."""
+        value = next(v for v, b in buttons.items() if b is button)
+        if value == getattr(self.config, field):
             return
-        method = next(m for m, b in self.ranking_buttons.items() if b is button)
-        if method == self.config.ranking_method:
-            return
-        changed = replace(self.config, ranking_method=method)
+        changed = replace(self.config, **{field: value})
         if self.save is not None:
             try:
                 self.save(changed)
             except OSError as exc:
                 QMessageBox.warning(self, "Settings", f"The setting could not be saved:\n{exc}")
-                self.ranking_buttons[self.config.ranking_method].setChecked(True)  # put it back
+                buttons[getattr(self.config, field)].setChecked(True)  # put it back
                 return
         self.config = changed
+        if field == "theme" and (app := QApplication.instance()) is not None:
+            apply_theme(app, value)
         self.config_changed.emit(changed)
 
     # --- Qt events -------------------------------------------------------------
