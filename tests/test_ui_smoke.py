@@ -844,3 +844,28 @@ def test_settings_page_switches_theme(
         qapp.processEvents()
         window.close()
         window.deleteLater()
+
+
+def test_dashboard_says_whether_todays_register_is_taken(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+    from app.ui.views import dashboard_view
+
+    class Friday(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 6)
+
+    monkeypatch.setattr(dashboard_view, "date", Friday)
+    view = _attendance_page(window, roster)  # on Friday 6 November 2026
+    dashboard = window.dashboard_view
+    dashboard.refresh()
+    assert dashboard.today_label.text() == "Today's register hasn't been taken yet."
+    view._row_widgets[0][0].buttons[AttendanceStatus.LATE].click()
+    dashboard.refresh()
+    assert dashboard.today_label.text() == "Today's register: 1 of 2 students marked."
+    view.mark_rest_button.click()
+    dashboard.refresh()
+    assert dashboard.today_label.text() == "Today's register is done: 1 present · 1 late."
+    assert not dashboard.today_label.isHidden()

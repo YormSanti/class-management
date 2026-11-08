@@ -31,6 +31,7 @@ from app.services.dashboard import (
     DayAttendance,
     SubjectSummary,
     letter_grade,
+    today_register,
 )
 from app.services.roster import RosterService
 from app.ui import style
@@ -197,6 +198,8 @@ class DashboardView(QWidget):
         header.addStretch()
         header.addWidget(gradebook_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(attendance_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        self.today_label = style.label("", bold=True)
+        self.today_label.hide()
 
         # --- key numbers ---
         kpi_panel = QFrame()
@@ -304,6 +307,7 @@ class DashboardView(QWidget):
         # Wrapped labels make the scroll area ignore the minimum height; enforce it.
         content_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         content_layout.addLayout(header)
+        content_layout.addWidget(self.today_label)
         content_layout.addWidget(kpi_panel)
         content_layout.addLayout(middle, stretch=1)
         content_layout.addLayout(bottom)
@@ -356,6 +360,7 @@ class DashboardView(QWidget):
         self.date_label.setText(f"{today:%A}, {today.day} {today:%B}".upper())
         self.title_label.setText(f"Today in {school_class.name}")
         self._show_kpis(summary)
+        self._show_today(today, summary)
         self.chart.set_days(summary.attendance_days, today)
         self._show_attention(summary.attention)
         self._show_assignments(summary.recent_assignments, summary.active_students)
@@ -414,6 +419,14 @@ class DashboardView(QWidget):
             style.set_color(sub, style.color(self, "warn"))
         else:
             sub.setText("Nothing missing")
+
+    def _show_today(self, today: date, s: DashboardSummary) -> None:
+        status = today_register(today, s.today_counts, s.active_students)
+        self.today_label.setVisible(status is not None)
+        if status is not None:
+            text, tone = status
+            self.today_label.setText(text)
+            style.set_color(self.today_label, style.color(self, tone))
 
     def _toggle_attention(self) -> None:
         self._attention_expanded = not self._attention_expanded
