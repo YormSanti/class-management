@@ -1,8 +1,10 @@
 import csv
+from datetime import date
 from pathlib import Path
 
-from app.models import Student
-from app.services.export import write_roster_csv
+from app.models import AttendanceStatus, Student
+from app.services.attendance import MonthRegister, MonthRow
+from app.services.export import write_attendance_csv, write_roster_csv
 
 
 def test_roster_csv_opens_in_excel_with_accents(tmp_path: Path):
@@ -29,3 +31,69 @@ def test_roster_csv_replaces_existing_file(tmp_path: Path):
     path.write_text("old")
     write_roster_csv(path, [])
     assert path.read_text(encoding="utf-8-sig").strip() == "Student #,Last name,First name,Status,Notes"
+
+
+def test_attendance_csv(tmp_path: Path):
+    days = [date(2026, 10, 1), date(2026, 10, 2)]
+    register = MonthRegister(
+        class_id=1, year=2026, month=10, subject_id=None, days=days,
+        rows=[
+            MonthRow(Student(class_id=1, first_name="Chloé", last_name="Dubois", student_no="03"),
+                     {days[0]: AttendanceStatus.PRESENT, days[1]: AttendanceStatus.ABSENT}),
+            MonthRow(Student(class_id=1, first_name="Ada", last_name="Lovelace")),
+        ],
+    )  # fmt: skip
+    path = tmp_path / "october.csv"
+    write_attendance_csv(path, register)
+
+    raw = path.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")  # BOM for Excel
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows == [
+        ["Student #", "Last name", "First name", "2026-10-01", "2026-10-02", "Absent", "Late", "Excused", "Attendance %"],
+        ["03", "Dubois", "Chloé", "P", "A", "1", "0", "0", "50"],
+        ["", "Lovelace", "Ada", "", "", "0", "0", "0", ""],
+    ]
+
+
+def test_attendance_summary_csv(tmp_path: Path):
+    from app.services.attendance import PeriodRow, PeriodSummary
+    from app.services.export import write_attendance_summary_csv
+
+    counts = {"present": 8, "absent": 1, "late": 1, "excused": 0}
+    none = {"present": 0, "absent": 0, "late": 0, "excused": 0}
+    summary = PeriodSummary(
+        class_id=1, start=date(2026, 10, 1), end=date(2026, 10, 31), subject_id=None, recorded_days=10,
+        rows=[
+            PeriodRow(Student(class_id=1, first_name="Chloé", last_name="Dubois", student_no="03"), counts, 0),
+            PeriodRow(Student(class_id=1, first_name="Ada", last_name="Lovelace"), none, 10),
+        ],
+    )  # fmt: skip
+    path = tmp_path / "term.csv"
+    write_attendance_summary_csv(path, summary)
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows == [
+        ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"],
+        ["03", "Dubois", "Chloé", "8", "1", "1", "0", "0", "90"],
+        ["", "Lovelace", "Ada", "0", "0", "0", "0", "10", ""],
+    ]
+
+
+def test_attendance_month_html():
+    from app.services.export import attendance_month_html
+
+    days = [date(2026, 10, 1), date(2026, 10, 2)]
+    register = MonthRegister(
+        class_id=1, year=2026, month=10, subject_id=None, days=days,
+        rows=[
+            MonthRow(Student(class_id=1, first_name="Chloé", last_name="O<Brien", student_no="03"),
+                     {days[0]: AttendanceStatus.PRESENT, days[1]: AttendanceStatus.ABSENT}),
+        ],
+    )  # fmt: skip
+    page = attendance_month_html(register, "7B · October 2026")
+    assert "<h2" in page and "7B · October 2026" in page
+    assert "O&lt;Brien, Chloé" in page  # names are escaped
+    assert "Thu<br>1" in page and "Fri<br>2" in page
+    assert "1 student · 2 days recorded · attendance 50%" in page

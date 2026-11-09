@@ -61,6 +61,7 @@ class DashboardSummary:
     recent_assignments: list[AssignmentStats] = field(default_factory=list)
     grade_distribution: dict[str, int] = field(default_factory=dict)
     subjects: list[SubjectSummary] = field(default_factory=list)
+    today_counts: dict[str, int] = field(default_factory=dict)  # today's daily register, status -> students
 
 
 def letter_grade(percent: float) -> str:
@@ -102,6 +103,20 @@ def overall_averages(by_subject: dict[tuple[int, int], float]) -> dict[int, floa
     for (student_id, _subject_id), percent in by_subject.items():
         per_student.setdefault(student_id, []).append(percent)
     return {sid: sum(values) / len(values) for sid, values in per_student.items()}
+
+
+def today_register(today: date, counts: dict[str, int], active: int) -> tuple[str, str] | None:
+    """(text, tone) about today's daily register, tone "warn" or "accent"; None on
+    weekends or without students."""
+    if today.weekday() >= 5 or not active:
+        return None
+    marked = sum(counts.values())
+    if not marked:
+        return "Today's register hasn't been taken yet.", "warn"
+    if marked < active:
+        return f"Today's register: {marked} of {active} students marked.", "warn"
+    parts = [f"{counts[s]} {s}" for s in (PRESENT, LATE, ABSENT, EXCUSED) if counts.get(s)]
+    return "Today's register is done: " + " · ".join(parts) + ".", "accent"
 
 
 def _sum_counts(days: list[dict[str, int]]) -> dict[str, int]:
@@ -177,6 +192,7 @@ class DashboardService:
             recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS),
             grade_distribution=distribution,
             subjects=subject_summaries,
+            today_counts=by_date.get(today, {}),
         )
 
     def _needs_attention(
