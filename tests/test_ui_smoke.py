@@ -965,3 +965,33 @@ def test_exports_open_in_the_folder_used_last(qapp: QApplication, tmp_path: Path
     files.ask_save_path(None, "Export", "october", "CSV files", ".csv")
     files.ask_save_path(None, "Save PDF", "november", "PDF files", ".pdf")
     assert asked == [str(Path.home() / "october.csv"), str(tmp_path / "reports" / "november.pdf")]
+
+
+def test_back_up_now_remembers_the_folder(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QFileDialog
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    asked: list[str] = []
+
+    def pick(_parent, _title, start, _filter):
+        asked.append(start)
+        return str(usb / "copy"), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.back_up_now()
+    first.close()
+    assert (usb / "copy.db").exists()
+    assert Path(asked[0]).parent == Path.home()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second.back_up_now()
+    second.close()
+    assert Path(asked[1]).parent == usb

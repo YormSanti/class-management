@@ -6,7 +6,6 @@ from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QFileDialog,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -26,6 +25,7 @@ from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
+from app.ui.files import ask_save_path
 from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
@@ -165,14 +165,13 @@ class MainWindow(QMainWindow):
 
     def back_up_now(self) -> None:
         """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
+        saved = str(self.settings.value("backup/folder", "")) if self.settings is not None else ""
+        folder = Path(saved) if saved and Path(saved).is_dir() else Path.home()
         # Not "classroom_…": that prefix marks automatic backups, which get pruned.
-        start = Path.home() / f"Classroom backup {date.today().isoformat()}.db"
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Back up now", str(start), "Classroom Manager backups (*.db)"
-        )
-        if not path:
+        name = f"Classroom backup {date.today().isoformat()}"
+        dest = ask_save_path(self, "Back up now", name, "Classroom Manager backups", ".db", folder)
+        if dest is None:
             return
-        dest = Path(path) if path.lower().endswith(".db") else Path(path + ".db")
         if dest.resolve() == self.config.db_path.resolve():
             QMessageBox.warning(self, "Back up now", "Choose another file than the data file itself.")
             return
@@ -181,6 +180,8 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Back up now", f"The backup could not be saved:\n{exc}")
             return
+        if self.settings is not None:
+            self.settings.setValue("backup/folder", str(dest.parent))  # e.g. the USB stick, next time
         self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
 
     def open_data_folder(self) -> None:
