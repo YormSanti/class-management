@@ -59,10 +59,13 @@ class PeriodDialog(QDialog):
 
         presets = QHBoxLayout()
         self.preset_buttons: dict[str, QPushButton] = {}
-        for text, (first, last) in preset_periods(today or date.today()).items():
+        self._presets = preset_periods(today or date.today())
+        for text in self._presets:
             button = QPushButton(text)
             button.setAutoDefault(False)
-            button.clicked.connect(lambda _checked, first=first, last=last: self.set_period(first, last))
+            # A bound method, not a lambda holding `self`: such a cycle lets Python's garbage
+            # collector delete a parentless dialog at a random moment later, crashing Qt.
+            button.clicked.connect(self._use_preset)
             presets.addWidget(button)
             self.preset_buttons[text] = button
         presets.addStretch()
@@ -79,6 +82,9 @@ class PeriodDialog(QDialog):
         layout.addWidget(self.problem)
         layout.addWidget(self.buttons)
         self._update_ok()
+
+    def _use_preset(self) -> None:
+        self.set_period(*self._presets[self.sender().text()])
 
     def set_period(self, start: date, end: date) -> None:
         self.start_edit.setDate(_qdate(start))
