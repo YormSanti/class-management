@@ -41,6 +41,18 @@ from app.ui.style import Panel
 _KIND_COLOR = {"absent": "danger", "grades": "warn", "missing": "info", "late": "warn"}
 _KIND_LABEL = {"absent": "Attendance", "grades": "Grades", "missing": "Missing", "late": "Late"}
 ATTENTION_SHOWN = 5
+KPI_HELP = {
+    "Active students": "Students in this class who aren't deactivated. Inactive students are left out of every figure.",
+    "Attendance this week": (
+        "Present or late, as a share of the days marked present, late or absent in the daily register "
+        "since Monday. Excused days count neither way."
+    ),
+    "Class average": (
+        "The mean of the students' averages. Each student's average is the mean of their subject "
+        "averages, weighted by grade category; work not handed in is left out, unlike a score of 0."
+    ),
+    "Missing work": "Scores not entered for dated assignments up to today, over all active students.",
+}
 
 
 def _clear(layout: QGridLayout | QVBoxLayout | QHBoxLayout) -> None:
@@ -249,9 +261,11 @@ class DashboardView(QWidget):
             cell = QVBoxLayout()
             cell.setContentsMargins(20, 16, 20, 16)
             cell.setSpacing(4)
-            value, sub = style.label("—", 2.1), style.label("", 0.85, muted=True)
+            title, value, sub = style.label(name, 0.92, muted=True), style.label("—", 2.1), style.label("", 0.85, muted=True)
             sub.setWordWrap(True)
-            cell.addWidget(style.label(name, 0.92, muted=True))
+            for text in (title, value, sub):
+                text.setToolTip(KPI_HELP[name])
+            cell.addWidget(title)
             cell.addWidget(value)
             cell.addWidget(sub)
             cell.addStretch()

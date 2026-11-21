@@ -1217,3 +1217,10 @@ def test_clicking_a_student_who_needs_attention_shows_their_history(
     QTest.mouseClick(row, Qt.MouseButton.LeftButton)
     assert window.stack.currentWidget() is window.attendance_view
     assert shown and shown[0].windowTitle() == "Attendance · Ada Lovelace"
+
+
+def test_dashboard_numbers_explain_themselves(window: MainWindow):
+    from app.ui.views.dashboard_view import KPI_HELP
+
+    for name, (value, sub) in window.dashboard_view.kpis.items():
+        assert value.toolTip() == sub.toolTip() == KPI_HELP[name]
