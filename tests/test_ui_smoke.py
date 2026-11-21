@@ -754,6 +754,7 @@ def test_settings_page_restores_a_backup(
         assert [c.name for c in roster.list_classes()] == ["7B"]
         assert window.class_id == seventh  # 8C is gone, so the window falls back to 7B
         assert view.backup_table.rowCount() == 2  # the data from before the restore was kept
+        assert view.backup_table.item(0, 0).text().endswith(" · from just before a restore")
         assert infos and infos[0].startswith("Your data is back as it was")
     finally:
         window.close()

@@ -31,6 +31,7 @@ from app.services.backup import (
     BackupError,
     backup_time,
     copy_database,
+    is_before_restore,
     list_auto_backups,
 )
 from app.ui import style
@@ -241,9 +242,10 @@ class SettingsView(QWidget):
         self.backup_table.setRowCount(len(shown))
         for i, path in enumerate(shown):
             made = backup_time(path)
-            self.backup_table.setItem(
-                i, 0, QTableWidgetItem(f"{made:%a} {made.day} {made:%b %Y}, {made:%H:%M}" if made else path.name)
-            )
+            text = f"{made:%a} {made.day} {made:%b %Y}, {made:%H:%M}" if made else path.name
+            if is_before_restore(path):
+                text += " · from just before a restore"
+            self.backup_table.setItem(i, 0, QTableWidgetItem(text))
             try:
                 size = f"{path.stat().st_size / 1024:,.0f} KB"
             except OSError:

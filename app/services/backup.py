@@ -10,6 +10,7 @@ from pathlib import Path
 from app.db.connection import SCHEMA_VERSION, find_problems, init_db
 
 AUTO_BACKUP_PREFIX = "classroom_"
+BEFORE_RESTORE_SUFFIX = "-before-restore"  # marks the copy of the data made just before a restore
 TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 KEEP_AUTO_BACKUPS = 10  # the newest ones, whatever their date
 KEEP_DAILY_BACKUPS = 30  # plus the last one of each of this many days
@@ -62,10 +63,16 @@ def list_auto_backups(backup_dir: Path) -> list[Path]:
 
 def backup_time(path: Path) -> datetime | None:
     """When an automatic backup was made, read from its name; None if the name isn't one of ours."""
+    stamp = path.stem[len(AUTO_BACKUP_PREFIX) :].removesuffix(BEFORE_RESTORE_SUFFIX)
     try:
-        return datetime.strptime(path.stem[len(AUTO_BACKUP_PREFIX) :], TIMESTAMP_FORMAT)
+        return datetime.strptime(stamp, TIMESTAMP_FORMAT)
     except ValueError:
         return None
+
+
+def is_before_restore(path: Path) -> bool:
+    """True for the copy of the data that restore_backup() saved just before a restore."""
+    return path.stem.endswith(BEFORE_RESTORE_SUFFIX)
 
 
 def _backup_day(path: Path) -> str:
@@ -142,9 +149,7 @@ def restore_backup(backup: Path, conn: sqlite3.Connection, db_path: Path, backup
         raise BackupError("This backup was made by a newer version of the app.")
 
     stamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-    safety = backup_dir / f"{AUTO_BACKUP_PREFIX}{stamp}.db"
-    if safety.exists() or safety == backup:
-        safety = safety.with_name(f"{AUTO_BACKUP_PREFIX}{stamp}-before-restore.db")
+    safety = backup_dir / f"{AUTO_BACKUP_PREFIX}{stamp}{BEFORE_RESTORE_SUFFIX}.db"
     copy_database(db_path, safety)
 
     source = sqlite3.connect(backup)

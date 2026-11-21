@@ -163,3 +163,14 @@ def test_a_copy_that_fails_its_check_is_not_kept(db_path: Path, tmp_path: Path, 
         backup.copy_database(db_path, good)
     assert good.read_text() == "older good copy"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_the_copy_made_before_a_restore_is_marked(db_path: Path, conn: sqlite3.Connection, tmp_path: Path):
+    from app.services.backup import is_before_restore, restore_backup
+
+    backups = tmp_path / "backups"
+    old = auto_backup(db_path, backups, now=datetime(2026, 11, 6, 8, 0))
+    safety = restore_backup(old, conn, db_path, backups)
+    assert is_before_restore(safety) and not is_before_restore(old)
+    assert backup_time(safety) is not None
+    assert list_auto_backups(backups)[0] == safety  # the newest
