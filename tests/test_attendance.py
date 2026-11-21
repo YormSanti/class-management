@@ -204,6 +204,15 @@ def test_month_register_lists_weekdays_and_marked_weekends(attendance, roster, k
     assert month.rate == pytest.approx(200 / 3)
 
 
+def test_month_register_keeps_the_notes(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, date(2026, 10, 1), P)
+    attendance.mark(ada, date(2026, 10, 2), E)
+    attendance.set_note(ada, date(2026, 10, 2), "Dentist")
+    (row,) = attendance.month_register(klass, 2026, 10).rows
+    assert row.notes == {date(2026, 10, 2): "Dentist"}
+
+
 def test_month_register_keeps_registers_apart(attendance, roster, klass):
     ada = _student(roster, klass, "Ada", "Lovelace")
     maths = roster.list_subjects(klass)[0].id

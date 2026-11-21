@@ -101,6 +101,7 @@ class DayRegister:
 class MonthRow:
     student: Student
     statuses: dict[date, AttendanceStatus] = field(default_factory=dict)
+    notes: dict[date, str] = field(default_factory=dict)  # only days with a note
 
     def counts(self) -> dict[str, int]:
         counts = {s.value: 0 for s in AttendanceStatus}
@@ -228,12 +229,18 @@ class AttendanceService:
         last = date(year, month, calendar.monthrange(year, month)[1])
         records = self.attendance.for_period(class_id, first, last, subject_id)
         by_student: dict[int, dict[date, AttendanceStatus]] = {}
+        notes: dict[int, dict[date, str]] = {}
         for r in records:
             by_student.setdefault(r.student_id, {})[r.date] = r.status
+            if r.note:
+                notes.setdefault(r.student_id, {})[r.date] = r.note
         marked_days = {r.date for r in records}
         month_days = [first + timedelta(days=n) for n in range(last.day)]
         days = [day for day in month_days if day.weekday() < 5 or day in marked_days]
-        rows = [MonthRow(s, by_student.get(s.id, {})) for s in self.students.list_for_class(class_id)]
+        rows = [
+            MonthRow(s, by_student.get(s.id, {}), notes.get(s.id, {}))
+            for s in self.students.list_for_class(class_id)
+        ]
         return MonthRegister(class_id, year, month, subject_id, days, rows)
 
     def period_summary(
