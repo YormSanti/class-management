@@ -469,6 +469,7 @@ class AttendanceView(QWidget):
         self.next_button.setFixedWidth(36)
         self.next_button.clicked.connect(lambda: self.set_day(school_day(self.day, 1)))
         self.today_button = QPushButton("Today")
+        self.today_button.setToolTip("Go to today (Alt+Home)")
         self.today_button.clicked.connect(lambda: self.set_day(date.today()))
 
         date_row = QHBoxLayout()
@@ -535,7 +536,8 @@ class AttendanceView(QWidget):
 
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · "
-            "N writes a note · H or double-click shows a student's history · Alt+← → change day",
+            "N writes a note · H or double-click shows a student's history · Alt+← → change day · "
+            "Alt+Home goes to today",
             0.85,
             muted=True,
         )
@@ -581,6 +583,9 @@ class AttendanceView(QWidget):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(lambda step=step: self.set_day(school_day(self.day, step)))
+        today = QShortcut(QKeySequence("Alt+Home"), self)
+        today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        today.activated.connect(lambda: self.set_day(date.today()))
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
         undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         undo.activated.connect(self.undo)

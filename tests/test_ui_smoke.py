@@ -1134,3 +1134,17 @@ def test_attendance_title_names_the_subject_register(window: MainWindow, roster:
     assert view.title_label.text() == "Attendance · 7B"
     view.register_combo.setCurrentIndex(view.register_combo.findText("Maths"))
     assert view.title_label.text() == "Attendance · 7B · Maths"
+
+
+def test_alt_home_goes_to_today(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    QTest.keyClick(view.table, Qt.Key.Key_Home, Qt.KeyboardModifier.AltModifier)
+    assert view.day == date.today()
