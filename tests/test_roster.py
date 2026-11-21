@@ -313,6 +313,18 @@ def test_parse_student_list_skips_spreadsheet_header():
     assert problems == []
 
 
+def test_parse_student_list_reads_semicolon_columns():
+    from app.services.roster import parse_student_list
+
+    text = "No;First name;Last name\n1;Ada;Lovelace\nGrace ; Hopper\n;;\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [
+        ("1", "Ada", "Lovelace"),
+        (None, "Grace", "Hopper"),
+    ]
+    assert problems == ["Line 4: expected first and last name columns: ;;"]
+
+
 def test_add_students_is_all_or_nothing(roster: RosterService, class_id: int):
     from app.services.roster import parse_student_list
 

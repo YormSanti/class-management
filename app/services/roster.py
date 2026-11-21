@@ -78,9 +78,9 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
     """Read students from pasted text, one per line. Returns (students, problems).
 
     A line can be "First Last", "Last, First", either one after a student number
-    ("007 Ada Lovelace"), or columns copied from a spreadsheet: first and last
-    name, or number, first and last name. Blank lines and a heading row
-    (containing "name") are skipped.
+    ("007 Ada Lovelace"), or columns copied from a spreadsheet or a CSV file
+    separated by tabs or semicolons: first and last name, or number, first and
+    last name. Blank lines and a heading row (containing "name") are skipped.
     """
     students: list[PastedStudent] = []
     problems: list[str] = []
@@ -88,8 +88,9 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
         line = raw.strip()
         if not line:
             continue
-        if "\t" in line:
-            cells = [c.strip() for c in line.split("\t")]
+        separator = "\t" if "\t" in line else ";" if ";" in line else None
+        if separator:
+            cells = [c.strip() for c in line.split(separator)]
             cells = [c for c in cells if c]
             if "name" in line.casefold() and not students and not problems:
                 continue  # header row

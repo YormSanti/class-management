@@ -35,8 +35,8 @@ class PasteStudentsDialog(QDialog):
 
         intro = QLabel(
             "One student per line, as <i>First Last</i> or <i>Last, First</i>, optionally after "
-            "a student number. Columns copied from a spreadsheet work too: first and last "
-            "name, or number, first and last name."
+            "a student number. Columns copied from a spreadsheet or a CSV file work too: "
+            "first and last name, or number, first and last name."
         )
         intro.setWordWrap(True)
 
