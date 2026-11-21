@@ -305,3 +305,20 @@ def test_period_summary(roster: RosterService, conn: sqlite3.Connection):
     assert (alan_row.unmarked, alan_row.rate) == (1, 0)
     with pytest.raises(AttendanceError):
         service.period_summary(class_id, date(2026, 10, 31), date(2026, 10, 1))
+
+
+def test_note_suggestions_are_the_class_notes_newest_first(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    other = _student(roster, roster.save_class(SchoolClass(name="8A")).id, "Alan", "Turing")
+    for student, day, note in (
+        (ada, date(2026, 10, 1), "Dentist"),
+        (grace, date(2026, 10, 2), "Bus late"),
+        (ada, date(2026, 10, 5), "Bus late"),
+        (grace, date(2026, 10, 3), "Dentist"),
+        (other, date(2026, 10, 9), "Sports day"),
+    ):
+        attendance.mark(student, day, L)
+        attendance.set_note(student, day, note)
+    attendance.mark(ada, date(2026, 10, 6), P)  # no note
+    assert attendance.note_suggestions(klass) == ["Bus late", "Dentist"]

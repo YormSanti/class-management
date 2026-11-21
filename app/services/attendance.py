@@ -17,6 +17,7 @@ from app.services.dashboard import ABSENCE_LIMIT, ATTENTION_WINDOW_DAYS, LATE_LI
 PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
 RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on the dashboard
+NOTE_SUGGESTIONS = 50
 
 
 class AttendanceError(ValueError):
@@ -268,6 +269,10 @@ class AttendanceService:
             raise AttendanceError("That student no longer exists.")
         self._check_subject(student.class_id, subject_id)
         return StudentHistory(student, self.attendance.for_student(student_id, subject_id))
+
+    def note_suggestions(self, class_id: int) -> list[str]:
+        """Notes already written in this class, newest first, to offer while typing one."""
+        return self.attendance.recent_notes(class_id, NOTE_SUGGESTIONS)
 
     # --- marking -------------------------------------------------------------
 
