@@ -164,9 +164,10 @@ class MonthView(QWidget):
         self.table.setWordWrap(False)
         self.table.cellDoubleClicked.connect(self._open_cell)
         self.table.horizontalHeader().sectionDoubleClicked.connect(lambda col: self._open_cell(-1, col))
+        self.table.installEventFilter(self)  # Enter opens the selected day
 
         hint = style.label(
-            "Hover over a mark to see its note; double-click a day to open its register. "
+            "Hover over a mark to see its note; double-click a day (or press Enter) to open its register. "
             "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
@@ -304,6 +305,16 @@ class MonthView(QWidget):
     def _open_cell(self, _row: int, col: int) -> None:
         if self.register is not None and 1 <= col <= len(self.register.days):
             self.day_requested.emit(self.register.days[col - 1])
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self.table
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        ):
+            self._open_cell(self.table.currentRow(), self.table.currentColumn())
+            return True
+        return super().eventFilter(watched, event)
 
     def export_csv(self) -> None:
         if self.register is None:

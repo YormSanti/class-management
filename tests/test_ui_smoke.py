@@ -1074,3 +1074,18 @@ def test_attendance_month_this_month_button(window: MainWindow, roster: RosterSe
     assert month.month_label.text() == "September 2026" and month.this_month_button.isEnabled()
     month.this_month_button.click()
     assert month.month_label.text() == "November 2026"
+
+
+def test_attendance_month_enter_opens_the_day(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    monday = 1 + month.register.days.index(date(2026, 11, 2))
+    month.table.setCurrentCell(0, monday)
+    QTest.keyClick(month.table, Qt.Key.Key_Return)
+    assert view.tabs.currentIndex() == 0 and view.day == date(2026, 11, 2)
