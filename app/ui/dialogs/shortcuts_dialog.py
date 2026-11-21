@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Anywhere", "Ctrl+1 … Ctrl+7", "Switch page, in sidebar order"),
     ("Anywhere", "Ctrl+Shift+B", "Back up now"),
+    ("Anywhere", "F5", "Reload the page shown"),
     ("Anywhere", "F1", "This list"),
     ("Attendance, Day tab", "P  L  A  E", "Mark present, late, absent or excused and go to the next student"),
     ("Attendance, Day tab", "Delete", "Clear the student's mark"),

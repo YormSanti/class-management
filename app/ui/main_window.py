@@ -164,6 +164,10 @@ class MainWindow(QMainWindow):
         quit_action = file_menu.addAction("&Quit", self.close)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
 
+        view_menu = self.menuBar().addMenu("&View")
+        reload_action = view_menu.addAction("&Reload page", self.reload_page)
+        reload_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Refresh))
+
         help_menu = self.menuBar().addMenu("&Help")
         shortcuts = help_menu.addAction("&Keyboard shortcuts", self.show_shortcuts)
         shortcuts.setShortcut(QKeySequence(Qt.Key.Key_F1))
@@ -193,6 +197,12 @@ class MainWindow(QMainWindow):
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
+
+    def reload_page(self) -> None:
+        """Read the page shown from the database again."""
+        if refresh := getattr(self.stack.currentWidget(), "refresh", None):
+            refresh()
+            self.statusBar().showMessage("Page reloaded", 3_000)
 
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()

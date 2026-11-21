@@ -1319,3 +1319,18 @@ def test_help_menu_lists_the_keyboard_shortcuts(window: MainWindow, monkeypatch:
     table = shown[0].table
     assert table.rowCount() == len(SHORTCUTS)
     assert any(table.item(r, 1).text() == "Ctrl+Shift+B" for r in range(table.rowCount()))
+
+
+def test_f5_reloads_the_page_shown(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    window.show_page("Manage classes")
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))  # e.g. by another page
+    assert window.classes_view.roster_view.model.rowCount() == 0
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    QTest.keyClick(window, Qt.Key.Key_F5)
+    assert window.classes_view.roster_view.model.rowCount() == 1
