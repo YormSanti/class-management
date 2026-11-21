@@ -1,7 +1,5 @@
 import calendar
-import re
 from datetime import date
-from pathlib import Path
 
 from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
@@ -9,7 +7,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDateEdit,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -42,6 +39,7 @@ from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
 from app.ui.dialogs.period_dialog import PeriodDialog
+from app.ui.files import ask_save_path
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
@@ -292,13 +290,10 @@ class MonthView(QWidget):
         if self.register is None:
             return
         first = date(self.year, self.month, 1)
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
-        )
-        if not path:
+        name = f"{self.file_label} attendance {first:%B} {first.year}"
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
         try:
             write_attendance_csv(path, self.register)
         except OSError as exc:
@@ -312,13 +307,10 @@ class MonthView(QWidget):
             return
         first = date(self.year, self.month, 1)
         title = f"{self.file_label} · attendance {first:%B} {first.year}"
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Save PDF", str(Path.home() / f"{safe_name}.pdf"), "PDF files (*.pdf)"
-        )
-        if not path:
+        name = f"{self.file_label} attendance {first:%B} {first.year}"
+        path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".pdf") else Path(path + ".pdf")
         writer = QPdfWriter(str(path))
         writer.setTitle(title)
         writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
@@ -347,13 +339,10 @@ class MonthView(QWidget):
         except AttendanceError as exc:
             QMessageBox.information(self, "Export attendance", str(exc))
             return
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {start} to {end}")
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
-        )
-        if not path:
+        name = f"{self.file_label} attendance {start} to {end}"
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
         try:
             write_attendance_summary_csv(path, summary)
         except OSError as exc:

@@ -1,5 +1,3 @@
-import re
-from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import (
@@ -17,7 +15,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
-    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -35,6 +32,7 @@ from app.models import Student
 from app.services.export import roster_tsv, write_roster_csv
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+from app.ui.files import ask_save_path
 from app.ui.dialogs.student_dialog import StudentDialog
 
 _Index = QModelIndex | QPersistentModelIndex
@@ -379,13 +377,9 @@ class RosterView(QWidget):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", school_class.display_name)
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Export students", str(Path.home() / f"{safe_name} students.csv"), "CSV files (*.csv)"
-        )
-        if not path:
+        path = ask_save_path(self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
         students = self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
         try:
             write_roster_csv(path, students)

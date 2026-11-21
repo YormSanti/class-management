@@ -925,3 +925,24 @@ def test_roster_copies_the_students_shown(window: MainWindow, roster: RosterServ
     view.search.setText("turing")
     view.copy_list()
     assert qapp.clipboard().text().splitlines()[1:] == ["\tTuring\tAlan\tActive\t"]
+
+
+def test_ask_save_path_suggests_a_safe_name_and_adds_the_suffix(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from app.ui.files import ask_save_path, safe_filename
+
+    assert safe_filename('7B (2026/27): "Maths"') == "7B (2026-27)- -Maths-"
+    asked: list[str] = []
+
+    def pick(_parent, _title, start, _filter):
+        asked.append(start)
+        return str(tmp_path / "chosen"), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
+    assert ask_save_path(None, "Export", "7B/7C list", "CSV files", ".csv", tmp_path) == tmp_path / "chosen.csv"
+    assert asked == [str(tmp_path / "7B-7C list.csv")]
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: ("", ""))
+    assert ask_save_path(None, "Export", "list", "CSV files", ".csv") is None
