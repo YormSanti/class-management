@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.dashboard_view.day_requested.connect(self.show_attendance_day)
+        self.dashboard_view.history_requested.connect(self.show_attendance_history)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
         self.settings_view = SettingsView(config, save_config, restore_backup)
@@ -255,6 +256,12 @@ class MainWindow(QMainWindow):
         self.show_page("Attendance")
         self.attendance_view.register_combo.setCurrentIndex(0)  # the dashboard shows the daily register
         self.attendance_view.open_day(day)
+
+    def show_attendance_history(self, student_id: int) -> None:
+        """Show a student's daily attendance history over the Attendance page."""
+        self.show_page("Attendance")
+        self.attendance_view.register_combo.setCurrentIndex(0)  # the dashboard counts the daily register
+        self.attendance_view.show_student_history(student_id)
 
     def show_subjects(self) -> None:
         """Open Manage classes on the Subjects tab of the current class."""

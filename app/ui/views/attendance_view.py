@@ -872,8 +872,12 @@ class AttendanceView(QWidget):
         """Show student `i`'s marks in this register; a day picked there opens on the Day tab."""
         if self.register is None or not 0 <= i < len(self.register.rows):
             return
+        self.show_student_history(self.register.rows[i].student.id)
+
+    def show_student_history(self, student_id: int) -> None:
+        """Show a student's marks in the register shown; a day picked there opens on the Day tab."""
         try:
-            history = self.attendance.student_history(self.register.rows[i].student.id, self.subject_id)
+            history = self.attendance.student_history(student_id, self.subject_id)
         except AttendanceError as exc:
             QMessageBox.information(self, "Attendance", str(exc))
             return

@@ -183,11 +183,23 @@ class AttendanceChart(QWidget):
             painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, f"{day.day:%a}"[:2] + f" {day.day.day}")
 
 
+class ClickableRow(QFrame):
+    """A frame that reports left clicks, for list rows that open something."""
+
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class DashboardView(QWidget):
     """Overview of the selected class: key numbers, attendance, grades, students to check on."""
 
     navigate_requested = Signal(str)  # page name, e.g. "Attendance"
     day_requested = Signal(object)  # a date whose register to open on the Attendance page
+    history_requested = Signal(int)  # a student whose attendance history to show
     create_class_requested = Signal()
     manage_subjects_requested = Signal()
 
@@ -464,8 +476,12 @@ class DashboardView(QWidget):
         shown = items if self._attention_expanded else items[:ATTENTION_SHOWN]
         for i, item in enumerate(shown):
             color, soft = style.color(self, _KIND_COLOR[item.kind]), style.soft(self, _KIND_COLOR[item.kind])
-            row = QFrame()
+            row = ClickableRow()
             row.setObjectName("AttentionRow")
+            if item.kind in ("absent", "late"):
+                row.setCursor(Qt.CursorShape.PointingHandCursor)
+                row.setToolTip(f"Click to see {item.student.first_name}'s attendance history")
+                row.clicked.connect(lambda sid=item.student.id: self.history_requested.emit(sid))
             if i:
                 row.setStyleSheet(f"#AttentionRow {{ border-top: 1px solid {self._border.name()}; }}")
             row_layout = QHBoxLayout(row)

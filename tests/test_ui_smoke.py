@@ -1191,3 +1191,29 @@ def test_clicking_a_dashboard_chart_day_opens_its_register(window: MainWindow, r
     assert window.stack.currentWidget() is window.attendance_view
     assert window.attendance_view.day == days[1]
     assert window.attendance_view.subject_id is None
+
+
+def test_clicking_a_student_who_needs_attention_shows_their_history(
+    window: MainWindow, roster: RosterService, conn, monkeypatch: pytest.MonkeyPatch
+):
+    from datetime import date, timedelta
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+    from app.ui.views.dashboard_view import ClickableRow
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    for n in (1, 2, 3):
+        day = (date.today() - timedelta(days=n)).isoformat()
+        conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'absent')", (ada.id, day))
+    shown: list[AttendanceHistoryDialog] = []
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", lambda dialog: shown.append(dialog) or 0)
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    (row,) = window.dashboard_view.findChildren(ClickableRow)
+    QTest.mouseClick(row, Qt.MouseButton.LeftButton)
+    assert window.stack.currentWidget() is window.attendance_view
+    assert shown and shown[0].windowTitle() == "Attendance · Ada Lovelace"
