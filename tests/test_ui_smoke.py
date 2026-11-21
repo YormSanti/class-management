@@ -1306,3 +1306,16 @@ def test_settings_page_shows_sizes(window: MainWindow, db_path: Path):
     view.refresh()
     assert view.data_size_label.text() == format_size(db_path.stat().st_size)
     assert view.backup_summary.toolTip().endswith(" in all")
+
+
+def test_help_menu_lists_the_keyboard_shortcuts(window: MainWindow, monkeypatch: pytest.MonkeyPatch):
+    from app.ui.dialogs.shortcuts_dialog import SHORTCUTS, ShortcutsDialog
+
+    shown: list[ShortcutsDialog] = []
+    monkeypatch.setattr(ShortcutsDialog, "exec", lambda dialog: shown.append(dialog) or 0)
+    (action,) = [a for a in window.menuBar().actions() if a.text() == "&Help"][0].menu().actions()[:1]
+    assert action.shortcut().toString() == "F1"
+    action.trigger()
+    table = shown[0].table
+    assert table.rowCount() == len(SHORTCUTS)
+    assert any(table.item(r, 1).text() == "Ctrl+Shift+B" for r in range(table.rowCount()))

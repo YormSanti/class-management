@@ -25,6 +25,7 @@ from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
+from app.ui.dialogs.shortcuts_dialog import ShortcutsDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
 from app.ui.files import ask_save_path
 from app.ui.views.attendance_view import AttendanceView
@@ -164,6 +165,9 @@ class MainWindow(QMainWindow):
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
 
         help_menu = self.menuBar().addMenu("&Help")
+        shortcuts = help_menu.addAction("&Keyboard shortcuts", self.show_shortcuts)
+        shortcuts.setShortcut(QKeySequence(Qt.Key.Key_F1))
+        help_menu.addSeparator()
         help_menu.addAction("&About Classroom Manager", self.show_about)
 
     def back_up_now(self) -> None:
@@ -189,6 +193,9 @@ class MainWindow(QMainWindow):
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
+
+    def show_shortcuts(self) -> None:
+        ShortcutsDialog(self).exec()
 
     def show_about(self) -> None:
         QMessageBox.about(
