@@ -878,3 +878,24 @@ def test_paste_dialog_points_out_names_listed_twice(qapp: QApplication, roster: 
     dialog = PasteStudentsDialog(roster, class_id)
     dialog.text.setPlainText("Ada Lovelace\nAlan Turing\nada lovelace\n")
     assert "Listed twice: Ada Lovelace." in dialog.summary.text()
+
+
+def test_roster_deletes_a_student_without_records(
+    window: MainWindow, roster: RosterService, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'absent')", (alan.id,))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view._select(alan.id)
+    assert not view.delete_button.isEnabled()
+    view._select(ada.id)
+    assert view.delete_button.isEnabled()
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    view.delete_selected()
+    assert [s.full_name for s in roster.list_students(class_id)] == ["Alan Turing"]
+    assert window.classes_view.tabs.tabText(0) == "Students (1)"

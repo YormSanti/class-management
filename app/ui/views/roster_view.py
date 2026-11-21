@@ -124,6 +124,9 @@ class RosterView(QWidget):
         self.edit_button.clicked.connect(self.edit_selected)
         self.toggle_active_button = QPushButton("Deactivate")
         self.toggle_active_button.clicked.connect(self.toggle_active_selected)
+        self.delete_button = QPushButton("Delete")
+        self.delete_button.setToolTip("Delete a student added by mistake; only while nothing is recorded for them")
+        self.delete_button.clicked.connect(self.delete_selected)
         self.transfer_button = QPushButton("Move to class…")
         self.transfer_button.setToolTip("Move the selected student to another class")
         self.transfer_button.clicked.connect(self.transfer_selected)
@@ -166,6 +169,7 @@ class RosterView(QWidget):
         footer.addWidget(self.edit_button)
         footer.addWidget(self.toggle_active_button)
         footer.addWidget(self.transfer_button)
+        footer.addWidget(self.delete_button)
         footer.addSpacing(12)
         footer.addWidget(self.export_button)
 
@@ -288,6 +292,23 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def delete_selected(self) -> None:
+        student = self._selected_student()
+        if student is None:
+            return
+        answer = QMessageBox.question(
+            self, "Delete student", f"Delete {student.full_name}?\n\nThis can't be undone."
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.roster.delete_student(student.id)
+        except RosterError as exc:
+            QMessageBox.information(self, "Delete student", str(exc))
+            return
+        self.refresh()
+        self.students_changed.emit()
+
     def transfer_selected(self) -> None:
         student = self._selected_student()
         if student is None:
@@ -377,6 +398,7 @@ class RosterView(QWidget):
         self.edit_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.transfer_button.setEnabled(student is not None)
+        self.delete_button.setEnabled(student is not None and self.roster.can_delete_student(student.id))
         self.toggle_active_button.setText(
             "Reactivate" if student is not None and not student.active else "Deactivate"
         )
