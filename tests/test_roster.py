@@ -393,3 +393,13 @@ def test_student_with_attendance_cannot_be_deleted(roster: RosterService, class_
     with pytest.raises(RosterError, match="Deactivate them instead"):
         roster.delete_student(ada.id)
     assert [s.id for s in roster.list_students(class_id)] == [ada.id]
+
+
+def test_example_school_year():
+    from datetime import date
+
+    from app.services.roster import example_school_year
+
+    assert example_school_year(date(2026, 11, 21)) == "2026-2027"
+    assert example_school_year(date(2027, 3, 1)) == "2026-2027"
+    assert example_school_year(date(2027, 7, 1)) == "2027-2028"

@@ -3,6 +3,7 @@
 import re
 import sqlite3
 from dataclasses import dataclass, replace
+from datetime import date
 
 from app.db.connection import transaction
 from app.models import SchoolClass, Student, Subject
@@ -40,6 +41,13 @@ def next_term(term: str) -> str:
         return f"{int(m.group(1)) + 1}{m.group(2)}{(int(m.group(3)) + 1) % 100:02d}"
 
     return re.sub(_SHORT_YEAR_RANGE + r"|\b\d{4}\b", bump, term)
+
+
+def example_school_year(today: date) -> str:
+    """A school year written the usual way, for placeholder text: the one that has
+    started by `today` if school years start in the second half of the calendar year."""
+    first = today.year if today.month >= 7 else today.year - 1
+    return f"{first}-{first + 1}"
 
 
 def move_up(name: str) -> str:

@@ -1,3 +1,5 @@
+from datetime import date
+
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
@@ -20,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import SchoolClass
-from app.services.roster import RosterError, RosterService, move_up, next_term
+from app.services.roster import RosterError, RosterService, example_school_year, move_up, next_term
 
 _COPY, _CLASS, _STUDENTS, _NEW_NAME = range(4)
 
@@ -49,7 +51,7 @@ class NewYearDialog(QDialog):
         self.source.currentIndexChanged.connect(self._load_classes)
 
         self.new_term = QLineEdit()
-        self.new_term.setPlaceholderText("e.g. 2026-2027")
+        self.new_term.setPlaceholderText(f"e.g. {next_term(example_school_year(date.today()))}")
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(("Copy", "Class", "Students", "New name"))

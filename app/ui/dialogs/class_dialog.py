@@ -1,4 +1,5 @@
 from collections.abc import Callable, Sequence
+from datetime import date
 from dataclasses import replace
 
 from PySide6.QtCore import Qt
@@ -13,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import SchoolClass
-from app.services.roster import RosterError
+from app.services.roster import RosterError, example_school_year
 
 
 class ClassDialog(QDialog):
@@ -45,7 +46,7 @@ class ClassDialog(QDialog):
         self.first_subject = QLineEdit()
         self.first_subject.setPlaceholderText("e.g. Mathematics (more can be added later)")
         self.term = QLineEdit(school_class.term if school_class else default_term)
-        self.term.setPlaceholderText("e.g. 2025-2026")
+        self.term.setPlaceholderText(f"e.g. {example_school_year(date.today())}")
         completer = QCompleter(list(terms), self.term)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
