@@ -1167,3 +1167,27 @@ def test_window_lengths_in_labels_follow_the_settings(
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_clicking_a_dashboard_chart_day_opens_its_register(window: MainWindow, roster: RosterService, conn):
+    from datetime import date, timedelta
+
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    days = [date.today() - timedelta(days=n) for n in (9, 8)]
+    for day in days:
+        conn.execute(
+            "INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'present')", (ada.id, day.isoformat())
+        )
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    chart = window.dashboard_view.chart
+    chart.resize(400, 200)
+    assert [d.day for d in chart.days] == days
+    QTest.mouseClick(chart, Qt.MouseButton.LeftButton, pos=QPoint(chart.width() - 10, 50))  # the second column
+    assert window.stack.currentWidget() is window.attendance_view
+    assert window.attendance_view.day == days[1]
+    assert window.attendance_view.subject_id is None
