@@ -208,7 +208,7 @@ def test_roster_count_mentions_hidden_inactive_students(window: MainWindow, rost
     assert roster_view.count_label.text() == "1 student matches your search"
     roster_view.search.clear()
     roster_view.show_inactive.setChecked(True)
-    assert roster_view.count_label.text() == "2 students"
+    assert roster_view.count_label.text() == "2 students · 1 inactive"
 
 
 def test_ctrl_number_switches_page(window: MainWindow):

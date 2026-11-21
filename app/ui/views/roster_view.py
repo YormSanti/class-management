@@ -448,4 +448,8 @@ class RosterView(QWidget):
             hidden = len(self.roster.list_students(self.class_id, self.search.text(), True)) - shown
             if hidden:
                 text += f" · {hidden} inactive hidden"
+        else:
+            inactive = sum(1 for row in range(shown) if not self.model.student_at(row).active)
+            if inactive:
+                text += f" · {inactive} inactive"
         self.count_label.setText(text)
