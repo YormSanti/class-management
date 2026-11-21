@@ -59,13 +59,14 @@ def write_attendance_csv(path: Path, register: MonthRegister) -> None:
     marked), then each student's totals and attendance rate."""
     header = ["Student #", "Last name", "First name"]
     header += [day.isoformat() for day in register.days]
-    header += ["Absent", "Late", "Excused", "Attendance %"]
+    header += ["Present", "Absent", "Late", "Excused", "Attendance %"]
     rows: list[Sequence[object]] = [header]
     for row in register.rows:
         s, counts, rate = row.student, row.counts(), row.rate
         line: list[object] = [s.student_no or "", s.last_name, s.first_name]
         line += [row.statuses[day].value[0].upper() if day in row.statuses else "" for day in register.days]
-        line += [counts["absent"], counts["late"], counts["excused"], "" if rate is None else round(rate)]
+        line += [counts["present"], counts["absent"], counts["late"], counts["excused"]]
+        line.append("" if rate is None else round(rate))
         rows.append(line)
     _write_csv(path, rows)
 
