@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from app.config import AppConfig  # noqa: E402
 from app.models import SchoolClass, Student, Subject  # noqa: E402
@@ -1148,3 +1148,22 @@ def test_alt_home_goes_to_today(window: MainWindow, roster: RosterService):
     view.table.setFocus()
     QTest.keyClick(view.table, Qt.Key.Key_Home, Qt.KeyboardModifier.AltModifier)
     assert view.day == date.today()
+
+
+def test_window_lengths_in_labels_follow_the_settings(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.ui.views import attendance_view, dashboard_view
+
+    monkeypatch.setattr(attendance_view, "RECENT_DAYS", 14)
+    monkeypatch.setattr(dashboard_view, "CHART_DAYS", 5)
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
+    try:
+        assert window.attendance_view.table.horizontalHeaderItem(4).text() == "Last 14 days"
+        labels = [w.text() for w in window.dashboard_view.findChildren(QLabel)]
+        assert any(t.startswith("Last 5 days with attendance") for t in labels)
+    finally:
+        window.close()
+        window.deleteLater()

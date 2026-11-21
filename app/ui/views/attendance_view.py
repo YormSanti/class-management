@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
+    RECENT_DAYS,
     UNMARKED,
     AttendanceError,
     AttendanceService,
@@ -519,7 +520,7 @@ class AttendanceView(QWidget):
 
         # students
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["No.", "Student", "Status", "Note", "Last 30 days"])
+        self.table.setHorizontalHeaderLabels(["No.", "Student", "Status", "Note", f"Last {RECENT_DAYS} days"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -750,7 +751,7 @@ class AttendanceView(QWidget):
         name.setToolTip("Not marked yet" if unmarked else "")
         recent = self.table.item(i, COL_RECENT)
         recent.setText(row.recent_text or "—")
-        recent.setToolTip(f"Days in the last 30 up to {self.day.day} {self.day:%b}")
+        recent.setToolTip(f"Days in the last {RECENT_DAYS} up to {self.day.day} {self.day:%b}")
         font = recent.font()
         font.setBold(bool(row.recent_tone))
         recent.setFont(font)

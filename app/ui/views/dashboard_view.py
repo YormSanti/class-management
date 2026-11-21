@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from app.repositories.dashboard_repo import AssignmentStats
 from app.services.dashboard import (
     ABSENT,
+    CHART_DAYS,
     EXCUSED,
     GRADE_SCALE,
     LATE,
@@ -227,7 +228,7 @@ class DashboardView(QWidget):
             self.kpis[name] = (value, sub)
 
         # --- attendance chart + needs attention ---
-        chart_panel = Panel("Attendance", "Last 10 days with attendance recorded · hover for details")
+        chart_panel = Panel("Attendance", f"Last {CHART_DAYS} days with attendance recorded · hover for details")
         legend = QHBoxLayout()
         legend.setSpacing(14)
         self.legend_swatches: list[tuple[QLabel, str]] = []
