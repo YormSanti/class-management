@@ -1046,3 +1046,16 @@ def test_attendance_month_exports_are_off_without_students(window: MainWindow, r
     roster.save_student(Student(class_id=window.class_id, first_name="Ada", last_name="Lovelace"))
     view.refresh()
     assert month.export_button.isEnabled() and month.pdf_button.isEnabled()
+
+
+def test_attendance_month_highlights_today(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    month._today = lambda: date(2026, 11, 6)
+    month.refresh()
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    header = month.table.horizontalHeaderItem(friday)
+    assert header.font().bold() and "(today)" in header.toolTip()
+    assert not month.table.horizontalHeaderItem(friday - 1).font().bold()

@@ -103,7 +103,8 @@ class MonthView(QWidget):
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self.file_label = ""  # e.g. "7B (2026-27) Maths", for the export file name
-        today = date.today()
+        self._today = date.today  # replaceable in tests
+        today = self._today()
         self.year, self.month = today.year, today.month
         self.register: MonthRegister | None = None
 
@@ -209,10 +210,16 @@ class MonthView(QWidget):
         muted = style.mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.5)
 
         self.table.setHorizontalHeaderItem(0, QTableWidgetItem("Student"))
+        today = self._today()
         for col, day in enumerate(days, start=1):
             item = QTableWidgetItem(f"{day:%a}"[:2] + f"\n{day.day}")
-            item.setToolTip(f"{day:%A} {day.day} {day:%B} · double-click to open")
-            if day not in recorded:
+            item.setToolTip(f"{day:%A} {day.day} {day:%B}{' (today)' if day == today else ''} · double-click to open")
+            if day == today:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+                item.setForeground(_fill(self, "accent"))
+            elif day not in recorded:
                 item.setForeground(muted)
             self.table.setHorizontalHeaderItem(col, item)
         for col, text in enumerate(totals, start=first_total):
