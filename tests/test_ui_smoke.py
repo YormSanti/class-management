@@ -535,6 +535,11 @@ def test_attendance_history_dialog(window: MainWindow, roster: RosterService, mo
     assert dialog.totals_label.text() == "1 present · 1 absent · 0 late · 0 excused · attendance 50%"
     assert dialog.table.rowCount() == 1 and dialog.table.item(0, 1).text() == "Absent"
     assert view.day == date(2026, 11, 6)  # the day picked in the dialog opened
+    dialog.show_all.setChecked(True)
+    assert [dialog.table.item(i, 1).text() for i in range(2)] == ["Absent", "Present"]  # newest first
+    assert dialog.list_caption.text() == "EVERY MARKED DAY"
+    dialog.table.cellDoubleClicked.emit(1, 0)
+    assert dialog.chosen_day == date(2026, 11, 5)
 
 
 def test_attendance_warns_about_future_and_weekend_days(window: MainWindow, roster: RosterService):
