@@ -127,11 +127,17 @@ class SettingsView(QWidget):
         self.restore_button.setToolTip("Replace your data with the selected backup")
         self.restore_button.clicked.connect(self.restore_selected)
         self.restore_button.setVisible(restore is not None)
+        self.restore_file_button = QPushButton("Restore from file…")
+        self.restore_file_button.setToolTip("Replace your data with a backup saved elsewhere, e.g. with Back up now")
+        self.restore_file_button.clicked.connect(self.restore_from_file)
+        self.restore_file_button.setVisible(restore is not None)
         backup_buttons.addWidget(self.backup_summary, stretch=1)
         backup_buttons.addWidget(self.restore_button)
+        backup_buttons.addWidget(self.restore_file_button)
         backup_buttons.addWidget(open_backups)
         restore_hint = style.label(
-            "To go back to a backup, select it and press Restore. Your data as it is now is "
+            "To go back to a backup, select it and press Restore, or pick a copy saved elsewhere with "
+            "Restore from file. Your data as it is now is "
             "saved as a new backup first, so a restore can be undone the same way.",
             0.85,
             muted=True,
@@ -317,11 +323,29 @@ class SettingsView(QWidget):
         if backup is None or self.restore is None:
             return
         made = backup_time(backup)
-        when = f"{made:%A} {made.day} {made:%B %Y} at {made:%H:%M}" if made else backup.name
+        when = f"on {made:%A} {made.day} {made:%B %Y} at {made:%H:%M}" if made else f"in {backup.name}"
+        self._restore(backup, f"the backup made {when}", f"as it was {when}")
+
+    def restore_from_file(self) -> None:
+        """Ask for a backup file anywhere, e.g. one saved with "Back up now", then restore it."""
+        if self.restore is None:
+            return
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "Restore from file", str(Path.home()), "Classroom Manager backups (*.db);;All files (*)"
+        )
+        if not path:
+            return
+        backup = Path(path)
+        if backup.resolve() == self.config.db_path.resolve():
+            QMessageBox.information(self, "Restore backup", "That is the data file in use; choose a backup.")
+            return
+        self._restore(backup, f"the backup in\n{backup}\n", f"as it is in {backup.name}")
+
+    def _restore(self, backup: Path, which: str, back_as: str) -> None:
         answer = QMessageBox.question(
             self,
             "Restore backup",
-            f"Replace all your data with the backup made on {when}?\n\n"
+            f"Replace all your data with {which}?\n\n"
             "Your data as it is now is saved as a new backup first, so you can go back to it.",
         )
         if answer != QMessageBox.StandardButton.Yes:
@@ -337,7 +361,7 @@ class SettingsView(QWidget):
         QMessageBox.information(
             self,
             "Restore backup",
-            f"Your data is back as it was on {when}.\n\n"
+            f"Your data is back {back_as}.\n\n"
             "The data from just before is the newest backup in the list.",
         )
 

@@ -1246,3 +1246,34 @@ def test_dashboard_links_to_todays_register_until_it_is_taken(window: MainWindow
     window.dashboard_view.today_label.linkActivated.emit("take")
     assert window.stack.currentWidget() is window.attendance_view
     assert view.day == date(2026, 11, 6)
+
+
+def test_settings_page_restores_a_backup_from_any_file(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, db_path: Path, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.services.backup import copy_database, restore_backup
+
+    roster.save_class(SchoolClass(name="7B"))
+    usb = tmp_path / "usb"
+    copy_database(db_path, usb / "Classroom backup.db")
+    roster.save_class(SchoolClass(name="8C"))
+    config = AppConfig(data_dir=tmp_path)
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(
+        roster, dashboard, _attendance(conn), config,
+        restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+    )  # fmt: skip
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    try:
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(db_path), ""))
+        window.settings_view.restore_from_file()  # the data file itself is refused
+        assert len(roster.list_classes()) == 2
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(usb / "Classroom backup.db"), ""))
+        window.settings_view.restore_from_file()
+        assert [c.name for c in roster.list_classes()] == ["7B"]
+    finally:
+        window.close()
+        window.deleteLater()
