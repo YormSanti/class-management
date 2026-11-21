@@ -16,7 +16,8 @@ class RosterError(ValueError):
 
 
 def _clean(text: str | None) -> str:
-    return (text or "").strip()
+    """Trimmed, with runs of spaces (e.g. from copying) collapsed: "Ada  Lovelace" -> "Ada Lovelace"."""
+    return " ".join((text or "").split())
 
 
 # "2025-26" style: a full year, a dash or slash, then the next year's last two digits.

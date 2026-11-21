@@ -28,6 +28,15 @@ def test_student_names_are_trimmed_and_blank_number_is_none(roster: RosterServic
     assert (student.first_name, student.last_name, student.student_no) == ("Ada", "Lovelace", None)
 
 
+def test_repeated_spaces_in_names_are_collapsed(roster: RosterService, class_id: int):
+    student = _add(roster, class_id, "Mary   Ann", "van  der Berg")
+    assert (student.first_name, student.last_name) == ("Mary Ann", "van der Berg")
+    school_class = roster.save_class(SchoolClass(name="Grade  7   Blue", term="2026 -  2027"))
+    assert (school_class.name, school_class.term) == ("Grade 7 Blue", "2026 - 2027")
+    subject = roster.save_subject(Subject(class_id=class_id, name="Social   Studies", teacher=" Mr  Lee "))
+    assert (subject.name, subject.teacher) == ("Social Studies", "Mr Lee")
+
+
 def test_student_requires_both_names(roster: RosterService, class_id: int):
     with pytest.raises(RosterError):
         _add(roster, class_id, "Ada", "")
