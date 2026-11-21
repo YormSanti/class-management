@@ -71,6 +71,11 @@ class StudentRepository:
         with transaction(self.conn):
             self.conn.execute("UPDATE students SET class_id = ? WHERE id = ?", (class_id, student_id))
 
+    def delete(self, student_id: int) -> None:
+        """Delete a student. Raises sqlite3.IntegrityError if anything refers to them."""
+        with transaction(self.conn):
+            self.conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
+
     def has_records(self, student_id: int) -> bool:
         """True if any attendance, score or seat refers to the student."""
         row = self.conn.execute(

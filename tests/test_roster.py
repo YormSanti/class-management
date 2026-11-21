@@ -375,3 +375,21 @@ def test_transfer_student_to_same_class_is_rejected(roster: RosterService, class
     ada = _add(roster, class_id, "Ada", "Lovelace")
     with pytest.raises(RosterError, match="already in this class"):
         roster.transfer_student(ada.id, class_id)
+
+
+def test_student_without_records_can_be_deleted(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    assert roster.can_delete_student(ada.id)
+    roster.delete_student(ada.id)
+    assert roster.list_students(class_id, include_inactive=True) == []
+
+
+def test_student_with_attendance_cannot_be_deleted(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    conn.execute(
+        "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
+    )
+    assert not roster.can_delete_student(ada.id)
+    with pytest.raises(RosterError, match="Deactivate them instead"):
+        roster.delete_student(ada.id)
+    assert [s.id for s in roster.list_students(class_id)] == [ada.id]

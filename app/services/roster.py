@@ -374,6 +374,24 @@ class RosterService:
         )
         return [s for s in matches if s.id != student.id]
 
+    def can_delete_student(self, student_id: int) -> bool:
+        """True while no attendance, score or seat refers to the student."""
+        return not self.students.has_records(student_id)
+
+    def delete_student(self, student_id: int) -> None:
+        """Delete a student added by mistake, but only while nothing is recorded for
+        them; otherwise they can only be deactivated, so their history is kept."""
+        with transaction(self.students.conn):
+            if self.students.has_records(student_id):
+                raise RosterError(
+                    "This student has attendance, grades or a seat recorded and can't be "
+                    "deleted. Deactivate them instead."
+                )
+            try:
+                self.students.delete(student_id)
+            except sqlite3.IntegrityError:
+                raise RosterError("This student has records and can't be deleted.") from None
+
     def deactivate_student(self, student_id: int) -> None:
         """Hide a student from day-to-day lists. Their history is kept."""
         self.students.set_active(student_id, False)
