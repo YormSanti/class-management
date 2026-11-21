@@ -70,7 +70,8 @@ def test_students_sorted_by_last_name(roster: RosterService, class_id: int):
 
 @pytest.mark.parametrize(
     "term, expected",
-    [("ada", ["Ada"]), ("LOVE", ["Ada"]), ("ada love", ["Ada"]), ("00", ["Ada", "Alan"]), ("x", [])],
+    [("ada", ["Ada"]), ("LOVE", ["Ada"]), ("ada love", ["Ada"]), ("00", ["Ada", "Alan"]), ("x", []),
+     ("lovelace ada", ["Ada"]), ("Turing, Al", ["Alan"]), ("ada  lovelace", ["Ada"])],
 )
 def test_search(roster: RosterService, class_id: int, term: str, expected: list[str]):
     _add(roster, class_id, "Ada", "Lovelace", no="001")

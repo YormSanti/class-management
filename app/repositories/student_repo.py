@@ -111,7 +111,8 @@ class StudentRepository:
     ) -> list[Student]:
         """Students in a class sorted by name, optionally filtered by a search term.
 
-        The search matches student number, first name, last name, or "first last".
+        The search matches student number, first name, last name, "first last",
+        "last first" or "last, first".
         """
         sql = "SELECT * FROM students WHERE class_id = ?"
         params: list[object] = [class_id]
@@ -123,8 +124,10 @@ class StudentRepository:
                 AND (student_no LIKE ? ESCAPE '\\'
                      OR first_name LIKE ? ESCAPE '\\'
                      OR last_name LIKE ? ESCAPE '\\'
-                     OR first_name || ' ' || last_name LIKE ? ESCAPE '\\')
+                     OR first_name || ' ' || last_name LIKE ? ESCAPE '\\'
+                     OR last_name || ' ' || first_name LIKE ? ESCAPE '\\'
+                     OR last_name || ', ' || first_name LIKE ? ESCAPE '\\')
             """
-            params += [pattern] * 4
+            params += [pattern] * 6
         sql += " ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE, id"
         return [_from_row(r) for r in self.conn.execute(sql, params)]
