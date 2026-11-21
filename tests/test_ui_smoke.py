@@ -866,10 +866,11 @@ def test_dashboard_says_whether_todays_register_is_taken(window: MainWindow, ros
     view = _attendance_page(window, roster)  # on Friday 6 November 2026
     dashboard = window.dashboard_view
     dashboard.refresh()
-    assert dashboard.today_label.text() == "Today's register hasn't been taken yet."
+    link = ' <a href="take">Take attendance now</a>'
+    assert dashboard.today_label.text() == "Today's register hasn't been taken yet." + link
     view._row_widgets[0][0].buttons[AttendanceStatus.LATE].click()
     dashboard.refresh()
-    assert dashboard.today_label.text() == "Today's register: 1 of 2 students marked."
+    assert dashboard.today_label.text() == "Today's register: 1 of 2 students marked." + link
     view.mark_rest_button.click()
     dashboard.refresh()
     assert dashboard.today_label.text() == "Today's register is done: 1 present · 1 late."
@@ -1224,3 +1225,23 @@ def test_dashboard_numbers_explain_themselves(window: MainWindow):
 
     for name, (value, sub) in window.dashboard_view.kpis.items():
         assert value.toolTip() == sub.toolTip() == KPI_HELP[name]
+
+
+def test_dashboard_links_to_todays_register_until_it_is_taken(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.ui.views import dashboard_view
+
+    class Friday(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 6)
+
+    monkeypatch.setattr(dashboard_view, "date", Friday)
+    view = _attendance_page(window, roster)
+    view.set_day(date(2026, 11, 2))
+    window.show_page("Dashboard")
+    window.dashboard_view.refresh()
+    window.dashboard_view.today_label.linkActivated.emit("take")
+    assert window.stack.currentWidget() is window.attendance_view
+    assert view.day == date(2026, 11, 6)

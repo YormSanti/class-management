@@ -1,3 +1,4 @@
+import html
 from datetime import date
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
@@ -243,6 +244,7 @@ class DashboardView(QWidget):
         header.addWidget(gradebook_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(attendance_button, alignment=Qt.AlignmentFlag.AlignBottom)
         self.today_label = style.label("", bold=True)
+        self.today_label.linkActivated.connect(lambda _link: self.day_requested.emit(date.today()))
         self.today_label.hide()
 
         # --- key numbers ---
@@ -472,6 +474,8 @@ class DashboardView(QWidget):
         self.today_label.setVisible(status is not None)
         if status is not None:
             text, tone = status
+            if tone == "warn":  # not finished: offer to open it
+                text = f'{html.escape(text, quote=False)} <a href="take">Take attendance now</a>'
             self.today_label.setText(text)
             style.set_color(self.today_label, style.color(self, tone))
 
