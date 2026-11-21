@@ -19,7 +19,7 @@ from app.config import (
     save_config,
     settings_dir,
 )
-from app.db.connection import connect, find_problems, init_db
+from app.db.connection import close_db, connect, find_problems, init_db
 from app.repositories.attendance_repo import AttendanceRepository
 from app.repositories.class_repo import ClassRepository
 from app.repositories.dashboard_repo import DashboardRepository
@@ -187,7 +187,7 @@ def main() -> int:
     try:
         return app.exec()
     finally:
-        conn.close()
+        close_db(conn)
 
 
 if __name__ == "__main__":
