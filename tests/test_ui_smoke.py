@@ -1111,3 +1111,19 @@ def test_marking_the_rest_present_on_a_future_day_asks_first(
     assert _statuses(view) == [None, None]
     view.mark_rest_present()
     assert _statuses(view) == ["present", "present"]
+
+
+def test_period_dialog_presets(qapp: QApplication):
+    from datetime import date
+
+    from app.ui.dialogs.period_dialog import PeriodDialog, preset_periods
+
+    today = date(2026, 3, 10)
+    assert preset_periods(today) == {
+        "This month": (date(2026, 3, 1), date(2026, 3, 31)),
+        "Last month": (date(2026, 2, 1), date(2026, 2, 28)),
+        "Last 30 days": (date(2026, 2, 9), date(2026, 3, 10)),
+    }
+    dialog = PeriodDialog("Export", date(2026, 1, 1), date(2026, 1, 31), today=today)
+    dialog.preset_buttons["Last month"].click()
+    assert (dialog.start, dialog.end) == (date(2026, 2, 1), date(2026, 2, 28))
