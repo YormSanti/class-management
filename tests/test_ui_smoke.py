@@ -1127,3 +1127,10 @@ def test_period_dialog_presets(qapp: QApplication):
     dialog = PeriodDialog("Export", date(2026, 1, 1), date(2026, 1, 31), today=today)
     dialog.preset_buttons["Last month"].click()
     assert (dialog.start, dialog.end) == (date(2026, 2, 1), date(2026, 2, 28))
+
+
+def test_attendance_title_names_the_subject_register(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    assert view.title_label.text() == "Attendance · 7B"
+    view.register_combo.setCurrentIndex(view.register_combo.findText("Maths"))
+    assert view.title_label.text() == "Attendance · 7B · Maths"

@@ -682,7 +682,8 @@ class AttendanceView(QWidget):
         self.pages.setCurrentIndex(1)
         day = self.day
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
-        self.title_label.setText(f"Attendance · {school_class.name}")
+        register = f" · {self.register_combo.currentText()}" if self.subject_id is not None else ""
+        self.title_label.setText(f"Attendance · {school_class.name}{register}")
         self.today_button.setEnabled(day != date.today())
         warning = day_warning(day, date.today())
         self.day_notice.setText(warning or "")
