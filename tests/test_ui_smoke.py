@@ -1334,3 +1334,17 @@ def test_f5_reloads_the_page_shown(window: MainWindow, roster: RosterService):
     assert QTest.qWaitForWindowActive(window)
     QTest.keyClick(window, Qt.Key.Key_F5)
     assert window.classes_view.roster_view.model.rowCount() == 1
+
+
+def test_file_menu_opens_the_log_file(window: MainWindow, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtGui import QDesktopServices
+
+    from app.ui import main_window
+
+    opened: list[str] = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toLocalFile()))
+    monkeypatch.setattr(main_window, "settings_dir", lambda: tmp_path)
+    window.open_log_file()  # no log yet: the folder opens
+    (tmp_path / "classroom.log").write_text("log")
+    window.open_log_file()
+    assert opened == [str(tmp_path), str(tmp_path / "classroom.log")]

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from app import __version__
 from app.config import (
     APP_NAME,
+    LOG_FILENAME,
     AppConfig,
     default_data_dir,
     load_config,
@@ -46,7 +47,7 @@ def _setup_logging() -> None:
         settings_dir().mkdir(parents=True, exist_ok=True)
         handlers.append(
             RotatingFileHandler(
-                settings_dir() / "classroom.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+                settings_dir() / LOG_FILENAME, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
             )
         )
     except OSError:

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import __version__
-from app.config import AppConfig
+from app.config import LOG_FILENAME, AppConfig, settings_dir
 from app.services.attendance import AttendanceService
 from app.services.backup import copy_database
 from app.services.dashboard import DashboardService
@@ -160,6 +160,7 @@ class MainWindow(QMainWindow):
         backup = file_menu.addAction("&Back up now…", self.back_up_now)
         backup.setShortcut(QKeySequence("Ctrl+Shift+B"))
         file_menu.addAction("&Open data folder", self.open_data_folder)
+        file_menu.addAction("Open &log file", self.open_log_file)
         file_menu.addSeparator()
         quit_action = file_menu.addAction("&Quit", self.close)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -206,6 +207,12 @@ class MainWindow(QMainWindow):
 
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
+
+    def open_log_file(self) -> None:
+        """Open the log (with the details of any error) in the system's text viewer."""
+        log_file = settings_dir() / LOG_FILENAME
+        target = log_file if log_file.exists() else settings_dir()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def show_about(self) -> None:
         QMessageBox.about(
