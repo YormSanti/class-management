@@ -739,6 +739,8 @@ class AttendanceView(QWidget):
         note.setPlaceholderText("Mark first to add a note" if unmarked else "Add a note")
         if not note.hasFocus():
             note.setText(row.note)
+            note.setCursorPosition(0)  # show the start of a long note
+        note.setToolTip(row.note)  # the whole note, when the column is too narrow for it
 
     def _show_totals(self) -> None:
         counts = self.register.counts()

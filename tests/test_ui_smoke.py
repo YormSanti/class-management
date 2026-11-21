@@ -1023,3 +1023,16 @@ def test_attendance_note_fields_suggest_earlier_notes(window: MainWindow, roster
     view.refresh()
     assert view.note_completer.model().stringList() == ["Dentist"]
     assert view._row_widgets[1][1].completer() is view.note_completer
+
+
+def test_attendance_note_tooltip_shows_the_whole_note(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    long_note = "Left at 10:30 for a hospital appointment, mother phoned the office beforehand"
+    view._row_widgets[0][0].buttons[AttendanceStatus.EXCUSED].click()
+    view._row_widgets[0][1].setText(long_note)
+    view._save_note(0)
+    view.refresh()
+    assert view._row_widgets[0][1].toolTip() == long_note
+    assert view._row_widgets[1][1].toolTip() == ""
