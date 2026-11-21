@@ -1,15 +1,18 @@
 """Classroom Manager entry point: resolve the data folder, back up, open the DB, show the UI."""
 
 import logging
+import platform
 import sqlite3
 import sys
 from dataclasses import replace
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6 import __version__ as pyside_version
+from PySide6.QtCore import QSettings, qVersion
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
+from app import __version__
 from app.config import (
     APP_NAME,
     AppConfig,
@@ -52,6 +55,15 @@ def _setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=handlers,
+    )
+
+
+def startup_banner() -> str:
+    """One log line with the versions that matter when reading a problem report."""
+    return (
+        f"Classroom Manager {__version__} starting · Python {platform.python_version()} · "
+        f"PySide6 {pyside_version} (Qt {qVersion()}) · SQLite {sqlite3.sqlite_version} · "
+        f"{platform.platform()}"
     )
 
 
@@ -116,6 +128,7 @@ def _resolve_config() -> AppConfig | None:
 
 def main() -> int:
     _setup_logging()
+    log.info(startup_banner())
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName("Classroom Manager")
