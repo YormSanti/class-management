@@ -1,3 +1,4 @@
+import sqlite3
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -179,7 +180,7 @@ class MainWindow(QMainWindow):
             return
         try:
             copy_database(self.config.db_path, dest)
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             QMessageBox.warning(self, "Back up now", f"The backup could not be saved:\n{exc}")
             return
         if self.settings is not None:

@@ -24,8 +24,10 @@ class BackupError(Exception):
 def copy_database(src: Path, dest: Path) -> None:
     """Write a consistent, standalone copy of the database at `src` to `dest`.
 
-    The copy is written to a temp file first and renamed into place, so an
-    interrupted backup never leaves a half-written file under the final name.
+    The copy is written to a temp file first, checked with SQLite's quick check and
+    only then renamed into place, so a failed or damaged copy never ends up under the
+    final name (or replaces a good older one). Raises sqlite3.DatabaseError if the
+    check fails.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".tmp")
@@ -42,6 +44,8 @@ def copy_database(src: Path, dest: Path) -> None:
                 dest_conn.close()
         finally:
             src_conn.close()
+        if problems := find_problems(tmp):
+            raise sqlite3.DatabaseError(f"The copy failed its check: {problems[0]}")
         os.replace(tmp, dest)
     except BaseException:
         tmp.unlink(missing_ok=True)

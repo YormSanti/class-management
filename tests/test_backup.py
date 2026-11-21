@@ -2,6 +2,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from app.db.connection import transaction
 from app.services.backup import auto_backup, backup_time, copy_database, list_auto_backups
 
@@ -146,3 +148,18 @@ def test_restore_backup_refuses_damaged_or_newer_files(db_path: Path, conn: sqli
     with pytest.raises(BackupError, match="newer version"):
         restore_backup(newer, conn, db_path, tmp_path / "backups")
     assert [r[0] for r in conn.execute("SELECT name FROM classes")] == ["7B"]  # untouched
+
+
+def test_a_copy_that_fails_its_check_is_not_kept(db_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import sqlite3
+
+    from app.services import backup
+
+    db_path.write_bytes(b"")  # make sure the source exists
+    good = tmp_path / "copy.db"
+    good.write_text("older good copy")
+    monkeypatch.setattr(backup, "find_problems", lambda path: ["database disk image is malformed"])
+    with pytest.raises(sqlite3.DatabaseError, match="failed its check"):
+        backup.copy_database(db_path, good)
+    assert good.read_text() == "older good copy"
+    assert not list(tmp_path.glob("*.tmp"))
