@@ -160,7 +160,8 @@ class MonthView(QWidget):
         self.table.horizontalHeader().sectionDoubleClicked.connect(lambda col: self._open_cell(-1, col))
 
         hint = style.label(
-            "Double-click a day to open its register. The rate counts present and late out of the "
+            "Hover over a mark to see its note; double-click a day to open its register. "
+            "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
             muted=True,
@@ -237,7 +238,10 @@ class MonthView(QWidget):
                         item.setText(status.value[0].upper())
                         item.setForeground(on_color)
                 word = status.value.capitalize() if status else "Not marked"
-                item.setToolTip(f"{row.student.full_name}, {day:%a} {day.day} {day:%b}: {word}")
+                note = row.notes.get(day)
+                item.setToolTip(
+                    f"{row.student.full_name}, {day:%a} {day.day} {day:%b}: {word}" + (f"\nNote: {note}" if note else "")
+                )
                 self.table.setItem(r, col, item)
             counts, rate = row.counts(), row.rate
             values = (counts["absent"], counts["late"], counts["excused"], "—" if rate is None else f"{rate:.0f}%")

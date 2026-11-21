@@ -995,3 +995,19 @@ def test_back_up_now_remembers_the_folder(
     second.back_up_now()
     second.close()
     assert Path(asked[1]).parent == usb
+
+
+def test_attendance_month_tooltip_shows_the_note(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    view._row_widgets[0][0].buttons[AttendanceStatus.EXCUSED].click()
+    view._row_widgets[0][1].setText("Dentist")
+    view._save_note(0)
+    view.refresh()
+    month = view.month_view
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    assert month.table.item(0, friday).toolTip() == "Grace Hopper, Fri 6 Nov: Excused\nNote: Dentist"
+    assert month.table.item(1, friday).toolTip() == "Ada Lovelace, Fri 6 Nov: Not marked"
