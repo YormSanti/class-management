@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.export import write_roster_csv
+from app.services.export import roster_tsv, write_roster_csv
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.dialogs.student_dialog import StudentDialog
@@ -133,6 +133,9 @@ class RosterView(QWidget):
         self.transfer_button = QPushButton("Move to class…")
         self.transfer_button.setToolTip("Move the selected student to another class")
         self.transfer_button.clicked.connect(self.transfer_selected)
+        self.copy_button = QPushButton("Copy list")
+        self.copy_button.setToolTip("Copy the students shown, to paste into a spreadsheet (Ctrl+C)")
+        self.copy_button.clicked.connect(self.copy_list)
         self.export_button = QPushButton("Export…")
         self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
@@ -174,6 +177,7 @@ class RosterView(QWidget):
         footer.addWidget(self.transfer_button)
         footer.addWidget(self.delete_button)
         footer.addSpacing(12)
+        footer.addWidget(self.copy_button)
         footer.addWidget(self.export_button)
 
         table_page = QWidget()
@@ -204,6 +208,8 @@ class RosterView(QWidget):
         QShortcut(QKeySequence.StandardKey.Find, self, activated=self.search.setFocus)
         QShortcut(QKeySequence.StandardKey.New, self, activated=self.add_student)
         QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
+        copy.setContext(Qt.ShortcutContext.WidgetShortcut)
 
         self._update_buttons()
 
@@ -356,6 +362,18 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def copy_list(self) -> None:
+        """Put the students shown, in the order shown, on the clipboard as a table."""
+        students = [
+            self.model.student_at(self.proxy.mapToSource(self.proxy.index(row, 0)).row())
+            for row in range(self.proxy.rowCount())
+        ]
+        if not students:
+            return
+        QApplication.clipboard().setText(roster_tsv(students))
+        noun = "student" if len(students) == 1 else "students"
+        self.count_label.setText(f"Copied {len(students)} {noun} · paste them into a spreadsheet")
+
     def export_csv(self) -> None:
         """Save every student of the class (inactive ones too if they are shown) as CSV."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
@@ -411,6 +429,7 @@ class RosterView(QWidget):
         self.add_button.setEnabled(has_class)
         self.paste_button.setEnabled(has_class)
         self.export_button.setEnabled(has_class)
+        self.copy_button.setEnabled(has_class and self.model.rowCount() > 0)
         self.edit_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.transfer_button.setEnabled(student is not None)

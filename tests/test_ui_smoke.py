@@ -914,3 +914,14 @@ def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterServi
     QTest.keyClick(view.search, Qt.Key.Key_Escape)
     assert view.search.text() == ""
     assert view.model.rowCount() == 1
+
+
+def test_roster_copies_the_students_shown(window: MainWindow, roster: RosterService, qapp: QApplication):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view.search.setText("turing")
+    view.copy_list()
+    assert qapp.clipboard().text().splitlines()[1:] == ["\tTuring\tAlan\tActive\t"]

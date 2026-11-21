@@ -97,3 +97,17 @@ def test_attendance_month_html():
     assert "O&lt;Brien, Chloé" in page  # names are escaped
     assert "Thu<br>1" in page and "Fri<br>2" in page
     assert "1 student · 2 days recorded · attendance 50%" in page
+
+
+def test_roster_tsv_has_a_heading_and_one_line_per_student():
+    from app.services.export import roster_tsv
+
+    students = [
+        Student(class_id=1, first_name="Ada", last_name="Lovelace", student_no="001", notes="Front row\nGlasses"),
+        Student(class_id=1, first_name="Alan", last_name="Turing", active=False),
+    ]
+    assert roster_tsv(students) == (
+        "Student #\tLast name\tFirst name\tStatus\tNotes\n"
+        "001\tLovelace\tAda\tActive\tFront row Glasses\n"
+        "\tTuring\tAlan\tInactive\t\n"
+    )

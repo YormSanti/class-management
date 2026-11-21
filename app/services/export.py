@@ -36,6 +36,15 @@ def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
     _write_csv(path, rows)
 
 
+def roster_tsv(students: Sequence[Student]) -> str:
+    """Students as tab-separated text with a heading row, to paste into a spreadsheet."""
+    rows = [ROSTER_COLUMNS]
+    for s in students:
+        rows.append((s.student_no or "", s.last_name, s.first_name, "Active" if s.active else "Inactive",
+                     " ".join(s.notes.split())))  # fmt: skip
+    return "".join("\t".join(row) + "\n" for row in rows)
+
+
 def write_attendance_csv(path: Path, register: MonthRegister) -> None:
     """Save a month of attendance: one column per day with P, L, A or E (blank = not
     marked), then each student's totals and attendance rate."""
