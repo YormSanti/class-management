@@ -116,6 +116,20 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
     return students, problems
 
 
+def repeated_names(students: list[PastedStudent]) -> list[str]:
+    """Names that appear more than once in a pasted list, ignoring case, each named once
+    as first written."""
+    first_seen: dict[tuple[str, str], str] = {}
+    repeated: dict[tuple[str, str], str] = {}
+    for s in students:
+        key = (s.first_name.casefold(), s.last_name.casefold())
+        if key in first_seen:
+            repeated.setdefault(key, first_seen[key])
+        else:
+            first_seen[key] = f"{s.first_name} {s.last_name}"
+    return list(repeated.values())
+
+
 class RosterService:
     def __init__(
         self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository

@@ -869,3 +869,12 @@ def test_dashboard_says_whether_todays_register_is_taken(window: MainWindow, ros
     dashboard.refresh()
     assert dashboard.today_label.text() == "Today's register is done: 1 present · 1 late."
     assert not dashboard.today_label.isHidden()
+
+
+def test_paste_dialog_points_out_names_listed_twice(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Ada Lovelace\nAlan Turing\nada lovelace\n")
+    assert "Listed twice: Ada Lovelace." in dialog.summary.text()

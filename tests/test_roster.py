@@ -325,6 +325,14 @@ def test_parse_student_list_reads_semicolon_columns():
     assert problems == ["Line 4: expected first and last name columns: ;;"]
 
 
+def test_repeated_names_in_a_pasted_list():
+    from app.services.roster import parse_student_list, repeated_names
+
+    students, _ = parse_student_list("Ada Lovelace\nAlan Turing\nada lovelace\nAda Lovelace\n")
+    assert repeated_names(students) == ["Ada Lovelace"]
+    assert repeated_names(students[:2]) == []
+
+
 def test_add_students_is_all_or_nothing(roster: RosterService, class_id: int):
     from app.services.roster import parse_student_list
 

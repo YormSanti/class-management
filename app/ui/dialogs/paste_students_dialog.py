@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.roster import PastedStudent, RosterError, RosterService, parse_student_list
+from app.services.roster import PastedStudent, RosterError, RosterService, parse_student_list, repeated_names
 
 
 class PasteStudentsDialog(QDialog):
@@ -95,6 +95,8 @@ class PasteStudentsDialog(QDialog):
         summary = f"{n} student{'' if n == 1 else 's'} to add."
         if duplicates:
             summary += " Already in the class: " + ", ".join(duplicates) + "."
+        if repeated := repeated_names(self._students):
+            summary += " Listed twice: " + ", ".join(repeated) + "."
         self.summary.setText(summary if n else "")
         self._ok.setText(f"Add {n} student{'' if n == 1 else 's'}" if n else "Add students")
         self._ok.setEnabled(bool(n) and not problems)
