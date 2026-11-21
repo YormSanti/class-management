@@ -1348,3 +1348,17 @@ def test_file_menu_opens_the_log_file(window: MainWindow, tmp_path: Path, monkey
     (tmp_path / "classroom.log").write_text("log")
     window.open_log_file()
     assert opened == [str(tmp_path), str(tmp_path / "classroom.log")]
+
+
+def test_paste_dialog_shows_problems_in_the_danger_colour(qapp: QApplication, roster: RosterService):
+    from PySide6.QtGui import QPalette
+
+    from app.ui import style
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Plato\n")
+    assert "needs a first and a last name" in dialog.problems.text()
+    shown = dialog.problems.palette().color(QPalette.ColorRole.WindowText)
+    assert shown == style.color(dialog, "danger")

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from app.models import Student
 from app.services.roster import PastedStudent, RosterError, RosterService, parse_student_list, repeated_names
+from app.ui import style
 
 
 class PasteStudentsDialog(QDialog):
@@ -82,8 +83,7 @@ class PasteStudentsDialog(QDialog):
                 self.preview.setItem(row, col, QTableWidgetItem(text))
 
         self.problems.setText("<br>".join(problems[:5]) + ("<br>…" if len(problems) > 5 else ""))
-        dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        self.problems.setStyleSheet(f"color: {'#E57A66' if dark else '#B9412E'};")  # dashboard's danger
+        style.set_color(self.problems, style.color(self, "danger"))
         self.problems.setVisible(bool(problems))
 
         n = len(self._students)
