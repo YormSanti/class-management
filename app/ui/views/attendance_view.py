@@ -119,6 +119,8 @@ class MonthView(QWidget):
         self.next_button.setToolTip("Next month")
         self.next_button.setFixedWidth(36)
         self.next_button.clicked.connect(lambda: self._step(1))
+        self.this_month_button = QPushButton("This month")
+        self.this_month_button.clicked.connect(lambda: self.set_month(self._today().year, self._today().month))
         self.export_button = QPushButton("Export CSV…")
         self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
@@ -134,6 +136,8 @@ class MonthView(QWidget):
         toolbar.addWidget(self.prev_button)
         toolbar.addWidget(self.month_label)
         toolbar.addWidget(self.next_button)
+        toolbar.addSpacing(8)
+        toolbar.addWidget(self.this_month_button)
         toolbar.addSpacing(16)
         self.legend: list[tuple[QLabel, str | None]] = []
         for text, letter, name in (
@@ -195,6 +199,8 @@ class MonthView(QWidget):
             return
         first = date(self.year, self.month, 1)
         self.month_label.setText(f"{first:%B} {first.year}")
+        today = self._today()
+        self.this_month_button.setEnabled((self.year, self.month) != (today.year, today.month))
         self.register = self.attendance.month_register(self.class_id, self.year, self.month, self.subject_id)
         self._fill()
 

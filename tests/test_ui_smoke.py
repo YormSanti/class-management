@@ -1059,3 +1059,18 @@ def test_attendance_month_highlights_today(window: MainWindow, roster: RosterSer
     header = month.table.horizontalHeaderItem(friday)
     assert header.font().bold() and "(today)" in header.toolTip()
     assert not month.table.horizontalHeaderItem(friday - 1).font().bold()
+
+
+def test_attendance_month_this_month_button(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    month._today = lambda: date(2026, 11, 6)
+    month.refresh()
+    assert not month.this_month_button.isEnabled()
+    month.prev_button.click()
+    month.prev_button.click()
+    assert month.month_label.text() == "September 2026" and month.this_month_button.isEnabled()
+    month.this_month_button.click()
+    assert month.month_label.text() == "November 2026"
