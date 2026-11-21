@@ -1362,3 +1362,20 @@ def test_paste_dialog_shows_problems_in_the_danger_colour(qapp: QApplication, ro
     assert "needs a first and a last name" in dialog.problems.text()
     shown = dialog.problems.palette().color(QPalette.ColorRole.WindowText)
     assert shown == style.color(dialog, "danger")
+
+
+def test_new_year_dialog_ticks_or_unticks_every_class(qapp: QApplication, roster: RosterService):
+    from PySide6.QtCore import Qt
+
+    from app.ui.dialogs.new_year_dialog import NewYearDialog
+
+    for name in ("7A", "7B", "7C"):
+        roster.save_class(SchoolClass(name=name, term="2025-2026"))
+    dialog = NewYearDialog(roster, "2025-2026")
+    assert dialog.tick_all_button.text() == "Untick all"
+    dialog.tick_all_button.click()
+    assert dialog.plan() == [] and dialog.tick_all_button.text() == "Tick all"
+    dialog.table.item(1, 0).setCheckState(Qt.CheckState.Checked)
+    assert [name for _id, name in dialog.plan()] == ["7B"]
+    dialog.tick_all_button.click()
+    assert len(dialog.plan()) == 3 and dialog.tick_all_button.text() == "Untick all"
