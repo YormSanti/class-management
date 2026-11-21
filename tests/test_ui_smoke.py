@@ -1292,3 +1292,17 @@ def test_settings_page_checks_the_data_file(window: MainWindow, monkeypatch: pyt
     monkeypatch.setattr(settings_view, "find_problems", lambda path: ["row 3 missing from index"])
     window.settings_view.check_button.click()
     assert "row 3 missing from index" in said[-1]
+
+
+def test_settings_page_shows_sizes(window: MainWindow, db_path: Path):
+    from datetime import datetime
+
+    from app.services.backup import auto_backup
+    from app.ui.views.settings_view import format_size
+
+    assert [format_size(n) for n in (0, 300, 320_000, 5 * 1024 * 1024)] == ["0 KB", "1 KB", "312 KB", "5.0 MB"]
+    auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, 6, 8, 30))
+    view = window.settings_view
+    view.refresh()
+    assert view.data_size_label.text() == format_size(db_path.stat().st_size)
+    assert view.backup_summary.toolTip().endswith(" in all")

@@ -45,6 +45,20 @@ RANKING_CHOICES = {
 SHOWN_BACKUPS = 8
 
 
+def format_size(size: int) -> str:
+    """The size of a file, rounded for people: "312 KB", "4.2 MB"."""
+    if size < 1024 * 1024:
+        return f"{max(1, round(size / 1024)):,} KB" if size else "0 KB"
+    return f"{size / (1024 * 1024):,.1f} MB"
+
+
+def _file_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
 def _path_label(text: str) -> QLabel:
     result = QLabel(text)
     result.setWordWrap(True)
@@ -104,8 +118,10 @@ class SettingsView(QWidget):
         data_buttons.addWidget(self.check_button)
         data_buttons.addStretch()
         data_buttons.addWidget(back_up)
+        self.data_size_label = style.label("", 0.85, muted=True)
         data.body.addWidget(style.caption("Data file"))
         data.body.addWidget(self.data_path_label)
+        data.body.addWidget(self.data_size_label)
         data.body.addLayout(data_buttons)
 
         # --- automatic backups ---
@@ -240,11 +256,17 @@ class SettingsView(QWidget):
         pass  # nothing here depends on the class
 
     def refresh(self) -> None:
+        size = _file_size(self.config.db_path)
+        self.data_size_label.setText("" if size is None else format_size(size))
         found = list_auto_backups(self.config.backup_dir)
         if found:
             newest = backup_time(found[0])
             when = f"{newest:%A} {newest.day} {newest:%B %Y}, {newest:%H:%M}" if newest else found[0].name
-            self.backup_summary.setText(f"{len(found)} backup{'' if len(found) == 1 else 's'} · newest {when}")
+            total = format_size(sum(_file_size(p) or 0 for p in found))
+            self.backup_summary.setText(
+                f"{len(found)} backup{'' if len(found) == 1 else 's'} · newest {when}"
+            )
+            self.backup_summary.setToolTip(f"{total} in all")
         else:
             self.backup_summary.setText("No automatic backups yet")
         shown = found[:SHOWN_BACKUPS]
@@ -257,11 +279,8 @@ class SettingsView(QWidget):
             if is_before_restore(path):
                 text += " · from just before a restore"
             self.backup_table.setItem(i, 0, QTableWidgetItem(text))
-            try:
-                size = f"{path.stat().st_size / 1024:,.0f} KB"
-            except OSError:
-                size = "—"
-            item = QTableWidgetItem(size)
+            size = _file_size(path)
+            item = QTableWidgetItem("—" if size is None else format_size(size))
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.backup_table.setItem(i, 1, item)
         self.backup_table.setVisible(bool(shown))
