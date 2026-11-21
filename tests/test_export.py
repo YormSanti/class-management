@@ -111,3 +111,15 @@ def test_roster_tsv_has_a_heading_and_one_line_per_student():
         "001\tLovelace\tAda\tActive\tFront row Glasses\n"
         "\tTuring\tAlan\tInactive\t\n"
     )
+
+
+def test_text_that_looks_like_a_formula_is_written_as_text(tmp_path: Path):
+    from app.services.export import roster_tsv
+
+    student = Student(class_id=1, first_name="=HYPERLINK(1)", last_name="+Lee", notes="@home")
+    path = tmp_path / "students.csv"
+    write_roster_csv(path, [student])
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[1] == ["", "'+Lee", "'=HYPERLINK(1)", "Active", "'@home"]
+    assert "'=HYPERLINK(1)" in roster_tsv([student])
