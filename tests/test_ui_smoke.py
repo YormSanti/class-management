@@ -1036,3 +1036,13 @@ def test_attendance_note_tooltip_shows_the_whole_note(window: MainWindow, roster
     view.refresh()
     assert view._row_widgets[0][1].toolTip() == long_note
     assert view._row_widgets[1][1].toolTip() == ""
+
+
+def test_attendance_month_exports_are_off_without_students(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster, names=())
+    month = view.month_view
+    assert not month.export_button.isEnabled()
+    assert not month.pdf_button.isEnabled()
+    roster.save_student(Student(class_id=window.class_id, first_name="Ada", last_name="Lovelace"))
+    view.refresh()
+    assert month.export_button.isEnabled() and month.pdf_button.isEnabled()

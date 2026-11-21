@@ -286,6 +286,7 @@ class MonthView(QWidget):
         for col in range(first_total, first_total + len(totals)):
             head.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.export_button.setEnabled(bool(register.rows))
+        self.pdf_button.setEnabled(bool(register.rows))
 
     def _open_cell(self, _row: int, col: int) -> None:
         if self.register is not None and 1 <= col <= len(self.register.days):
