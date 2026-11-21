@@ -1089,3 +1089,20 @@ def test_attendance_month_enter_opens_the_day(window: MainWindow, roster: Roster
     month.table.setCurrentCell(0, monday)
     QTest.keyClick(month.table, Qt.Key.Key_Return)
     assert view.tabs.currentIndex() == 0 and view.day == date(2026, 11, 2)
+
+
+def test_marking_the_rest_present_on_a_future_day_asks_first(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from datetime import date, timedelta
+
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _attendance_page(window, roster)
+    view.set_day(date.today() + timedelta(days=7))
+    answers = [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes]
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: answers.pop(0))
+    view.mark_rest_present()
+    assert _statuses(view) == [None, None]
+    view.mark_rest_present()
+    assert _statuses(view) == ["present", "present"]

@@ -834,6 +834,15 @@ class AttendanceView(QWidget):
     def mark_rest_present(self) -> None:
         if self.class_id is None:
             return
+        if self.day > date.today():
+            answer = QMessageBox.question(
+                self,
+                "Mark the rest present",
+                f"{self.day:%A} {self.day.day} {self.day:%B} hasn't happened yet. "
+                "Mark everyone who isn't marked as present anyway?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self._remember("mark the rest present")
         self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
         self.refresh()
