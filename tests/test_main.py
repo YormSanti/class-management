@@ -14,3 +14,11 @@ def test_startup_banner_names_the_versions():
     assert f"Python {platform.python_version()}" in banner
     assert f"SQLite {sqlite3.sqlite_version}" in banner
     assert "(Qt 6." in banner
+
+
+def test_app_version_matches_pyproject():
+    import tomllib
+    from pathlib import Path
+
+    pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject["project"]["version"] == __version__
