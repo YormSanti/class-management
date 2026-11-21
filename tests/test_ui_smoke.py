@@ -946,3 +946,22 @@ def test_ask_save_path_suggests_a_safe_name_and_adds_the_suffix(
     assert asked == [str(tmp_path / "7B-7C list.csv")]
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: ("", ""))
     assert ask_save_path(None, "Export", "list", "CSV files", ".csv") is None
+
+
+def test_exports_open_in_the_folder_used_last(qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from app.ui import files
+
+    monkeypatch.setattr(files, "_last_folder", None)
+    asked: list[str] = []
+
+    def pick(_parent, _title, start, _filter):
+        asked.append(start)
+        return str(tmp_path / "reports" / "october.csv"), ""
+
+    (tmp_path / "reports").mkdir()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
+    files.ask_save_path(None, "Export", "october", "CSV files", ".csv")
+    files.ask_save_path(None, "Save PDF", "november", "PDF files", ".pdf")
+    assert asked == [str(Path.home() / "october.csv"), str(tmp_path / "reports" / "november.pdf")]
