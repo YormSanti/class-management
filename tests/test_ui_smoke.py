@@ -1379,3 +1379,12 @@ def test_new_year_dialog_ticks_or_unticks_every_class(qapp: QApplication, roster
     assert [name for _id, name in dialog.plan()] == ["7B"]
     dialog.tick_all_button.click()
     assert len(dialog.plan()) == 3 and dialog.tick_all_button.text() == "Untick all"
+
+
+def test_subject_dialog_offers_names_from_other_classes(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.subject_dialog import SubjectDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = SubjectDialog(roster.save_subject, class_id, names=["Maths", "Science"], teachers=["Mr Lee"])
+    assert dialog.name.completer().model().rowCount() == 2
+    assert dialog.teacher.completer().model().rowCount() == 1

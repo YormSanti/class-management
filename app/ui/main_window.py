@@ -392,7 +392,13 @@ class MainWindow(QMainWindow):
     def new_subject(self) -> None:
         if self.class_id is None:
             return
-        dialog = SubjectDialog(self.roster.save_subject, self.class_id, parent=self)
+        dialog = SubjectDialog(
+            self.roster.save_subject,
+            self.class_id,
+            parent=self,
+            names=self.roster.subject_names(),
+            teachers=self.roster.teacher_names(),
+        )
         if dialog.exec() and dialog.saved:
             self.select_subject(dialog.saved.id)
 
@@ -400,7 +406,9 @@ class MainWindow(QMainWindow):
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if subject is None:
             return
-        dialog = SubjectDialog(self.roster.save_subject, subject.class_id, subject, parent=self)
+        dialog = SubjectDialog(
+            self.roster.save_subject, subject.class_id, subject, parent=self, teachers=self.roster.teacher_names()
+        )
         if dialog.exec():
             self.select_subject(subject.id)
 

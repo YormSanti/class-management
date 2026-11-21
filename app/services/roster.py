@@ -266,6 +266,14 @@ class RosterService:
         self.subjects.update(subject)
         return subject
 
+    def subject_names(self) -> list[str]:
+        """Subject names used in any class, to offer while typing a new one."""
+        return self.subjects.distinct_values("name")
+
+    def teacher_names(self) -> list[str]:
+        """Teachers named on any subject, to offer while typing one."""
+        return self.subjects.distinct_values("teacher")
+
     def delete_subject(self, subject_id: int) -> None:
         """Delete a subject only if it has no grades or attendance yet."""
         try:

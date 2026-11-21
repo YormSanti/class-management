@@ -403,3 +403,12 @@ def test_example_school_year():
     assert example_school_year(date(2026, 11, 21)) == "2026-2027"
     assert example_school_year(date(2027, 3, 1)) == "2026-2027"
     assert example_school_year(date(2027, 7, 1)) == "2027-2028"
+
+
+def test_subject_and_teacher_names_in_use(roster: RosterService, class_id: int):
+    other = roster.save_class(SchoolClass(name="8A")).id
+    roster.save_subject(Subject(class_id=class_id, name="science", teacher="Mr Lee"))
+    roster.save_subject(Subject(class_id=other, name="Maths"))
+    roster.save_subject(Subject(class_id=other, name="Science", teacher="Mr Lee"))
+    assert roster.subject_names() == ["Maths", "science", "Science"]
+    assert roster.teacher_names() == ["Mr Lee"]
