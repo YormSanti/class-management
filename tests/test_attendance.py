@@ -104,6 +104,18 @@ def test_subject_of_another_class_is_refused(attendance, roster, klass):
         attendance.day_register(klass, DAY, science)
 
 
+def test_clearing_checks_the_register_belongs_to_the_class(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    other = roster.save_class(SchoolClass(name="8A"), "Science").id
+    science = roster.list_subjects(other)[0].id
+    attendance.mark(ada, DAY, A)
+    with pytest.raises(AttendanceError, match="doesn't belong"):
+        attendance.clear(ada, DAY, science)
+    with pytest.raises(AttendanceError, match="no longer exists"):
+        attendance.clear(ada + 100, DAY)
+    assert attendance.day_register(klass, DAY).rows[0].status is A
+
+
 def test_inactive_student_cannot_be_marked(attendance, roster, klass):
     ada = _student(roster, klass, "Ada", "Lovelace")
     roster.deactivate_student(ada)

@@ -279,6 +279,10 @@ class AttendanceService:
 
     def clear(self, student_id: int, day: date, subject_id: int | None = None) -> None:
         """Make the student "not marked" again; the day's note goes with the record."""
+        student = self.students.get(student_id)
+        if student is None:
+            raise AttendanceError("That student no longer exists.")
+        self._check_subject(student.class_id, subject_id)
         self.attendance.delete(student_id, day, subject_id)
 
     def set_note(self, student_id: int, day: date, note: str, subject_id: int | None = None) -> None:
