@@ -1277,3 +1277,18 @@ def test_settings_page_restores_a_backup_from_any_file(
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_settings_page_checks_the_data_file(window: MainWindow, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.views import settings_view
+
+    said: list[str] = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: said.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: said.append(a[2]))
+    window.settings_view.check_button.click()
+    assert said[-1] == "No problems found. Your data file is fine."
+    monkeypatch.setattr(settings_view, "find_problems", lambda path: ["row 3 missing from index"])
+    window.settings_view.check_button.click()
+    assert "row 3 missing from index" in said[-1]

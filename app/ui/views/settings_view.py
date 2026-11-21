@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.config import DB_FILENAME, RANKING_METHODS, AppConfig, prepare_data_dir, settings_dir
+from app.db.connection import find_problems
 from app.services.backup import (
     KEEP_AUTO_BACKUPS,
     KEEP_DAILY_BACKUPS,
@@ -94,9 +95,13 @@ class SettingsView(QWidget):
         self.move_button.setToolTip("Keep your data in another folder, e.g. a synced or USB drive")
         self.move_button.clicked.connect(self.move_data)
         self.move_button.setVisible(save is not None)  # the new folder must be remembered
+        self.check_button = QPushButton("Check for damage")
+        self.check_button.setToolTip("Let SQLite check the data file, e.g. after a crash or power cut")
+        self.check_button.clicked.connect(self.check_data)
         data_buttons = QHBoxLayout()
         data_buttons.addWidget(open_data)
         data_buttons.addWidget(self.move_button)
+        data_buttons.addWidget(self.check_button)
         data_buttons.addStretch()
         data_buttons.addWidget(back_up)
         data.body.addWidget(style.caption("Data file"))
@@ -264,6 +269,23 @@ class SettingsView(QWidget):
         rows = sum(self.backup_table.rowHeight(i) for i in range(len(shown)))
         self.backup_table.setFixedHeight(header + rows + 2 * self.backup_table.frameWidth())
         self._update_restore()
+
+    def check_data(self) -> None:
+        """Run SQLite's integrity check on the data file and say what it found."""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            problems = find_problems(self.config.db_path)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not problems:
+            QMessageBox.information(self, "Check for damage", "No problems found. Your data file is fine.")
+            return
+        QMessageBox.warning(
+            self,
+            "Check for damage",
+            "SQLite found problems in the data file:\n" + "\n".join(problems[:5]) + "\n\n"
+            "Restore the newest backup from before the problem started, below.",
+        )
 
     def move_data(self) -> None:
         """Copy the data into another folder (or switch to the data already there), remember
