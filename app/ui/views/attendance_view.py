@@ -1,11 +1,12 @@
 import calendar
 from datetime import date
 
-from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCompleter,
     QDateEdit,
     QFrame,
     QHBoxLayout,
@@ -392,6 +393,10 @@ class AttendanceView(QWidget):
         self._subject_for_class: dict[int, int | None] = {}
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
         self._month_follows: date | None = None
+        # Notes written before in this class, offered in every note field while typing.
+        self.note_completer = QCompleter(QStringListModel(self), self)
+        self.note_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.note_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         # (day, subject id, register before the change, what the change was), newest last
         self._undo: list[tuple[date, int | None, list[AttendanceRecord], str]] = []
 
@@ -665,6 +670,7 @@ class AttendanceView(QWidget):
         self.month_view.load(school_class.id, self.subject_id, file_label)
 
         self.register = self.attendance.day_register(school_class.id, day, self.subject_id)
+        self.note_completer.model().setStringList(self.attendance.note_suggestions(school_class.id))
         ids = [row.student.id for row in self.register.rows]
         if ids != self._shown_ids():
             self._build_rows(len(ids))
@@ -693,6 +699,7 @@ class AttendanceView(QWidget):
             note.setFrame(False)
             note.editingFinished.connect(lambda i=i: self._save_note(i))
             note.installEventFilter(self)
+            note.setCompleter(self.note_completer)
             self.table.setCellWidget(i, COL_STATUS, buttons)
             self.table.setCellWidget(i, COL_NOTE, note)
             self._row_widgets.append((buttons, note))

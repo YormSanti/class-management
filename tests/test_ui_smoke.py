@@ -1011,3 +1011,15 @@ def test_attendance_month_tooltip_shows_the_note(window: MainWindow, roster: Ros
     friday = 1 + month.register.days.index(date(2026, 11, 6))
     assert month.table.item(0, friday).toolTip() == "Grace Hopper, Fri 6 Nov: Excused\nNote: Dentist"
     assert month.table.item(1, friday).toolTip() == "Ada Lovelace, Fri 6 Nov: Not marked"
+
+
+def test_attendance_note_fields_suggest_earlier_notes(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.EXCUSED].click()
+    view._row_widgets[0][1].setText("Dentist")
+    view._save_note(0)
+    view.refresh()
+    assert view.note_completer.model().stringList() == ["Dentist"]
+    assert view._row_widgets[1][1].completer() is view.note_completer
