@@ -4,7 +4,9 @@ from typing import Any
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QEvent,
     QModelIndex,
+    QObject,
     QPersistentModelIndex,
     QSortFilterProxyModel,
     Qt,
@@ -110,9 +112,10 @@ class RosterView(QWidget):
 
         # --- toolbar ---
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search by name or student number  (Ctrl+F)")
+        self.search.setPlaceholderText("Search by name or student number  (Ctrl+F, Esc clears)")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
+        self.search.installEventFilter(self)  # Escape clears it
         self.show_inactive = QCheckBox("Show inactive")
         self.show_inactive.toggled.connect(self.refresh)
         self.add_button = QPushButton("Add student")
@@ -372,6 +375,19 @@ class RosterView(QWidget):
             QMessageBox.warning(self, "Export students", f"The file could not be saved:\n{exc}")
             return
         QMessageBox.information(self, "Export students", f"Saved {len(students)} students to\n{path}")
+
+    # --- keyboard ------------------------------------------------------------
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self.search
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+            and self.search.text()
+        ):
+            self.search.clear()
+            return True
+        return super().eventFilter(watched, event)
 
     # --- helpers -------------------------------------------------------------
 

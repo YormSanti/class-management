@@ -899,3 +899,18 @@ def test_roster_deletes_a_student_without_records(
     view.delete_selected()
     assert [s.full_name for s in roster.list_students(class_id)] == ["Alan Turing"]
     assert window.classes_view.tabs.tabText(0) == "Students (1)"
+
+
+def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view.search.setText("zzz")
+    assert view.model.rowCount() == 0
+    QTest.keyClick(view.search, Qt.Key.Key_Escape)
+    assert view.search.text() == ""
+    assert view.model.rowCount() == 1
