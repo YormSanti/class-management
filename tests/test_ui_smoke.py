@@ -2104,3 +2104,16 @@ def test_attendance_month_names_days_without_a_register(window: MainWindow, rost
     month._today = lambda: date(2026, 11, 30)
     month.refresh()
     assert " and 8 more." in month.not_taken_label.text()  # 16 school days left in November
+
+
+def test_attendance_month_copies_as_a_table(window: MainWindow, roster: RosterService, qapp):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.month_view.copy_button.click()
+    lines = qapp.clipboard().text().splitlines()
+    assert lines[0].startswith("Student #\tLast name\tFirst name\t2026-11-02\t")
+    assert lines[1].split("\t")[1:3] == ["Hopper", "Grace"]
+    assert "\tA\t" in lines[1]
+    assert lines[-1].split("\t")[1] == "Whole class"

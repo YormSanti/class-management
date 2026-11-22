@@ -62,10 +62,10 @@ def _rate_cell(rate: float | None) -> object:
     return "" if rate is None else round(rate)
 
 
-def write_attendance_csv(path: Path, register: MonthRegister) -> None:
-    """Save a month of attendance: one column per day with P, L, A or E (blank = not
-    marked), then each student's totals and attendance rate. A last "Whole class" row
-    gives how many were absent each recorded day and the class's totals, as on screen."""
+def _month_rows(register: MonthRegister) -> list[Sequence[object]]:
+    """One column per day with P, L, A or E (blank = not marked), then each student's totals
+    and attendance rate. A last "Whole class" row gives how many were absent each recorded
+    day and the class's totals, as on screen."""
     header = ["Student #", "Last name", "First name"]
     header += [day.isoformat() for day in register.days]
     header += ["Present", "Absent", "Late", "Excused", "Attendance %"]
@@ -83,7 +83,17 @@ def write_attendance_csv(path: Path, register: MonthRegister) -> None:
         line += [register.absent_on(day) if day in recorded else "" for day in register.days]
         line += [totals["present"], totals["absent"], totals["late"], totals["excused"], _rate_cell(register.rate)]
         rows.append(line)
-    _write_csv(path, rows)
+    return rows
+
+
+def write_attendance_csv(path: Path, register: MonthRegister) -> None:
+    """Save a month of attendance as CSV; see _month_rows()."""
+    _write_csv(path, _month_rows(register))
+
+
+def attendance_month_tsv(register: MonthRegister) -> str:
+    """A month of attendance as tab-separated text, to paste into a spreadsheet."""
+    return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _month_rows(register))
 
 
 def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:

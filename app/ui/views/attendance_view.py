@@ -48,6 +48,7 @@ from app.services.attendance import (
 from app.services.export import (
     absence_report,
     attendance_month_html,
+    attendance_month_tsv,
     write_attendance_csv,
     write_attendance_summary_csv,
 )
@@ -151,6 +152,9 @@ class MonthView(QWidget):
         self.export_period_button = QPushButton("Export period…")
         self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
         self.export_period_button.clicked.connect(self.export_period)
+        self.copy_button = QPushButton("Copy")
+        self.copy_button.setToolTip("Copy this month as a table, to paste into a spreadsheet")
+        self.copy_button.clicked.connect(self.copy_table)
         self.pdf_button = QPushButton("Save PDF…")
         self.pdf_button.setToolTip("Save this month as a PDF to print or share")
         self.pdf_button.clicked.connect(self.save_pdf)
@@ -176,6 +180,7 @@ class MonthView(QWidget):
             toolbar.addWidget(style.label(text, 0.9, muted=True))
             toolbar.addSpacing(8)
         toolbar.addStretch()
+        toolbar.addWidget(self.copy_button)
         toolbar.addWidget(self.pdf_button)
         toolbar.addWidget(self.export_period_button)
         toolbar.addWidget(self.export_button)
@@ -350,6 +355,7 @@ class MonthView(QWidget):
             head.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.export_button.setEnabled(bool(register.rows))
         self.pdf_button.setEnabled(bool(register.rows))
+        self.copy_button.setEnabled(bool(register.rows))
         self._show_not_taken()
 
     def _show_not_taken(self) -> None:
@@ -410,6 +416,10 @@ class MonthView(QWidget):
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
         QMessageBox.information(self, "Export attendance", f"Saved {first:%B} {first.year} to\n{path}")
+
+    def copy_table(self) -> None:
+        if self.register is not None:
+            QApplication.clipboard().setText(attendance_month_tsv(self.register))
 
     def save_pdf(self) -> None:
         """Save the month register as a landscape A4 PDF, ready to print."""
