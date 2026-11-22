@@ -1902,3 +1902,18 @@ def test_attendance_sorts_by_number_and_remembers_it(
     second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.attendance_view.by_number
     second.close()
+
+
+def test_attendance_name_tooltip_shows_the_last_mark(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)  # Friday 6 November
+    ada = view.register.rows[1].student.id
+    view.attendance.mark(ada, date(2026, 11, 3), AttendanceStatus.PRESENT)
+    view.attendance.mark(ada, date(2026, 11, 5), AttendanceStatus.LATE)
+    view.attendance.mark(ada, date(2026, 11, 9), AttendanceStatus.ABSENT)  # after the day shown
+    view.refresh()
+    assert view.table.item(1, 1).toolTip() == "Not marked yet\nLast marked late on Thu 5 Nov"
+    assert view.table.item(0, 1).toolTip() == "Not marked yet"

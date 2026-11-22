@@ -107,6 +107,7 @@ class RegisterRow:
     note: str = ""
     recent: dict[str, int] = field(default_factory=dict)  # status -> days, in the last RECENT_DAYS
     absent_streak: int = 0  # registers taken in a row, up to the day, in which the student was absent
+    previous: tuple[date, AttendanceStatus] | None = None  # the latest mark before the day, in RECENT_DAYS
 
     @property
     def recent_text(self) -> str:
@@ -276,6 +277,7 @@ class AttendanceService:
                     note=record.note if record else "",
                     recent=recent.get(student.id, {}),
                     absent_streak=_absent_streak(marks.get(student.id, {}), taken),
+                    previous=max(((d, st) for d, st in marks.get(student.id, {}).items() if d < day), default=None),
                 )
             )
         return DayRegister(class_id, day, subject_id, rows)

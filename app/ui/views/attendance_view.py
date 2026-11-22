@@ -826,7 +826,11 @@ class AttendanceView(QWidget):
         name = self.table.item(i, COL_NAME)
         name.setText(student.full_name)
         name.setData(Qt.ItemDataRole.UserRole, student.id)
-        name.setToolTip("Not marked yet" if unmarked else "")
+        tip = ["Not marked yet"] if unmarked else []
+        if row.previous:
+            day, status = row.previous
+            tip.append(f"Last marked {status.value} on {day:%a} {day.day} {day:%b}")
+        name.setToolTip("\n".join(tip))
         recent = self.table.item(i, COL_RECENT)
         recent.setText(row.recent_text or "—")
         tip = f"Days in the last {RECENT_DAYS} up to {self.day.day} {self.day:%b}"
