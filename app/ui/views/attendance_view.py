@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -577,6 +578,8 @@ class AttendanceView(QWidget):
         head.setSectionResizeMode(COL_RECENT, QHeaderView.ResizeMode.ResizeToContents)
         self.table.installEventFilter(self)
         self.table.cellDoubleClicked.connect(lambda row, _col: self.show_history(row))
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_row_menu)
 
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · N writes a note · "
@@ -1013,6 +1016,38 @@ class AttendanceView(QWidget):
         self.status_label.setText("Copied · paste it into an email or message")
         style.set_color(self.status_label, _fill(self, "accent"))
 
+    def _show_row_menu(self, pos) -> None:
+        i = self.table.rowAt(pos.y())
+        if self.register is not None and 0 <= i < len(self.register.rows):
+            self.table.setCurrentCell(i, COL_NAME)
+            menu = self.row_menu(i)
+            menu.exec(self.table.viewport().mapToGlobal(pos))
+            menu.deleteLater()  # a new one is made for each right-click
+
+    def row_menu(self, i: int) -> QMenu:
+        """What can be done for student `i`, for a right-click on their row."""
+        row = self.register.rows[i]
+        menu = QMenu(self)
+        for status in STATUSES:
+            action = menu.addAction(f"{status.value.capitalize()}\t{status.value[0].upper()}")
+            action.setCheckable(True)
+            action.setChecked(row.status is status)
+            action.triggered.connect(lambda _checked, s=status: self._set_status(i, s))
+        clear = menu.addAction("Clear the mark\tDelete", lambda: self._set_status(i, None))
+        clear.setEnabled(row.status is not None)
+        menu.addSeparator()
+        note = menu.addAction("Write a note\tN", lambda: self._edit_note(i))
+        note.setEnabled(row.status is not None)
+        menu.addAction("Mark several days…\tD", lambda: self.mark_days(i))
+        menu.addAction("Show history…\tH", lambda: self.show_history(i))
+        return menu
+
+    def _edit_note(self, i: int) -> None:
+        note = self._row_widgets[i][1]
+        if note.isEnabled():
+            note.setFocus()
+            note.selectAll()
+
     def mark_days(self, i: int) -> None:
         """Ask for a period, then mark student `i` on each school day of it."""
         if self.register is None or not 0 <= i < len(self.register.rows):
@@ -1152,10 +1187,7 @@ class AttendanceView(QWidget):
                     self.go_to_unmarked()
                     return True
                 if key in (Qt.Key.Key_N, Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                    note = self._row_widgets[i][1]
-                    if note.isEnabled():
-                        note.setFocus()
-                        note.selectAll()
+                    self._edit_note(i)
                     return True
         elif watched is self.find_edit:
             if key in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Down):

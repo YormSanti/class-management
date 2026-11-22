@@ -1849,3 +1849,20 @@ def test_attendance_u_goes_to_the_next_student_not_marked(window: MainWindow, ro
     assert view.table.currentRow() == 3  # Turing
     QTest.keyClick(view.table, Qt.Key.Key_U)
     assert view.table.currentRow() == 0  # round to the top: Hopper
+
+
+def test_attendance_row_menu(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    menu = view.row_menu(0)
+    actions = {a.text().split("\t")[0]: a for a in menu.actions() if a.text()}
+    assert list(actions) == [
+        "Present", "Late", "Absent", "Excused", "Clear the mark", "Write a note", "Mark several days…", "Show history…"
+    ]
+    assert not actions["Clear the mark"].isEnabled() and not actions["Write a note"].isEnabled()
+    actions["Absent"].trigger()
+    assert _statuses(view) == ["absent", None]
+    menu = view.row_menu(0)
+    actions = {a.text().split("\t")[0]: a for a in menu.actions() if a.text()}
+    assert actions["Absent"].isChecked() and actions["Clear the mark"].isEnabled()
+    actions["Clear the mark"].trigger()
+    assert _statuses(view) == [None, None]
