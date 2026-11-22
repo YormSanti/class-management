@@ -241,12 +241,15 @@ class MonthView(QWidget):
         self.table.setRowCount(len(register.rows) + 1)
         palette = self.palette()
         muted = style.mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.5)
+        # weekend days are listed only when marked; their shading tells them apart from school days
+        weekend = style.mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.08)
 
         self.table.setHorizontalHeaderItem(0, QTableWidgetItem("Student"))
         today = self._today()
         for col, day in enumerate(days, start=1):
             item = QTableWidgetItem(f"{day:%a}"[:2] + f"\n{day.day}")
-            item.setToolTip(f"{day:%A} {day.day} {day:%B}{' (today)' if day == today else ''} · double-click to open")
+            note = " (today)" if day == today else " (weekend)" if day.weekday() >= 5 else ""
+            item.setToolTip(f"{day:%A} {day.day} {day:%B}{note} · double-click to open")
             if day == today:
                 font = item.font()
                 font.setBold(True)
@@ -273,6 +276,8 @@ class MonthView(QWidget):
                 if status is None:
                     item.setText("·")
                     item.setForeground(muted)
+                    if day.weekday() >= 5:
+                        item.setBackground(weekend)
                 else:
                     item.setBackground(looks[status])
                     if status is not AttendanceStatus.PRESENT:

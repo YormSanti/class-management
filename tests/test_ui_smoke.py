@@ -2055,3 +2055,23 @@ def test_attendance_month_name_opens_the_history(window: MainWindow, roster: Ros
     assert shown == [("Ada Lovelace", "Daily (homeroom)")]
     view.month_view.table.cellDoubleClicked.emit(2, 0)  # the "Absent that day" row
     assert len(shown) == 1
+
+
+def test_attendance_month_shades_weekend_days(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    saturday = date(2026, 11, 7)
+    view.attendance.mark(view.register.rows[0].student.id, saturday, AttendanceStatus.PRESENT)
+    view.refresh()
+    month = view.month_view
+    col = 1 + month.register.days.index(saturday)
+    assert "(weekend)" in month.table.horizontalHeaderItem(col).toolTip()
+    no_brush = Qt.BrushStyle.NoBrush
+    assert month.table.item(1, col).background().style() != no_brush  # Lovelace isn't marked: shaded
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    assert month.table.item(1, friday).background().style() == no_brush
