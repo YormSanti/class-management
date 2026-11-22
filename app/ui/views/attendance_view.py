@@ -117,6 +117,7 @@ class MonthView(QWidget):
 
     day_requested = Signal(object)  # a date to open on the Day tab
     mark_requested = Signal(int, object, object)  # student id, date, AttendanceStatus or None to clear
+    history_requested = Signal(int)  # a student whose history to show
 
     def __init__(self, attendance: AttendanceService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -189,7 +190,7 @@ class MonthView(QWidget):
 
         hint = style.label(
             "Hover over a mark to see its note; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
-            "double-click a day (or press Enter) to open its register. "
+            "double-click a day (or press Enter) to open its register, or a name for the student's history. "
             "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
@@ -327,9 +328,14 @@ class MonthView(QWidget):
         self.export_button.setEnabled(bool(register.rows))
         self.pdf_button.setEnabled(bool(register.rows))
 
-    def _open_cell(self, _row: int, col: int) -> None:
-        if self.register is not None and 1 <= col <= len(self.register.days):
+    def _open_cell(self, row: int, col: int) -> None:
+        """A day opens its register; a student's name opens their history."""
+        if self.register is None:
+            return
+        if 1 <= col <= len(self.register.days):
             self.day_requested.emit(self.register.days[col - 1])
+        elif col == 0 and 0 <= row < len(self.register.rows):
+            self.history_requested.emit(self.register.rows[row].student.id)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self.table and event.type() == QEvent.Type.KeyPress:
@@ -645,6 +651,7 @@ class AttendanceView(QWidget):
         self.month_view = MonthView(attendance)
         self.month_view.day_requested.connect(self.open_day)
         self.month_view.mark_requested.connect(self.mark_in_month)
+        self.month_view.history_requested.connect(self.show_student_history)
         self.tabs.addTab(self.month_view, "&Month")
 
         content = QWidget()

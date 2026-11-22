@@ -2033,3 +2033,25 @@ def test_attendance_month_cells_can_be_marked(window: MainWindow, roster: Roster
     view.undo()
     view.undo()
     assert month.register.rows[0].statuses == {}
+
+
+def test_attendance_month_name_opens_the_history(window: MainWindow, roster: RosterService, monkeypatch):
+    from app.ui.views import attendance_view
+
+    shown = []
+
+    class FakeDialog:
+        chosen_day = None
+
+        def __init__(self, history, register_name, parent):
+            shown.append((history.student.full_name, register_name))
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(attendance_view, "AttendanceHistoryDialog", FakeDialog)
+    view = _attendance_page(window, roster)
+    view.month_view.table.cellDoubleClicked.emit(1, 0)
+    assert shown == [("Ada Lovelace", "Daily (homeroom)")]
+    view.month_view.table.cellDoubleClicked.emit(2, 0)  # the "Absent that day" row
+    assert len(shown) == 1
