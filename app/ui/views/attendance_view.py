@@ -150,6 +150,7 @@ class MonthView(QWidget):
         today = self._today()
         self.year, self.month = today.year, today.month
         self.register: MonthRegister | None = None
+        self._scrolled_to: tuple[int, int] | None = None  # the month last scrolled to today
 
         self.prev_button = QPushButton("‹")
         self.prev_button.setToolTip("Previous month (Alt+Left or Page Up)")
@@ -265,6 +266,11 @@ class MonthView(QWidget):
         self._fill()
         if row >= 0 and col >= 0:  # keep the place after a mark
             self.table.setCurrentCell(min(row, self.table.rowCount() - 1), min(col, self.table.columnCount() - 1))
+        if (self.year, self.month) != self._scrolled_to:  # a month just opened: show today, when in it
+            self._scrolled_to = (self.year, self.month)
+            if today in self.register.days and self.register.rows:
+                item = self.table.item(0, 1 + self.register.days.index(today))
+                self.table.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtCenter)
 
     def _fill(self) -> None:
         register = self.register

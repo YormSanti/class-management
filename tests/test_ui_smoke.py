@@ -2263,3 +2263,18 @@ def test_attendance_export_period_as_pdf(window: MainWindow, roster: RosterServi
     view.month_view.export_period()
     assert saved.read_bytes().startswith(b"%PDF")
     assert told == [f"Saved 1 recorded day to\n{saved}"]
+
+
+def test_attendance_month_scrolls_to_today(window: MainWindow, roster: RosterService, qapp):
+    from datetime import date
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    month._today = lambda: date(2026, 11, 30)
+    view.tabs.setCurrentWidget(month)
+    month.table.setFixedWidth(400)  # a small screen: the month doesn't fit
+    qapp.processEvents()
+    month.step(1)
+    month.step(-1)  # November opened again
+    bar = month.table.horizontalScrollBar()
+    assert bar.maximum() > 0 and bar.value() > bar.maximum() // 2  # the 30th is near the end
