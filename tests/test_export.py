@@ -197,5 +197,15 @@ def test_absence_report_names_who_is_not_present():
         "Late (1): Grace Doe\n"
         "Not marked (1): Lin Doe\n"
     )
+    rows[0].absent_streak, rows[3].absent_streak = 3, 2
+    assert "Absent (2): Ada Doe (Flu, 3rd day), Kim Doe (2nd day)\n" in absence_report(register, "7B")
     everyone = DayRegister(1, date(2026, 11, 2), None, [row("Alan", AttendanceStatus.PRESENT)])
     assert absence_report(everyone, "7B").endswith("\nEveryone present (1).\n")
+
+
+def test_ordinal():
+    from app.services.export import _ordinal
+
+    assert [_ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111)] == [
+        "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st", "111th"
+    ]
