@@ -13,7 +13,14 @@ from app.models import AttendanceRecord, AttendanceStatus, Student
 from app.repositories.attendance_repo import AttendanceRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.dashboard import ABSENCE_LIMIT, ATTENTION_WINDOW_DAYS, LATE_LIMIT, attendance_rate
+from app.services.dashboard import (
+    ABSENCE_LIMIT,
+    ATTENTION_WINDOW_DAYS,
+    LATE_LIMIT,
+    STREAK_LIMIT,
+    absent_streak,
+    attendance_rate,
+)
 
 PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
@@ -23,7 +30,7 @@ COMMON_NOTES = ("Sick", "Doctor's appointment", "Family reason", "School trip", 
 NOTE_MAX = 200  # characters: a reason, not a report
 MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
 LOW_RATE = 90.0  # percent: an attendance rate under this is worth a look
-STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
+STREAK_SHOWN = STREAK_LIMIT  # absent in this many registers in a row is worth pointing out
 EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
 DAYS_AHEAD = 366  # marks further ahead than a year are surely a mistyped year
 
@@ -84,22 +91,6 @@ def day_warning(day: date, today: date) -> str | None:
     if day.weekday() >= 5:
         return f"{day:%A} is a weekend day. Check the date before marking."
     return None
-
-
-def _absent_streak(marks: dict[date, AttendanceStatus], taken: list[date]) -> int:
-    """How many of the registers taken, newest first, the student missed in a row.
-
-    A register in which the student isn't marked (yet) neither counts nor breaks the run,
-    so the run of the days before shows while today's register is still being taken.
-    """
-    streak = 0
-    for day in taken:
-        status = marks.get(day)
-        if status is AttendanceStatus.ABSENT:
-            streak += 1
-        elif status is not None:
-            break
-    return streak
 
 
 @dataclass
@@ -306,7 +297,7 @@ class AttendanceService:
                     status=record.status if record else None,
                     note=record.note if record else "",
                     recent=recent.get(student.id, {}),
-                    absent_streak=_absent_streak(marks.get(student.id, {}), taken),
+                    absent_streak=absent_streak(marks.get(student.id, {}), taken),
                     previous=max(((d, st) for d, st in marks.get(student.id, {}).items() if d < day), default=None),
                 )
             )

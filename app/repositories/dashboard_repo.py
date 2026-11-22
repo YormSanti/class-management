@@ -81,6 +81,22 @@ class DashboardRepository:
             result[r["student_id"]][r["status"]] = r["n"]
         return dict(result)
 
+    def daily_marks(self, class_id: int, start: date, end: date) -> dict[int, dict[date, str]]:
+        """{student_id: {day: status}} in the daily register for days in [start, end]."""
+        rows = self.conn.execute(
+            """
+            SELECT a.student_id, a.date, a.status FROM attendance a
+            JOIN students s ON s.id = a.student_id
+            WHERE s.class_id = ? AND s.active = 1 AND a.subject_id IS NULL
+              AND a.date BETWEEN ? AND ?
+            """,
+            (class_id, start.isoformat(), end.isoformat()),
+        )
+        result: dict[int, dict[date, str]] = defaultdict(dict)
+        for r in rows:
+            result[r["student_id"]][date.fromisoformat(r["date"])] = r["status"]
+        return dict(result)
+
     def attendance_by_date(
         self, class_id: int, start: date, end: date
     ) -> dict[date, dict[str, int]]:

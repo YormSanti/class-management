@@ -163,7 +163,22 @@ def test_needs_attention_uses_most_serious_reason(service, roster, conn, class_i
 
     items = service.summary(class_id, TODAY).attention
     assert [(i.student.first_name, i.kind) for i in items] == [("Maya", "absent"), ("Jonas", "late")]
-    assert items[0].reason == "3 absences in 30 days"
+    assert items[0].reason == "3 absences in 30 days, the last 3 in a row"
+
+
+def test_needs_attention_points_out_a_run_of_absences(service, roster, conn, class_id):
+    kim = _student(roster, class_id, "Kim", "Lee")
+    other = _student(roster, class_id, "Other", "Student")
+    days = [TODAY - timedelta(days=n) for n in (0, 1, 2)]  # Fri, Thu, Wed
+    for day in days:
+        _mark(conn, other, day, "present")
+    _mark(conn, kim, days[2], "present")
+    _mark(conn, kim, days[1], "absent")
+    _mark(conn, kim, days[0], "absent")
+    items = service.summary(class_id, TODAY).attention
+    assert [(i.student.first_name, i.kind, i.reason) for i in items] == [
+        ("Kim", "absent", "Absent the last 2 registers in a row")
+    ]
 
 
 def test_inactive_students_are_left_out(service, roster, conn, class_id, maths):
