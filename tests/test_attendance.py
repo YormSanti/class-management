@@ -179,9 +179,11 @@ def test_recent_counts_cover_last_30_days_of_the_same_register(attendance, roste
     attendance.mark(ada, date.fromordinal(DAY.toordinal() - 30), A)  # outside the window
     attendance.mark(ada, date.fromordinal(DAY.toordinal() - 1), A, subject_id=maths)  # other register
     attendance.mark(ada, date.fromordinal(DAY.toordinal() + 1), A)  # after the day shown
+    attendance.mark(ada, date.fromordinal(DAY.toordinal() - 2), P)
 
     row = attendance.day_register(klass, DAY).rows[0]
-    assert row.recent == {"absent": 3}
+    assert row.recent == {"absent": 3, "present": 1}
+    assert row.absent_streak == 1
     assert row.recent_text == "3 absences"
     assert row.recent_tone == "danger"
 
@@ -193,6 +195,32 @@ def test_recent_text_and_tone():
     assert row.recent_text == "1 absence · 3 late · 2 excused"
     assert row.recent_tone == "warn"
     assert RegisterRow(student, None, recent={"late": 2}).recent_tone == ""
+    row = RegisterRow(student, None, recent={"absent": 2}, absent_streak=2)
+    assert row.recent_text == "2 absences (2 in a row)"
+    assert row.recent_tone == "warn"
+    assert RegisterRow(student, None, recent={"absent": 2}, absent_streak=1).recent_text == "2 absences"
+
+
+def test_absent_streak_counts_registers_missed_in_a_row(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    days = [school_day(DAY, -n) for n in range(5, -1, -1)]  # Fri 30 Oct .. Fri 6 Nov
+    for day in days[:2]:
+        attendance.mark(ada, day, A)
+    attendance.mark(ada, days[2], P)
+    for day in days[3:5]:
+        attendance.mark(ada, day, A)
+    for day in days:
+        attendance.mark(grace, day, P)  # the register was taken every day
+
+    def streak(student_id, day=DAY):
+        return next(r for r in attendance.day_register(klass, day).rows if r.student.id == student_id).absent_streak
+
+    assert streak(ada) == 2  # not marked yet today: the run so far still shows
+    attendance.mark(ada, DAY, A)
+    assert streak(ada) == 3
+    assert streak(ada, days[2]) == 0
+    assert streak(grace) == 0
 
 
 def test_month_register_lists_weekdays_and_marked_weekends(attendance, roster, klass):

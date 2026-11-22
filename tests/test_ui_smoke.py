@@ -1673,3 +1673,18 @@ def test_status_bar_reminds_to_back_up_elsewhere(
     old = open_window()
     assert "last backed up elsewhere 40 days ago" in old.statusBar().currentMessage()
     old.close()
+
+
+def test_attendance_shows_absences_in_a_row(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster, ("Ada Lovelace",))
+    ada = view.register.rows[0].student.id
+    for day in (date(2026, 11, 4), date(2026, 11, 5)):
+        view.attendance.mark(ada, day, AttendanceStatus.ABSENT)
+    view.refresh()
+    recent = view.table.item(0, 4)
+    assert recent.text() == "2 absences (2 in a row)"
+    assert "last 2 registers" in recent.toolTip()

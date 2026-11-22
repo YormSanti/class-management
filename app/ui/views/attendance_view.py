@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
     RECENT_DAYS,
+    STREAK_SHOWN,
     UNMARKED,
     AttendanceError,
     AttendanceService,
@@ -761,7 +762,10 @@ class AttendanceView(QWidget):
         name.setToolTip("Not marked yet" if unmarked else "")
         recent = self.table.item(i, COL_RECENT)
         recent.setText(row.recent_text or "—")
-        recent.setToolTip(f"Days in the last {RECENT_DAYS} up to {self.day.day} {self.day:%b}")
+        tip = f"Days in the last {RECENT_DAYS} up to {self.day.day} {self.day:%b}"
+        if row.absent_streak >= STREAK_SHOWN:
+            tip += f"\nAbsent in each of the last {row.absent_streak} registers taken"
+        recent.setToolTip(tip)
         font = recent.font()
         font.setBold(bool(row.recent_tone))
         recent.setFont(font)

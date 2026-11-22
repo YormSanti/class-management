@@ -18,6 +18,7 @@ PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
 RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on the dashboard
 NOTE_SUGGESTIONS = 50
+STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
 
 
 class AttendanceError(ValueError):
@@ -49,19 +50,37 @@ def day_warning(day: date, today: date) -> str | None:
     return None
 
 
+def _absent_streak(marks: dict[date, AttendanceStatus], taken: list[date]) -> int:
+    """How many of the registers taken, newest first, the student missed in a row.
+
+    A register in which the student isn't marked (yet) neither counts nor breaks the run,
+    so the run of the days before shows while today's register is still being taken.
+    """
+    streak = 0
+    for day in taken:
+        status = marks.get(day)
+        if status is AttendanceStatus.ABSENT:
+            streak += 1
+        elif status is not None:
+            break
+    return streak
+
+
 @dataclass
 class RegisterRow:
     student: Student
     status: AttendanceStatus | None
     note: str = ""
     recent: dict[str, int] = field(default_factory=dict)  # status -> days, in the last RECENT_DAYS
+    absent_streak: int = 0  # registers taken in a row, up to the day, in which the student was absent
 
     @property
     def recent_text(self) -> str:
-        """e.g. "3 absences · 1 late"; "" when the student was always present."""
+        """e.g. "3 absences (2 in a row) · 1 late"; "" when the student was always present."""
         parts = []
         if n := self.recent.get(ABSENT, 0):
-            parts.append(_plural(n, "absence"))
+            streak = f" ({self.absent_streak} in a row)" if self.absent_streak >= STREAK_SHOWN else ""
+            parts.append(_plural(n, "absence") + streak)
         if n := self.recent.get(LATE, 0):
             parts.append(f"{n} late")
         if n := self.recent.get(EXCUSED, 0):
@@ -73,7 +92,7 @@ class RegisterRow:
         """"danger" or "warn" at the dashboard's limits, otherwise ""."""
         if self.recent.get(ABSENT, 0) >= ABSENCE_LIMIT:
             return "danger"
-        if self.recent.get(LATE, 0) >= LATE_LIMIT:
+        if self.recent.get(LATE, 0) >= LATE_LIMIT or self.absent_streak >= STREAK_SHOWN:
             return "warn"
         return ""
 
@@ -205,9 +224,14 @@ class AttendanceService:
         """Every active student with their status on `day`, sorted by name."""
         self._check_subject(class_id, subject_id)
         records = {r.student_id: r for r in self.attendance.for_period(class_id, day, day, subject_id)}
-        recent = self.attendance.counts_by_student(
-            class_id, day - timedelta(days=RECENT_DAYS - 1), day, subject_id
-        )
+        window = self.attendance.for_period(class_id, day - timedelta(days=RECENT_DAYS - 1), day, subject_id)
+        recent: dict[int, dict[str, int]] = {}
+        marks: dict[int, dict[date, AttendanceStatus]] = {}
+        for r in window:
+            counts = recent.setdefault(r.student_id, {})
+            counts[r.status.value] = counts.get(r.status.value, 0) + 1
+            marks.setdefault(r.student_id, {})[r.date] = r.status
+        taken = sorted({r.date for r in window}, reverse=True)
         rows = []
         for student in self.students.list_for_class(class_id):
             record = records.get(student.id)
@@ -217,6 +241,7 @@ class AttendanceService:
                     status=record.status if record else None,
                     note=record.note if record else "",
                     recent=recent.get(student.id, {}),
+                    absent_streak=_absent_streak(marks.get(student.id, {}), taken),
                 )
             )
         return DayRegister(class_id, day, subject_id, rows)
