@@ -140,6 +140,19 @@ def test_student_dialog_save_and_add_another(qapp: QApplication, roster: RosterS
     assert [s.student_no for s in roster.list_students(class_id)] == ["03", "01", "02"]
 
 
+def test_student_dialog_hints_the_next_free_number_for_a_student_without_one(
+    qapp: QApplication, roster: RosterService
+):
+    from app.ui.dialogs.student_dialog import StudentDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", student_no="S04"))
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    dialog = StudentDialog(roster.save_student, class_id, alan, suggest_no=lambda: roster.suggest_student_no(class_id))
+    assert dialog.student_no.text() == ""  # a hint only: saving leaves the student without a number
+    assert dialog.student_no.placeholderText() == "None yet; the next free one is S05"
+
+
 def test_paste_students_dialog_previews_and_adds(qapp: QApplication, roster: RosterService):
     from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 

@@ -23,7 +23,8 @@ class StudentDialog(QDialog):
 
     `same_name`, if given, returns other students with the entered name; the
     teacher is asked before a second student with that name is saved.
-    `suggest_no`, if given, pre-fills the student number of each new student.
+    `suggest_no`, if given, pre-fills the student number of each new student, and
+    is offered as a hint when editing a student without one.
 
     When adding, "Save and add another" keeps the dialog open for the next
     student. `added` lists every student saved, even if the dialog is then cancelled.
@@ -52,6 +53,8 @@ class StudentDialog(QDialog):
 
         self.student_no = QLineEdit((student.student_no or "") if student else self._next_no())
         self.student_no.setPlaceholderText("Optional")
+        if student is not None and not student.student_no and (free := self._next_no()):
+            self.student_no.setPlaceholderText(f"None yet; the next free one is {free}")
         self.first_name = QLineEdit(student.first_name if student else "")
         self.last_name = QLineEdit(student.last_name if student else "")
         self.notes = QPlainTextEdit(student.notes if student else "")

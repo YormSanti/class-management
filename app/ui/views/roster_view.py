@@ -304,6 +304,7 @@ class RosterView(QWidget):
             student,
             parent=self,
             same_name=self.roster.same_name_students,
+            suggest_no=lambda: self.roster.suggest_student_no(student.class_id),
         )
         if dialog.exec():
             self.refresh()
