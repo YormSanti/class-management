@@ -1928,3 +1928,17 @@ def test_attendance_name_tooltip_shows_the_last_mark(window: MainWindow, roster:
     view.refresh()
     assert view.table.item(1, 1).toolTip() == "Not marked yet\nLast marked late on Thu 5 Nov"
     assert view.table.item(0, 1).toolTip() == "Not marked yet"
+
+
+def test_attendance_number_keys_and_space_mark(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster, ("Ada Lovelace", "Grace Hopper", "Alan Turing", "Alan Kay", "Kim Lee"))
+    view.table.setCurrentCell(0, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_3)
+    QTest.keyClick(view.table, Qt.Key.Key_2, Qt.KeyboardModifier.KeypadModifier)
+    QTest.keyClick(view.table, Qt.Key.Key_4)
+    QTest.keyClick(view.table, Qt.Key.Key_1)
+    QTest.keyClick(view.table, Qt.Key.Key_Space)
+    assert _statuses(view) == ["absent", "late", "excused", "present", "present"]

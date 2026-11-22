@@ -16,6 +16,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Anywhere", "F5", "Reload the page shown"),
     ("Anywhere", "F1", "This list"),
     ("Attendance, Day tab", "P  L  A  E", "Mark present, late, absent or excused and go to the next student"),
+    ("Attendance, Day tab", "1  2  3  4, Space", "The same from the number pad; Space marks present"),
     ("Attendance, Day tab", "Delete", "Clear the student's mark"),
     ("Attendance, Day tab", "N or Enter", "Write a note; Enter or Esc to finish"),
     ("Attendance, Day tab", "H", "Show the student's attendance history"),

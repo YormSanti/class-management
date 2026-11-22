@@ -59,6 +59,9 @@ from app.ui.files import ask_save_path
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
+# 1 to 4 in the buttons' order, for the number pad; Space for the most common mark
+KEYS |= {Qt.Key.Key_1: STATUSES[0], Qt.Key.Key_2: STATUSES[1], Qt.Key.Key_3: STATUSES[2], Qt.Key.Key_4: STATUSES[3]}
+KEYS[Qt.Key.Key_Space] = AttendanceStatus.PRESENT
 COL_NO, COL_NAME, COL_STATUS, COL_NOTE, COL_RECENT = range(5)
 UNDO_LIMIT = 50
 NAMED_UNMARKED = 3  # this few students left to mark are named in the status line
@@ -589,7 +592,8 @@ class AttendanceView(QWidget):
         self.table.customContextMenuRequested.connect(self._show_row_menu)
 
         keys_hint = style.label(
-            "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · N writes a note · "
+            "Keys: ↑ ↓ move · P L A E (or 1 2 3 4, Space for present) mark and go to the next student · "
+            "Delete clears · N writes a note · "
             "U goes to the next one not marked · D marks several days · H or double-click shows a student's history · "
             "Alt+← → change day · Alt+Home goes to today · F1 lists every key",
             0.85,
