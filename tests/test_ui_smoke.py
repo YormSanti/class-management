@@ -1877,3 +1877,28 @@ def test_attendance_hides_the_number_column_without_numbers(window: MainWindow, 
     view.refresh()
     assert not view.table.isColumnHidden(0)
     assert view.table.item(0, 0).text() == "S01"
+
+
+def test_attendance_sorts_by_number_and_remembers_it(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    view = _attendance_page(first, roster)
+    for row, no in zip(view.register.rows, ("10", "2")):  # Hopper 10, Lovelace 2
+        row.student.student_no = no
+        roster.save_student(row.student)
+    view.table.horizontalHeader().sectionClicked.emit(0)
+    assert [r.student.student_no for r in view.register.rows] == ["2", "10"]
+    assert view.table.item(0, 1).text() == "Ada Lovelace"
+    view.table.horizontalHeader().sectionClicked.emit(1)
+    assert [r.student.last_name for r in view.register.rows] == ["Hopper", "Lovelace"]
+    view.table.horizontalHeader().sectionClicked.emit(0)
+    first.close()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.attendance_view.by_number
+    second.close()

@@ -5,6 +5,7 @@ present: nothing counts until the teacher marks it. Only active students are lis
 """
 
 import calendar
+import re
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
@@ -41,6 +42,15 @@ def school_day(day: date, step: int) -> date:
         while day.weekday() >= 5:
             day += timedelta(days=direction)
     return day
+
+
+def number_key(student: Student) -> tuple:
+    """Sorts students by number as people read them ("S2" before "S10"); those
+    without a number come last, in the usual name order."""
+    if not student.student_no:
+        return (1, ())
+    parts = re.split(r"(\d+)", student.student_no.casefold())
+    return (0, tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p))
 
 
 def _checked_note(note: str) -> str:

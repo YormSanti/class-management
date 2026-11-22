@@ -40,6 +40,7 @@ from app.services.attendance import (
     MonthRegister,
     RegisterRow,
     day_warning,
+    number_key,
     school_day,
     school_days,
 )
@@ -433,6 +434,7 @@ class AttendanceView(QWidget):
         self._subject_for_class: dict[int, int | None] = {}
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
         self._month_follows: date | None = None
+        self.by_number = False  # the register in student number order instead of by name
         # Notes written before in this class, offered in every note field while typing.
         self.note_completer = QCompleter(QStringListModel(self), self)
         self.note_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -578,6 +580,9 @@ class AttendanceView(QWidget):
         head.setSectionResizeMode(COL_RECENT, QHeaderView.ResizeMode.ResizeToContents)
         self.table.installEventFilter(self)
         self.table.cellDoubleClicked.connect(lambda row, _col: self.show_history(row))
+        head.sectionClicked.connect(self._header_clicked)
+        head.setSortIndicatorShown(True)
+        head.setSortIndicator(COL_NAME, Qt.SortOrder.AscendingOrder)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_row_menu)
 
@@ -755,6 +760,8 @@ class AttendanceView(QWidget):
         self.month_view.load(school_class.id, self.subject_id, file_label)
 
         self.register = self.attendance.day_register(school_class.id, day, self.subject_id)
+        if self.by_number:
+            self.register.rows.sort(key=lambda row: number_key(row.student))  # stable: by name within
         self.note_completer.model().setStringList(self.attendance.note_suggestions(school_class.id))
         ids = [row.student.id for row in self.register.rows]
         if ids != self._shown_ids():
@@ -765,6 +772,20 @@ class AttendanceView(QWidget):
         self.table.setColumnHidden(COL_NO, not any(row.student.student_no for row in self.register.rows))
         self._show_totals()
         self._apply_filter()
+
+    def _header_clicked(self, column: int) -> None:
+        if column in (COL_NO, COL_NAME):
+            self.set_order(by_number=column == COL_NO)
+        else:  # only these two columns sort; keep the indicator where it is
+            self.table.horizontalHeader().setSortIndicator(
+                COL_NO if self.by_number else COL_NAME, Qt.SortOrder.AscendingOrder
+            )
+
+    def set_order(self, by_number: bool) -> None:
+        """List the students by number (as the school's list does) or by name."""
+        self.by_number = by_number
+        self.table.horizontalHeader().setSortIndicator(COL_NO if by_number else COL_NAME, Qt.SortOrder.AscendingOrder)
+        self.refresh()
 
     def _shown_ids(self) -> list[int]:
         ids = []
