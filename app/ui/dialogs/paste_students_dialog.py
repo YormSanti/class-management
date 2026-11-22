@@ -69,6 +69,11 @@ class PasteStudentsDialog(QDialog):
         self.fix_case.setChecked(True)
         self.fix_case.toggled.connect(self._update_preview)
 
+        self.number_missing = QCheckBox()
+        self.number_missing.setToolTip("Otherwise they are added without a number, which can be given later")
+        self.number_missing.setChecked(True)
+        self.number_missing.toggled.connect(self._update_preview)
+
         self.problems = QLabel()
         self.problems.setWordWrap(True)
         self.summary = QLabel()
@@ -90,6 +95,7 @@ class PasteStudentsDialog(QDialog):
         layout.addWidget(self.problems)
         layout.addWidget(self.fix_case)
         layout.addWidget(self.skip_existing)
+        layout.addWidget(self.number_missing)
         layout.addWidget(self.summary)
         layout.addWidget(self.buttons)
         self._update_preview()
@@ -103,6 +109,17 @@ class PasteStudentsDialog(QDialog):
         existing = self.roster.already_in_class(self.class_id, pasted)
         skip = self.skip_existing.isChecked()
         self._students = [s for s in pasted if s not in existing] if skip else pasted
+        numbered = self.roster.number_pasted(self.class_id, self._students)
+        given = [n.student_no for s, n in zip(self._students, numbered) if s.student_no != n.student_no]
+        if given:
+            n = len(given)
+            self.number_missing.setText(
+                f"Give the {'student' if n == 1 else f'{n} students'} without a number the next free "
+                + (f"number, {given[0]}" if n == 1 else f"numbers, {given[0]} to {given[-1]}")
+            )
+        self.number_missing.setVisible(bool(given))  # only when the class or the list uses numbers
+        if self.number_missing.isChecked():
+            self._students = numbered
         self.preview.setRowCount(len(self._students))
         for row, s in enumerate(self._students):
             for col, text in enumerate((s.student_no or "", s.first_name, s.last_name)):

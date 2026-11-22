@@ -1020,6 +1020,24 @@ def test_paste_dialog_leaves_out_students_already_in_the_class(qapp: QApplicatio
     assert sorted(s.full_name for s in roster.list_students(class_id)) == ["Ada Lovelace", "Grace Hopper"]
 
 
+def test_paste_dialog_numbers_students_without_one(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Ada Lovelace\nGrace Hopper")
+    assert dialog.number_missing.isHidden()  # neither the class nor the list uses numbers
+    dialog.text.setPlainText("S01 Ada Lovelace\nGrace Hopper\nAlan Turing")
+    assert not dialog.number_missing.isHidden()
+    assert dialog.number_missing.text() == "Give the 2 students without a number the next free numbers, S02 to S03"
+    assert [dialog.preview.item(row, 0).text() for row in range(3)] == ["S01", "S02", "S03"]
+    dialog.number_missing.setChecked(False)
+    assert [dialog.preview.item(row, 0).text() for row in range(3)] == ["S01", "", ""]
+    dialog.number_missing.setChecked(True)
+    dialog.accept()
+    assert [s.student_no for s in dialog.added] == ["S01", "S02", "S03"]
+
+
 def test_paste_dialog_fixes_names_typed_in_capitals(qapp: QApplication, roster: RosterService):
     from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 
