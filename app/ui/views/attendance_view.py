@@ -642,6 +642,7 @@ class AttendanceView(QWidget):
         self.daily_button.clicked.connect(self.copy_from_daily)
         self.mark_rest_button = QPushButton("Mark the rest present")
         self.mark_rest_button.setObjectName("Primary")
+        self.mark_rest_button.setToolTip("Mark everyone not marked yet as present (Ctrl+Enter)")
         self.mark_rest_button.clicked.connect(self.mark_rest_present)
         actions = QHBoxLayout()
         actions.addWidget(self.status_label, stretch=1)
@@ -731,6 +732,10 @@ class AttendanceView(QWidget):
         today = QShortcut(QKeySequence("Alt+Home"), self)
         today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         today.activated.connect(self._go_to_today)
+        for keys in ("Ctrl+Return", "Ctrl+Enter"):  # the main key and the number pad's
+            rest = QShortcut(QKeySequence(keys), self)
+            rest.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            rest.activated.connect(lambda: self.mark_rest_button.isEnabled() and self.mark_rest_present())
         copy = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         copy.activated.connect(self.copy_absences)

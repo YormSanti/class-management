@@ -2202,3 +2202,15 @@ def test_attendance_history_dialog_enter_opens_the_day(qapp: QApplication):
     dialog.table.setCurrentCell(1, 0)
     QTest.keyClick(dialog.table, Qt.Key.Key_Return)
     assert dialog.chosen_day == date(2026, 11, 3) and dialog.result() == dialog.DialogCode.Accepted
+
+
+def test_attendance_ctrl_enter_marks_the_rest_present(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    QTest.keyClick(view.table, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert _statuses(view) == ["present", "present"]
