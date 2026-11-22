@@ -1259,6 +1259,9 @@ def test_period_dialog_presets(qapp: QApplication):
     dialog = PeriodDialog("Export", date(2026, 1, 1), date(2026, 1, 31), today=today)
     dialog.preset_buttons["Last month"].click()
     assert (dialog.start, dialog.end) == (date(2026, 2, 1), date(2026, 2, 28))
+    assert dialog.problem.text() == "20 school days, weekends left out"
+    dialog.set_period(date(2026, 3, 2), date(2026, 3, 1))
+    assert dialog.problem.text() == "The last day is before the first."
 
 
 def test_attendance_title_names_the_subject_register(window: MainWindow, roster: RosterService):

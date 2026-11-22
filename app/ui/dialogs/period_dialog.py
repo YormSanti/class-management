@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.attendance import school_days
 from app.ui import style
 
 
@@ -102,8 +103,12 @@ class PeriodDialog(QDialog):
         return self.end_edit.date().toPython()
 
     def _update_ok(self) -> None:
+        """Say how many school days the dates cover, or that they are the wrong way round."""
         ok = self.start <= self.end
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
-        self.problem.setText("" if ok else "The last day is before the first.")
-        self.problem.setVisible(not ok)
-        style.set_color(self.problem, style.color(self, "danger"))
+        if ok:
+            days = len(school_days(self.start, self.end))
+            self.problem.setText(f"{days} school day{'' if days == 1 else 's'}, weekends left out")
+        else:
+            self.problem.setText("The last day is before the first.")
+        style.set_color(self.problem, style.color(self, "accent" if ok else "danger"))
