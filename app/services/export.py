@@ -7,8 +7,8 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from app.models import Student
-from app.services.attendance import MonthRegister, PeriodSummary, StudentHistory
+from app.models import AttendanceStatus, Student
+from app.services.attendance import DayRegister, MonthRegister, PeriodSummary, StudentHistory
 from app.services.dashboard import attendance_rate
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
@@ -114,6 +114,29 @@ def write_student_history_csv(path: Path, history: StudentHistory) -> None:
     for record in sorted(history.records, key=lambda r: r.date):
         rows.append((record.date.isoformat(), f"{record.date:%A}", record.status.value.capitalize(), record.note))
     _write_csv(path, rows)
+
+
+def absence_report(register: DayRegister, title: str) -> str:
+    """The day's register as short text for the school office, e.g.
+
+    7B · Daily (homeroom) · Monday 2 November 2026
+    Absent (2): Ada Lovelace (Flu), Alan Turing
+    Late (1): Grace Hopper
+
+    Students not marked yet are named last, since they don't count as present.
+    """
+    day = register.day
+    lines = [f"{title} · {day:%A} {day.day} {day:%B} {day.year}"]
+    groups = [(s.value.capitalize(), [r for r in register.rows if r.status is s])
+              for s in (AttendanceStatus.ABSENT, AttendanceStatus.LATE, AttendanceStatus.EXCUSED)]  # fmt: skip
+    groups.append(("Not marked", [r for r in register.rows if r.status is None]))
+    for label, rows in groups:
+        if rows:
+            names = [r.student.full_name + (f" ({r.note})" if r.note else "") for r in rows]
+            lines.append(f"{label} ({len(rows)}): " + ", ".join(names))
+    if len(lines) == 1:
+        lines.append(f"Everyone present ({len(register.rows)})." if register.rows else "No students.")
+    return "\n".join(lines) + "\n"
 
 
 STATUS_MARK = {"present": "/", "late": "L", "absent": "A", "excused": "E"}

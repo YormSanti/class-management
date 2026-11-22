@@ -179,3 +179,23 @@ def test_student_history_csv_lists_every_marked_day_oldest_first(tmp_path: Path)
         ["2026-10-01", "Thursday", "Present", ""],
         ["2026-10-02", "Friday", "Absent", "'=Flu"],
     ]
+
+
+def test_absence_report_names_who_is_not_present():
+    from app.services.attendance import DayRegister, RegisterRow
+    from app.services.export import absence_report
+
+    def row(first: str, status: AttendanceStatus | None, note: str = "") -> RegisterRow:
+        return RegisterRow(Student(class_id=1, first_name=first, last_name="Doe"), status, note)
+
+    rows = [row("Ada", AttendanceStatus.ABSENT, "Flu"), row("Alan", AttendanceStatus.PRESENT),
+            row("Grace", AttendanceStatus.LATE), row("Kim", AttendanceStatus.ABSENT), row("Lin", None)]  # fmt: skip
+    register = DayRegister(1, date(2026, 11, 2), None, rows)
+    assert absence_report(register, "7B · Daily (homeroom)") == (
+        "7B · Daily (homeroom) · Monday 2 November 2026\n"
+        "Absent (2): Ada Doe (Flu), Kim Doe\n"
+        "Late (1): Grace Doe\n"
+        "Not marked (1): Lin Doe\n"
+    )
+    everyone = DayRegister(1, date(2026, 11, 2), None, [row("Alan", AttendanceStatus.PRESENT)])
+    assert absence_report(everyone, "7B").endswith("\nEveryone present (1).\n")

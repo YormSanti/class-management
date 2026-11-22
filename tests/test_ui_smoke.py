@@ -1568,3 +1568,25 @@ def test_history_dialog_exports_the_students_marks(
     assert (tmp_path / "ada.csv").read_text(encoding="utf-8-sig").splitlines()[1:] == [
         "2026-11-02,Monday,Absent,", "2026-11-03,Tuesday,Present,"
     ]
+
+
+def test_attendance_copies_the_days_absences(
+    window: MainWindow, roster: RosterService, conn: sqlite3.Connection, qapp: QApplication
+):
+    from datetime import date
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    window.select_class(class_id)
+    window.show_page("Attendance")
+    view = window.attendance_view
+    view.set_day(date(2026, 11, 2))
+    assert not view.copy_button.isEnabled()
+    _attendance(conn).mark(ada, date(2026, 11, 2), "absent")
+    view.refresh()
+    view.copy_button.click()
+    assert qapp.clipboard().text() == (
+        "7B · Daily (homeroom) · Monday 2 November 2026\nAbsent (1): Ada Lovelace\nNot marked (1): Alan Turing\n"
+    )
+    assert view.status_label.text().startswith("Copied")

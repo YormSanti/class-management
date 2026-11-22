@@ -5,6 +5,7 @@ from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QCompleter,
     QDateEdit,
@@ -36,7 +37,12 @@ from app.services.attendance import (
     day_warning,
     school_day,
 )
-from app.services.export import attendance_month_html, write_attendance_csv, write_attendance_summary_csv
+from app.services.export import (
+    absence_report,
+    attendance_month_html,
+    write_attendance_csv,
+    write_attendance_summary_csv,
+)
 from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
@@ -509,12 +515,16 @@ class AttendanceView(QWidget):
         self.undo_button.clicked.connect(self.undo)
         self.clear_button = QPushButton("Clear the day…")
         self.clear_button.clicked.connect(self.clear_day)
+        self.copy_button = QPushButton("Copy absences")
+        self.copy_button.setToolTip("Copy who is absent, late or excused today, e.g. to send to the school office")
+        self.copy_button.clicked.connect(self.copy_absences)
         self.mark_rest_button = QPushButton("Mark the rest present")
         self.mark_rest_button.setObjectName("Primary")
         self.mark_rest_button.clicked.connect(self.mark_rest_present)
         actions = QHBoxLayout()
         actions.addWidget(self.status_label, stretch=1)
         actions.addWidget(self.undo_button)
+        actions.addWidget(self.copy_button)
         actions.addWidget(self.clear_button)
         actions.addWidget(self.mark_rest_button)
 
@@ -796,6 +806,7 @@ class AttendanceView(QWidget):
             self.status_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.mark_rest_button.setEnabled(unmarked > 0)
         self.clear_button.setEnabled(unmarked < total)
+        self.copy_button.setEnabled(unmarked < total)
 
     # --- actions -------------------------------------------------------------
 
@@ -867,6 +878,16 @@ class AttendanceView(QWidget):
             self._remember("clear the day")
             self.attendance.clear_day(self.class_id, self.day, self.subject_id)
             self.refresh()
+
+    def copy_absences(self) -> None:
+        """Put who is absent, late, excused or not marked on the clipboard as text."""
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if self.register is None or school_class is None:
+            return
+        title = f"{school_class.name} · {self.register_combo.currentText()}"
+        QApplication.clipboard().setText(absence_report(self.register, title))
+        self.status_label.setText("Copied · paste it into an email or message")
+        style.set_color(self.status_label, _fill(self, "accent"))
 
     def show_history(self, i: int) -> None:
         """Show student `i`'s marks in this register; a day picked there opens on the Day tab."""
