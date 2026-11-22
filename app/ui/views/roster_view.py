@@ -114,7 +114,7 @@ class RosterView(QWidget):
 
         # --- toolbar ---
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search by name or student number  (Ctrl+F, Esc clears)")
+        self.search.setPlaceholderText("Search by name, student number or notes  (Ctrl+F, Esc clears)")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         self.search.installEventFilter(self)  # Escape clears it

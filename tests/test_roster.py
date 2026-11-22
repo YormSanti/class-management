@@ -87,6 +87,12 @@ def test_search(roster: RosterService, class_id: int, term: str, expected: list[
     assert [s.first_name for s in roster.list_students(class_id, search=term)] == expected
 
 
+def test_search_looks_in_the_notes_too(roster: RosterService, class_id: int):
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", notes="Nut allergy"))
+    _add(roster, class_id, "Alan", "Turing")
+    assert [s.first_name for s in roster.list_students(class_id, search="ALLERGY")] == ["Ada"]
+
+
 def test_search_treats_wildcards_literally(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace")
     assert roster.list_students(class_id, search="%") == []
