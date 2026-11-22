@@ -909,6 +909,24 @@ def test_paste_dialog_leaves_out_students_already_in_the_class(qapp: QApplicatio
     assert sorted(s.full_name for s in roster.list_students(class_id)) == ["Ada Lovelace", "Grace Hopper"]
 
 
+def test_paste_dialog_fixes_names_typed_in_capitals(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Ada McDonald\n")
+    assert dialog.fix_case.isHidden()
+
+    dialog.text.setPlainText("LOVELACE, ADA\ngrace hopper\n")
+    assert not dialog.fix_case.isHidden() and dialog.fix_case.isChecked()
+    assert [dialog.preview.item(r, 2).text() for r in range(2)] == ["Lovelace", "Hopper"]
+    dialog.fix_case.setChecked(False)
+    assert [dialog.preview.item(r, 2).text() for r in range(2)] == ["LOVELACE", "hopper"]
+    dialog.fix_case.setChecked(True)
+    dialog.accept()
+    assert sorted(s.full_name for s in roster.list_students(class_id)) == ["Ada Lovelace", "Grace Hopper"]
+
+
 def test_roster_deletes_a_student_without_records(
     window: MainWindow, roster: RosterService, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ):

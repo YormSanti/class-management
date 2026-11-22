@@ -430,3 +430,15 @@ def test_already_in_class_finds_pasted_names_the_class_has(roster: RosterService
     roster.deactivate_student(gone.id)
     pasted, _problems = parse_student_list("ada  LOVELACE\nGrace Hopper\nTuring, Alan")
     assert [p.line for p in roster.already_in_class(class_id, pasted)] == [1, 3]
+
+
+@pytest.mark.parametrize(
+    "typed, expected",
+    [("LOVELACE", "Lovelace"), ("ada", "Ada"), ("anne-marie", "Anne-Marie"), ("O'BRIEN", "O'Brien"),
+     ("mary ann", "Mary Ann"), ("McDonald", "McDonald"), ("van Gogh", "van Gogh"), ("Ada", "Ada"),
+     ("ÉMILE", "Émile"), ("", "")],
+)  # fmt: skip
+def test_fix_name_case(typed: str, expected: str):
+    from app.services.roster import fix_name_case
+
+    assert fix_name_case(typed) == expected

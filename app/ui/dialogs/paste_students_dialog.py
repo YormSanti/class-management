@@ -16,7 +16,14 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.roster import PastedStudent, RosterError, RosterService, parse_student_list, repeated_names
+from app.services.roster import (
+    PastedStudent,
+    RosterError,
+    RosterService,
+    fix_pasted_case,
+    parse_student_list,
+    repeated_names,
+)
 from app.ui import style
 
 
@@ -58,6 +65,10 @@ class PasteStudentsDialog(QDialog):
         self.skip_existing.setChecked(True)
         self.skip_existing.toggled.connect(self._update_preview)
 
+        self.fix_case = QCheckBox("Write names typed in capitals or lowercase the usual way, e.g. LOVELACE → Lovelace")
+        self.fix_case.setChecked(True)
+        self.fix_case.toggled.connect(self._update_preview)
+
         self.problems = QLabel()
         self.problems.setWordWrap(True)
         self.summary = QLabel()
@@ -77,6 +88,7 @@ class PasteStudentsDialog(QDialog):
         layout.addWidget(intro)
         layout.addLayout(columns, stretch=1)
         layout.addWidget(self.problems)
+        layout.addWidget(self.fix_case)
         layout.addWidget(self.skip_existing)
         layout.addWidget(self.summary)
         layout.addWidget(self.buttons)
@@ -84,6 +96,10 @@ class PasteStudentsDialog(QDialog):
 
     def _update_preview(self) -> None:
         pasted, problems = parse_student_list(self.text.toPlainText())
+        fixed = fix_pasted_case(pasted)
+        self.fix_case.setVisible(fixed != pasted)  # only when some name would change
+        if self.fix_case.isChecked():
+            pasted = fixed
         existing = self.roster.already_in_class(self.class_id, pasted)
         skip = self.skip_existing.isChecked()
         self._students = [s for s in pasted if s not in existing] if skip else pasted

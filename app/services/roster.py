@@ -138,6 +138,25 @@ def repeated_names(students: list[PastedStudent]) -> list[str]:
     return list(repeated.values())
 
 
+def fix_name_case(name: str) -> str:
+    """A name typed all in capitals or all in lowercase, written the usual way:
+    "LOVELACE" -> "Lovelace", "anne-marie o'brien" -> "Anne-Marie O'Brien".
+
+    A name that already mixes cases is left as typed ("McDonald", "van Gogh").
+    """
+    if name.upper() != name and name.lower() != name:
+        return name
+    return re.sub(r"(^|[\s\-'’])(\w)", lambda m: m.group(1) + m.group(2).upper(), name.lower())
+
+
+def fix_pasted_case(students: list[PastedStudent]) -> list[PastedStudent]:
+    """The pasted students with fix_name_case() applied to their first and last names."""
+    return [
+        replace(s, first_name=fix_name_case(s.first_name), last_name=fix_name_case(s.last_name))
+        for s in students
+    ]
+
+
 class RosterService:
     def __init__(
         self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository
