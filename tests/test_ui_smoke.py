@@ -1093,6 +1093,8 @@ def test_back_up_now_remembers_the_folder(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    import re
+
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QFileDialog
 
@@ -1112,6 +1114,7 @@ def test_back_up_now_remembers_the_folder(
     first.close()
     assert (usb / "copy.db").exists()
     assert Path(asked[0]).parent == Path.home()
+    assert re.fullmatch(r"Classroom backup \d{4}-\d\d-\d\d \d\d-\d\d\.db", Path(asked[0]).name)
 
     second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
     second.back_up_now()

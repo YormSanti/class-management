@@ -1,6 +1,6 @@
 import sqlite3
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
@@ -185,8 +185,9 @@ class MainWindow(QMainWindow):
         """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
         saved = str(self.settings.value("backup/folder", "")) if self.settings is not None else ""
         folder = Path(saved) if saved and Path(saved).is_dir() else Path.home()
-        # Not "classroom_…": that prefix marks automatic backups, which get pruned.
-        name = f"Classroom backup {date.today().isoformat()}"
+        # Not "classroom_…": that prefix marks automatic backups, which get pruned. The time
+        # keeps a second backup of the day from replacing the first one on the same stick.
+        name = f"Classroom backup {datetime.now():%Y-%m-%d %H-%M}"
         dest = ask_save_path(self, "Back up now", name, "Classroom Manager backups", ".db", folder)
         if dest is None:
             return
