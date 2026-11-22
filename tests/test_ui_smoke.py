@@ -2143,6 +2143,10 @@ def test_attendance_month_keys_change_the_month(window: MainWindow, roster: Rost
     QTest.keyClick(month.table, Qt.Key.Key_Left, Qt.KeyboardModifier.AltModifier)
     assert month.month_label.text() == "October 2026"
     assert view.day == date(2026, 11, 6)  # the Day tab keeps its day
+    QTest.keyClick(month.table, Qt.Key.Key_Home, Qt.KeyboardModifier.AltModifier)
+    today = date.today()
+    assert (month.year, month.month) == (today.year, today.month)
+    assert view.day == date(2026, 11, 6)
 
 
 def test_attendance_history_dialog_shows_absence_runs(qapp: QApplication):

@@ -145,6 +145,7 @@ class MonthView(QWidget):
         self.next_button.setFixedWidth(36)
         self.next_button.clicked.connect(lambda: self.step(1))
         self.this_month_button = QPushButton("This month")
+        self.this_month_button.setToolTip("Go to this month (Alt+Home)")
         self.this_month_button.clicked.connect(lambda: self.set_month(self._today().year, self._today().month))
         self.export_button = QPushButton("Export CSV…")
         self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
@@ -729,7 +730,7 @@ class AttendanceView(QWidget):
             shortcut.activated.connect(lambda step=step: self._step(step))
         today = QShortcut(QKeySequence("Alt+Home"), self)
         today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        today.activated.connect(lambda: self.set_day(date.today()))
+        today.activated.connect(self._go_to_today)
         copy = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         copy.activated.connect(self.copy_absences)
@@ -793,6 +794,13 @@ class AttendanceView(QWidget):
     def set_subject(self, _subject_id: int | None) -> None:
         """Called when subjects change; the register picker keeps its own choice."""
         self._fill_registers()
+
+    def _go_to_today(self) -> None:
+        """Alt+Home: today, or this month on the Month tab."""
+        if self.tabs.currentWidget() is self.month_view:
+            self.month_view.this_month_button.click()
+        else:
+            self.set_day(date.today())
 
     def _step(self, step: int) -> None:
         """Alt+← / Alt+→: the previous or next school day, or month on the Month tab."""
