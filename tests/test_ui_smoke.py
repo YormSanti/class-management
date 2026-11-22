@@ -2322,3 +2322,18 @@ def test_attendance_week_strip(window: MainWindow, roster: RosterService):
     view.week_buttons[2].click()
     assert view.day == date(2026, 11, 4) and view.week_buttons[2].isChecked()
     assert not view.week_buttons[4].isChecked()
+
+
+def test_mark_days_dialog_says_when_days_are_still_ahead(qapp: QApplication):
+    from datetime import date
+
+    from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
+
+    friday = date(2026, 11, 6)
+    dialog = MarkDaysDialog("Ada Lovelace", "Daily (homeroom)", friday, today=friday)
+    dialog.set_period(date(2026, 11, 4), date(2026, 11, 10))
+    assert dialog.days_label.text() == "5 school days, 2 of them still ahead"
+    dialog.set_period(date(2026, 11, 4), friday)
+    assert dialog.days_label.text() == "3 school days"
+    dialog.set_period(date(1990, 1, 1), friday)
+    assert dialog.start == date(2000, 1, 1)  # no earlier than the service allows

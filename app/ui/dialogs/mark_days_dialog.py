@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import AttendanceStatus
-from app.services.attendance import MAX_DAYS_AT_ONCE, NOTE_MAX, school_days
+from app.services.attendance import DAYS_AHEAD, EARLIEST_DAY, MAX_DAYS_AT_ONCE, NOTE_MAX, school_days
 from app.ui import style
 
 # Excused first: a sick note or a school trip is the usual reason to mark several days.
@@ -29,14 +29,20 @@ def _qdate(day: date) -> QDate:
 class MarkDaysDialog(QDialog):
     """Pick the days, status and note to mark one student with, e.g. for a sick note."""
 
-    def __init__(self, student_name: str, register_name: str, day: date, parent: QWidget | None = None):
+    def __init__(
+        self, student_name: str, register_name: str, day: date, parent: QWidget | None = None,
+        today: date | None = None,
+    ):  # fmt: skip
         super().__init__(parent)
+        self._today = today or date.today()
         self.setWindowTitle(f"Mark several days · {student_name}")
         self.setMinimumWidth(380)
 
         self.start_edit = QDateEdit(_qdate(day))
         self.end_edit = QDateEdit(_qdate(day))
         for edit in (self.start_edit, self.end_edit):
+            # the same limits as the service: a mistyped year can't be picked
+            edit.setDateRange(_qdate(EARLIEST_DAY), _qdate(self._today + timedelta(days=DAYS_AHEAD)))
             edit.setCalendarPopup(True)
             edit.setDisplayFormat("ddd d MMM yyyy")
             edit.dateChanged.connect(self._update)
@@ -107,6 +113,9 @@ class MarkDaysDialog(QDialog):
             text, ok = f"That is {days} school days. Mark at most {MAX_DAYS_AT_ONCE} at once.", False
         else:
             text, ok = f"{days} school day{'' if days == 1 else 's'}", True
+            ahead = len(school_days(max(self.start, self._today + timedelta(days=1)), self.end))
+            if ahead:  # fine for a planned trip, a slip for a sick note
+                text += f", {ahead} of them still ahead"
         self.days_label.setText(text)
         style.set_color(self.days_label, style.color(self, "accent" if ok else "danger"))
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
