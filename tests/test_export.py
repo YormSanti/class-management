@@ -95,11 +95,17 @@ def test_attendance_month_html():
                      {days[0]: AttendanceStatus.PRESENT, days[1]: AttendanceStatus.ABSENT}),
         ],
     )  # fmt: skip
-    page = attendance_month_html(register, "7B · October 2026")
+    page = attendance_month_html(register, "7B · October 2026", printed=date(2026, 11, 3))
     assert "<h2" in page and "7B · October 2026" in page
     assert "O&lt;Brien, Chloé" in page  # names are escaped
     assert "Thu<br>1" in page and "Fri<br>2" in page
-    assert "1 student · 2 days recorded · attendance 50%" in page
+    assert "1 student · 2 days recorded · attendance 50% · printed 3 November 2026" in page
+    assert "#e6e6e6" not in page  # no weekend days
+
+    register.days.append(date(2026, 10, 3))  # a Saturday with a mark
+    register.rows[0].statuses[date(2026, 10, 3)] = AttendanceStatus.PRESENT
+    page = attendance_month_html(register, "7B")
+    assert page.count("#e6e6e6") == 3  # its heading, the student's cell and the absent row
     assert "Notes" not in page
 
 

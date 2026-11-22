@@ -5,6 +5,7 @@ import html
 import os
 import tempfile
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 from app.models import AttendanceStatus, Student
@@ -170,17 +171,23 @@ def _absence_details(row: RegisterRow) -> str:
 STATUS_MARK = {"present": "/", "late": "L", "absent": "A", "excused": "E"}
 
 
-def attendance_month_html(register: MonthRegister, title: str) -> str:
+def attendance_month_html(register: MonthRegister, title: str, printed: date | None = None) -> str:
     """A printable month register: students down the side, days across, totals on the right.
 
     Present is "/", late "L", absent "A", excused "E"; a blank cell is not marked.
-    The notes written that month follow the table, since a cell has no room for them.
+    Weekend days (listed only when marked) are shaded. The notes written that month
+    follow the table, since a cell has no room for them.
     """
     days = register.days
+    printed = printed or date.today()
     cell = 'style="border: 1px solid #999; padding: 2px 3px; text-align: center;"'
     name_cell = 'style="border: 1px solid #999; padding: 2px 6px; text-align: left;"'
+
+    def day_cell(day: date) -> str:
+        return cell.replace('center;"', 'center; background: #e6e6e6;"') if day.weekday() >= 5 else cell
+
     head = [f"<th {cell}>No.</th>", f"<th {name_cell}>Student</th>"]
-    head += [f"<th {cell}>{day:%a}<br>{day.day}</th>" for day in days]
+    head += [f"<th {day_cell(day)}>{day:%a}<br>{day.day}</th>" for day in days]
     head += [f"<th {cell}>{label}</th>" for label in ("Abs", "Late", "Exc", "%")]
     lines = ["<tr>" + "".join(head) + "</tr>"]
     for n, row in enumerate(register.rows, start=1):
@@ -189,11 +196,11 @@ def attendance_month_html(register: MonthRegister, title: str) -> str:
         cells.append(f"<td {name_cell}>{html.escape(row.student.last_name)}, {html.escape(row.student.first_name)}</td>")
         for day in days:
             status = row.statuses.get(day)
-            cells.append(f"<td {cell}>{STATUS_MARK[status.value] if status else ''}</td>")
+            cells.append(f"<td {day_cell(day)}>{STATUS_MARK[status.value] if status else ''}</td>")
         cells += [f"<td {cell}>{counts[k]}</td>" for k in ("absent", "late", "excused")]
         cells.append(f"<td {cell}>{'' if rate is None else round(rate)}</td>")
         lines.append("<tr>" + "".join(cells) + "</tr>")
-    absent = [f"<td {cell}>{register.absent_on(day) or ''}</td>" for day in days]
+    absent = [f"<td {day_cell(day)}>{register.absent_on(day) or ''}</td>" for day in days]
     lines.append(
         f'<tr><td {cell}></td><td {name_cell}><b>Absent</b></td>{"".join(absent)}'
         + f"<td {cell}></td>" * 4 + "</tr>"
@@ -203,6 +210,7 @@ def attendance_month_html(register: MonthRegister, title: str) -> str:
     summary = f"{students} student{'' if students == 1 else 's'} · {recorded} day{'' if recorded == 1 else 's'} recorded"
     if rate is not None:
         summary += f" · attendance {rate:.0f}%"
+    summary += f" · printed {printed.day} {printed:%B} {printed.year}"
     return (
         '<html><body style="font-family: sans-serif; font-size: 8pt;">'
         f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
