@@ -1833,3 +1833,19 @@ def test_attendance_redo(window: MainWindow, roster: RosterService):
     assert _statuses(view) == ["absent", None]
     QTest.keyClick(view.table, Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier)
     assert _statuses(view) == ["absent", "late"]
+
+
+def test_attendance_u_goes_to_the_next_student_not_marked(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster, ("Ada Lovelace", "Grace Hopper", "Alan Turing", "Alan Kay"))
+    for i in (1, 2):  # Kay, Lovelace
+        view._row_widgets[i][0].buttons[AttendanceStatus.PRESENT].click()
+    view.table.setCurrentCell(0, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_U)
+    assert view.table.currentRow() == 3  # Turing
+    QTest.keyClick(view.table, Qt.Key.Key_U)
+    assert view.table.currentRow() == 0  # round to the top: Hopper

@@ -579,9 +579,9 @@ class AttendanceView(QWidget):
         self.table.cellDoubleClicked.connect(lambda row, _col: self.show_history(row))
 
         keys_hint = style.label(
-            "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · "
-            "N writes a note · D marks several days · H or double-click shows a student's history · "
-            "Alt+← → change day · Alt+Home goes to today",
+            "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · N writes a note · "
+            "U goes to the next one not marked · D marks several days · H or double-click shows a student's history · "
+            "Alt+← → change day · Alt+Home goes to today · F1 lists every key",
             0.85,
             muted=True,
         )
@@ -884,6 +884,17 @@ class AttendanceView(QWidget):
     def _visible_rows(self) -> list[int]:
         return [i for i in range(self.table.rowCount()) if not self.table.isRowHidden(i)]
 
+    def go_to_unmarked(self) -> None:
+        """Select the next student shown who isn't marked yet, starting again from the top."""
+        if self.register is None:
+            return
+        visible = self._visible_rows()
+        current = self.table.currentRow()
+        after = [i for i in visible if i > current] + [i for i in visible if i <= current]
+        found = next((i for i in after if self.register.rows[i].status is None), None)
+        if found is not None:
+            self.table.setCurrentCell(found, COL_NAME)
+
     def _next_row(self, i: int) -> int:
         """The next row shown after row `i`, or `i` itself at the end."""
         return next((n for n in self._visible_rows() if n > i), i)
@@ -1136,6 +1147,9 @@ class AttendanceView(QWidget):
                     return True
                 if key == Qt.Key.Key_D:
                     self.mark_days(i)
+                    return True
+                if key == Qt.Key.Key_U:
+                    self.go_to_unmarked()
                     return True
                 if key in (Qt.Key.Key_N, Qt.Key.Key_Return, Qt.Key.Key_Enter):
                     note = self._row_widgets[i][1]
