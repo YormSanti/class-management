@@ -1,7 +1,7 @@
 import calendar
 from datetime import date
 
-from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, Qt, Signal
+from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -438,6 +438,12 @@ class AttendanceView(QWidget):
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
         self._month_follows: date | None = None
         self.by_number = False  # the register in student number order instead of by name
+        self._clock = date.today  # replaceable in tests
+        self._showing_today: date | None = None  # the date, when the day shown was "today"
+        self._day_timer = QTimer(self)  # the page may stay open on screen past midnight
+        self._day_timer.setInterval(60_000)
+        self._day_timer.timeout.connect(lambda: self.isVisible() and self.follow_today())
+        self._day_timer.start()
         # Notes written before in this class, offered in every note field while typing.
         self.note_completer = QCompleter(QStringListModel(self), self)
         self.note_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -755,6 +761,7 @@ class AttendanceView(QWidget):
             return
         self.pages.setCurrentIndex(1)
         day = self.day
+        self._showing_today = day if day == self._clock() else None
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
         register = f" · {self.register_combo.currentText()}" if self.subject_id is not None else ""
         self.title_label.setText(f"Attendance · {school_class.name}{register}")
@@ -1263,9 +1270,16 @@ class AttendanceView(QWidget):
 
     # --- Qt events -----------------------------------------------------------
 
+    def follow_today(self) -> None:
+        """Left open overnight on today's register, go on to the new today."""
+        today = self._clock()
+        if self._showing_today is not None and self.day == self._showing_today != today:
+            self.set_day(today)
+
     def showEvent(self, event) -> None:
         # Students may have been added, moved or deactivated on other pages meanwhile.
         super().showEvent(event)
+        self.follow_today()
         self.refresh()
         self.table.setFocus()
 

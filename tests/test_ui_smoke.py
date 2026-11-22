@@ -1963,3 +1963,19 @@ def test_attendance_arrows_move_between_notes(window: MainWindow, roster: Roster
     assert view.register.rows[0].note == "Bus"  # saved on leaving
     QTest.keyClick(second, Qt.Key.Key_Down)  # Turing isn't marked: back to the list
     assert view.table.hasFocus() and view.table.currentRow() == 2
+
+
+def test_attendance_goes_on_to_the_new_day_after_midnight(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    view = _attendance_page(window, roster)
+    view._clock = lambda: date(2026, 11, 6)
+    view.refresh()
+    view._clock = lambda: date(2026, 11, 7)
+    view.follow_today()
+    assert view.day == date(2026, 11, 7)
+
+    view._clock = lambda: date(2026, 11, 9)
+    view.set_day(date(2026, 11, 2))  # an earlier day picked on purpose stays
+    view.follow_today()
+    assert view.day == date(2026, 11, 2)
