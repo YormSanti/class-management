@@ -157,6 +157,25 @@ def fix_pasted_case(students: list[PastedStudent]) -> list[PastedStudent]:
     ]
 
 
+_RECORD_WORDS = {  # what recorded() counts, in words: (one, many)
+    "attendance": ("attendance mark", "attendance marks"),
+    "scores": ("score", "scores"),
+    "assignments": ("assignment", "assignments"),
+    "categories": ("grade category", "grade categories"),
+    "seating": ("seating plan", "seating plans"),
+}
+
+
+def describe_records(counts: dict[str, int]) -> str:
+    """e.g. "120 attendance marks, 4 assignments and 1 seating plan"; "" if all are 0."""
+    parts = [
+        f"{n} {_RECORD_WORDS[key][0] if n == 1 else _RECORD_WORDS[key][1]}"
+        for key, n in counts.items()
+        if n and key in _RECORD_WORDS
+    ]
+    return ", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else "".join(parts)
+
+
 class RosterService:
     def __init__(
         self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository
@@ -275,8 +294,10 @@ class RosterService:
         try:
             self.classes.delete(class_id)
         except sqlite3.IntegrityError:
+            what = describe_records(self.classes.recorded(class_id)) or "attendance, grades or seating"
             raise RosterError(
-                "This class has attendance, grades or seating recorded and can't be deleted."
+                f"This class can't be deleted: it has {what} recorded. Its school year keeps it "
+                "as it is; to start a new year, use New school year."
             ) from None
 
     # --- subjects --------------------------------------------------------

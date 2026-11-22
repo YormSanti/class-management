@@ -39,6 +39,27 @@ class ClassRepository:
             self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 
+    def recorded(self, class_id: int) -> dict[str, int]:
+        """How much is recorded for the class's students and subjects, i.e. what stops
+        delete() from removing it: {"attendance", "scores", "assignments", "categories",
+        "seating": count}. Seating counts its layouts and others its students sit in."""
+        row = self.conn.execute(
+            """
+            WITH st AS (SELECT id FROM students WHERE class_id = :c),
+                 sub AS (SELECT id FROM subjects WHERE class_id = :c)
+            SELECT
+              (SELECT count(*) FROM attendance WHERE student_id IN st OR subject_id IN sub) AS attendance,
+              (SELECT count(*) FROM scores WHERE student_id IN st
+                  OR assignment_id IN (SELECT id FROM assignments WHERE subject_id IN sub)) AS scores,
+              (SELECT count(*) FROM assignments WHERE subject_id IN sub) AS assignments,
+              (SELECT count(*) FROM categories WHERE subject_id IN sub) AS categories,
+              (SELECT count(*) FROM seat_layouts WHERE class_id = :c
+                  OR id IN (SELECT layout_id FROM seats WHERE student_id IN st)) AS seating
+            """,
+            {"c": class_id},
+        ).fetchone()
+        return dict(row)
+
     def get(self, class_id: int) -> SchoolClass | None:
         row = self.conn.execute("SELECT * FROM classes WHERE id = ?", (class_id,)).fetchone()
         return _from_row(row) if row else None

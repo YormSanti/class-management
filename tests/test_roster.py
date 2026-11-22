@@ -129,7 +129,7 @@ def test_class_with_attendance_cannot_be_deleted(roster: RosterService, class_id
     conn.execute(
         "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
     )
-    with pytest.raises(RosterError, match="attendance, grades or seating"):
+    with pytest.raises(RosterError, match="it has 1 attendance mark recorded"):
         roster.delete_class(class_id)
     assert [s.id for s in roster.list_students(class_id)] == [ada.id]  # nothing was half-deleted
 
@@ -182,7 +182,7 @@ def test_class_with_graded_subject_cannot_be_deleted(roster: RosterService, conn
     school_class = roster.save_class(SchoolClass(name="8A"), first_subject="Science")
     subject_id = roster.list_subjects(school_class.id)[0].id
     conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,))
-    with pytest.raises(RosterError):
+    with pytest.raises(RosterError, match="it has 1 grade category recorded"):
         roster.delete_class(school_class.id)
     assert roster.list_subjects(school_class.id)  # nothing was half-deleted
 
@@ -489,3 +489,34 @@ def test_copy_subjects_adds_the_missing_ones_with_teachers(roster: RosterService
     assert [(s.name, s.teacher) for s in added] == [("Science", "Mr Smith")]
     assert [s.name for s in roster.list_subjects(target)] == ["maths", "Science"]
     assert roster.copy_subjects(source, target) == []
+
+
+def test_class_records_are_counted_and_described(roster: RosterService, conn):
+    from app.repositories.class_repo import ClassRepository
+    from app.services.roster import describe_records
+
+    class_id = roster.save_class(SchoolClass(name="8A"), first_subject="Science").id
+    other = roster.save_class(SchoolClass(name="8B")).id
+    subject_id = roster.list_subjects(class_id)[0].id
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    for day in ("2026-09-01", "2026-09-02"):
+        conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'present')", (ada.id, day))
+    category = conn.execute(
+        "INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,)
+    ).lastrowid
+    assignment = conn.execute(
+        "INSERT INTO assignments (subject_id, category_id, title, max_score) VALUES (?, ?, 'Quiz', 10)",
+        (subject_id, category),
+    ).lastrowid
+    conn.execute("INSERT INTO scores (assignment_id, student_id, score) VALUES (?, ?, 8)", (assignment, ada.id))
+    layout = conn.execute(
+        "INSERT INTO seat_layouts (class_id, name, rows, cols) VALUES (?, 'Main', 2, 2)", (other,)
+    ).lastrowid
+    conn.execute("INSERT INTO seats (layout_id, row, col, student_id) VALUES (?, 0, 0, ?)", (layout, ada.id))
+
+    counts = ClassRepository(conn).recorded(class_id)
+    assert counts == {"attendance": 2, "scores": 1, "assignments": 1, "categories": 1, "seating": 1}
+    assert describe_records(counts) == (
+        "2 attendance marks, 1 score, 1 assignment, 1 grade category and 1 seating plan"
+    )
+    assert describe_records({"attendance": 0}) == ""
