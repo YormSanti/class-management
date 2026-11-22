@@ -428,6 +428,7 @@ class AttendanceView(QWidget):
     """
 
     class_selected = Signal(int)
+    navigate_requested = Signal(str)  # a page name, e.g. "Manage classes"
 
     def __init__(self, attendance: AttendanceService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -544,6 +545,7 @@ class AttendanceView(QWidget):
         # actions
         self.status_label = style.label("", bold=True)
         self.status_label.setWordWrap(True)  # the buttons beside it leave little room
+        self.status_label.linkActivated.connect(self.navigate_requested.emit)
         self.undo_button = QPushButton("Undo")
         self.undo_button.clicked.connect(self.undo)
         self.redo_button = QPushButton("Redo")
@@ -894,7 +896,7 @@ class AttendanceView(QWidget):
 
         total, unmarked = len(self.register.rows), counts[UNMARKED]
         if not total:
-            text, tone = "No active students in this class. Add them on Manage classes.", None
+            text, tone = 'No active students in this class. <a href="Manage classes">Add students…</a>', None
         elif 0 < unmarked <= NAMED_UNMARKED and unmarked < total:  # the last few: say who
             names = [row.student.full_name for row in self.register.rows if row.status is None]
             listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]

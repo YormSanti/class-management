@@ -1993,3 +1993,10 @@ def test_attendance_register_picker_names_the_teacher(window: MainWindow, roster
     view.register_combo.setCurrentIndex(2)
     assert view.register_name == "Science"
     assert view.title_label.text() == "Attendance · 7B · Science"
+
+
+def test_attendance_without_students_links_to_manage_classes(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster, ())
+    assert view.status_label.text().startswith("No active students in this class.")
+    view.status_label.linkActivated.emit("Manage classes")
+    assert window.stack.currentWidget() is window.classes_view
