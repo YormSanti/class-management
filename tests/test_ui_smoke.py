@@ -2000,3 +2000,36 @@ def test_attendance_without_students_links_to_manage_classes(window: MainWindow,
     assert view.status_label.text().startswith("No active students in this class.")
     view.status_label.linkActivated.emit("Manage classes")
     assert window.stack.currentWidget() is window.classes_view
+
+
+def test_attendance_month_cells_can_be_marked(window: MainWindow, roster: RosterService, qapp):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    view.tabs.setCurrentWidget(view.month_view)
+    month = view.month_view
+    col = 1 + month.register.days.index(date(2026, 11, 4))
+    month.table.setCurrentCell(0, col)
+    QTest.keyClick(month.table, Qt.Key.Key_A)
+    QTest.keyClick(month.table, Qt.Key.Key_L)
+    assert [r.statuses.get(date(2026, 11, 4)) for r in month.register.rows] == [
+        AttendanceStatus.ABSENT, AttendanceStatus.LATE
+    ]
+    assert month.table.currentRow() == 1 and month.table.currentColumn() == col
+    QTest.keyClick(month.table, Qt.Key.Key_Delete)
+    assert month.register.rows[1].statuses == {}
+    month.table.setCurrentCell(0, 0)  # a name: nothing to mark
+    QTest.keyClick(month.table, Qt.Key.Key_P)
+    assert month.register.rows[0].statuses == {date(2026, 11, 4): AttendanceStatus.ABSENT}
+
+    view.undo()  # the clearing
+    assert month.register.rows[1].statuses == {date(2026, 11, 4): AttendanceStatus.LATE}
+    assert view.day == date(2026, 11, 4)  # undo shows the day it changes
+    view.undo()
+    view.undo()
+    assert month.register.rows[0].statuses == {}

@@ -116,6 +116,7 @@ class MonthView(QWidget):
     """A month at a glance: students down the side, school days across, totals at the end."""
 
     day_requested = Signal(object)  # a date to open on the Day tab
+    mark_requested = Signal(int, object, object)  # student id, date, AttendanceStatus or None to clear
 
     def __init__(self, attendance: AttendanceService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -187,7 +188,8 @@ class MonthView(QWidget):
         self.table.installEventFilter(self)  # Enter opens the selected day
 
         hint = style.label(
-            "Hover over a mark to see its note; double-click a day (or press Enter) to open its register. "
+            "Hover over a mark to see its note; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
+            "double-click a day (or press Enter) to open its register. "
             "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
@@ -223,7 +225,10 @@ class MonthView(QWidget):
         today = self._today()
         self.this_month_button.setEnabled((self.year, self.month) != (today.year, today.month))
         self.register = self.attendance.month_register(self.class_id, self.year, self.month, self.subject_id)
+        row, col = self.table.currentRow(), self.table.currentColumn()
         self._fill()
+        if row >= 0 and col >= 0:  # keep the place after a mark
+            self.table.setCurrentCell(min(row, self.table.rowCount() - 1), min(col, self.table.columnCount() - 1))
 
     def _fill(self) -> None:
         register = self.register
@@ -327,14 +332,26 @@ class MonthView(QWidget):
             self.day_requested.emit(self.register.days[col - 1])
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if (
-            watched is self.table
-            and event.type() == QEvent.Type.KeyPress
-            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-        ):
-            self._open_cell(self.table.currentRow(), self.table.currentColumn())
-            return True
+        if watched is self.table and event.type() == QEvent.Type.KeyPress:
+            key, row, col = event.key(), self.table.currentRow(), self.table.currentColumn()
+            plain = not (event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier)
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._open_cell(row, col)
+                return True
+            cell = self._cell(row, col)
+            if plain and cell is not None and (key in KEYS or key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)):
+                student_id, day = cell
+                self.mark_requested.emit(student_id, day, KEYS.get(key))
+                if key in KEYS:  # on to the next student, as on the Day tab
+                    self.table.setCurrentCell(min(row + 1, len(self.register.rows) - 1), col)
+                return True
         return super().eventFilter(watched, event)
+
+    def _cell(self, row: int, col: int) -> tuple[int, date] | None:
+        """(student id, day) of a mark cell of the table, None for names, totals and the last row."""
+        if self.register is None or not 0 <= row < len(self.register.rows) or not 1 <= col <= len(self.register.days):
+            return None
+        return self.register.rows[row].student.id, self.register.days[col - 1]
 
     def export_csv(self) -> None:
         if self.register is None:
@@ -627,6 +644,7 @@ class AttendanceView(QWidget):
         self.tabs.addTab(day_page, "&Day")
         self.month_view = MonthView(attendance)
         self.month_view.day_requested.connect(self.open_day)
+        self.month_view.mark_requested.connect(self.mark_in_month)
         self.tabs.addTab(self.month_view, "&Month")
 
         content = QWidget()
@@ -1105,6 +1123,33 @@ class AttendanceView(QWidget):
         if note.isEnabled():
             note.setFocus()
             note.selectAll()
+
+    def mark_in_month(self, student_id: int, day: date, status: AttendanceStatus | None) -> None:
+        """Mark (or clear) one cell of the Month tab, with undo as on the Day tab."""
+        if self.class_id is None:
+            return
+        row = next((r for r in self.month_view.register.rows if r.student.id == student_id), None)
+        if row is None or row.statuses.get(day) == status:
+            return
+        name = row.student.full_name
+        if status is None and row.notes.get(day):
+            answer = QMessageBox.question(
+                self, "Clear mark", f"Clear {name}'s mark for {day:%a} {day.day} {day:%b}? Its note goes with it."
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        when = f"{day:%a} {day.day}"
+        what = f"clear {name} on {when}" if status is None else f"mark {name} {status.value} on {when}"
+        self._remember(what, [day])
+        try:
+            if status is None:
+                self.attendance.clear(student_id, day, self.subject_id)
+            else:
+                self.attendance.mark(student_id, day, status, self.subject_id)
+        except AttendanceError as exc:
+            self._forget()
+            QMessageBox.information(self, "Attendance", str(exc))
+        self.refresh()
 
     def mark_days(self, i: int) -> None:
         """Ask for a period, then mark student `i` on each school day of it."""
