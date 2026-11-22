@@ -458,6 +458,8 @@ def test_attendance_buttons_mark_and_clear(window: MainWindow, roster: RosterSer
 
 def test_attendance_keys_mark_and_move_down(window: MainWindow, roster: RosterService, qapp):
     from PySide6.QtCore import Qt
+
+    from app.models import AttendanceStatus
     from PySide6.QtTest import QTest
 
     view = _attendance_page(window, roster, ("Ada Lovelace", "Grace Hopper", "Alan Turing"))
@@ -469,7 +471,9 @@ def test_attendance_keys_mark_and_move_down(window: MainWindow, roster: RosterSe
     QTest.keyClick(view.table, Qt.Key.Key_Up)
     QTest.keyClick(view.table, Qt.Key.Key_Delete)
     assert _statuses(view) == ["absent", None, None]
-    assert view.status_label.text() == "2 students are not marked yet. They don't count as present."
+    assert view.status_label.text() == "Not marked yet: Ada Lovelace and Alan Turing. They don't count as present."
+    view._row_widgets[1][0].buttons[AttendanceStatus.LATE].click()
+    assert view.status_label.text() == "Not marked yet: Alan Turing. They don't count as present."
 
 
 def test_attendance_note_is_saved(window: MainWindow, roster: RosterService):

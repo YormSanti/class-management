@@ -59,6 +59,7 @@ STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.AB
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
 COL_NO, COL_NAME, COL_STATUS, COL_NOTE, COL_RECENT = range(5)
 UNDO_LIMIT = 50
+NAMED_UNMARKED = 3  # this few students left to mark are named in the status line
 
 
 def _fill(widget: QWidget, name: str) -> QColor:
@@ -830,6 +831,10 @@ class AttendanceView(QWidget):
         total, unmarked = len(self.register.rows), counts[UNMARKED]
         if not total:
             text, tone = "No active students in this class. Add them on Manage classes.", None
+        elif 0 < unmarked <= NAMED_UNMARKED and unmarked < total:  # the last few: say who
+            names = [row.student.full_name for row in self.register.rows if row.status is None]
+            listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+            text, tone = f"Not marked yet: {listed}. They don't count as present.", "warn"
         elif unmarked:
             noun = "student is" if unmarked == 1 else "students are"
             text, tone = f"{unmarked} {noun} not marked yet. They don't count as present.", "warn"
