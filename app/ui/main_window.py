@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
+        self.classes_view.roster_view.history_requested.connect(self.show_attendance_history)
         self.classes_view.class_selected.connect(self.select_class)
         self.classes_view.subject_selected.connect(self.select_subject)
         self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))

@@ -106,6 +106,7 @@ class RosterView(QWidget):
 
     create_class_requested = Signal()
     students_changed = Signal()  # a student was added, edited, deactivated or reactivated
+    history_requested = Signal(int)  # a student whose attendance history to show
 
     def __init__(self, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -135,6 +136,9 @@ class RosterView(QWidget):
         self.transfer_button = QPushButton("Move to class…")
         self.transfer_button.setToolTip("Move the selected student to another class")
         self.transfer_button.clicked.connect(self.transfer_selected)
+        self.history_button = QPushButton("Attendance…")
+        self.history_button.setToolTip("Show the selected student's attendance history")
+        self.history_button.clicked.connect(self._show_history)
         self.copy_button = QPushButton("Copy list")
         self.copy_button.setToolTip("Copy the students shown, to paste into a spreadsheet (Ctrl+C)")
         self.copy_button.clicked.connect(self.copy_list)
@@ -175,6 +179,7 @@ class RosterView(QWidget):
         footer = QHBoxLayout()
         footer.addWidget(self.count_label, stretch=1)
         footer.addWidget(self.edit_button)
+        footer.addWidget(self.history_button)
         footer.addWidget(self.toggle_active_button)
         footer.addWidget(self.transfer_button)
         footer.addWidget(self.delete_button)
@@ -423,6 +428,10 @@ class RosterView(QWidget):
 
     # --- helpers -------------------------------------------------------------
 
+    def _show_history(self) -> None:
+        if (student := self._selected_student()) is not None:
+            self.history_requested.emit(student.id)
+
     def _selected_student(self) -> Student | None:
         rows = self.table.selectionModel().selectedRows()
         if not rows:
@@ -457,6 +466,7 @@ class RosterView(QWidget):
         self.export_button.setEnabled(has_class)
         self.copy_button.setEnabled(has_class and self.model.rowCount() > 0)
         self.edit_button.setEnabled(student is not None)
+        self.history_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.transfer_button.setEnabled(student is not None)
         self.delete_button.setEnabled(student is not None and self.roster.can_delete_student(student.id))

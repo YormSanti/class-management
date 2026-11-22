@@ -2279,3 +2279,29 @@ def test_attendance_month_scrolls_to_today(window: MainWindow, roster: RosterSer
     month.step(-1)  # November opened again
     bar = month.table.horizontalScrollBar()
     assert bar.maximum() > 0 and bar.value() > bar.maximum() // 2  # the 30th is near the end
+
+
+def test_roster_opens_a_students_attendance_history(window: MainWindow, roster: RosterService, monkeypatch):
+    from app.ui.views import attendance_view
+
+    shown = []
+
+    class FakeDialog:
+        chosen_day = None
+
+        def __init__(self, history, register_name, *_args):
+            shown.append((history.student.full_name, register_name))
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(attendance_view, "AttendanceHistoryDialog", FakeDialog)
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    window.show_page("Manage classes")
+    view = window.classes_view.roster_view
+    assert not view.history_button.isEnabled()
+    view.table.selectRow(0)
+    view.history_button.click()
+    assert shown == [("Ada Lovelace", "Daily (homeroom)")]
