@@ -3,6 +3,7 @@
 import re
 import sqlite3
 from dataclasses import dataclass, replace
+from datetime import date
 
 from app.db.connection import transaction
 from app.models import SchoolClass, Student, Subject
@@ -16,7 +17,8 @@ class RosterError(ValueError):
 
 
 def _clean(text: str | None) -> str:
-    return (text or "").strip()
+    """Trimmed, with runs of spaces (e.g. from copying) collapsed: "Ada  Lovelace" -> "Ada Lovelace"."""
+    return " ".join((text or "").split())
 
 
 # "2025-26" style: a full year, a dash or slash, then the next year's last two digits.
@@ -39,6 +41,13 @@ def next_term(term: str) -> str:
         return f"{int(m.group(1)) + 1}{m.group(2)}{(int(m.group(3)) + 1) % 100:02d}"
 
     return re.sub(_SHORT_YEAR_RANGE + r"|\b\d{4}\b", bump, term)
+
+
+def example_school_year(today: date) -> str:
+    """A school year written the usual way, for placeholder text: the one that has
+    started by `today` if school years start in the second half of the calendar year."""
+    first = today.year if today.month >= 7 else today.year - 1
+    return f"{first}-{first + 1}"
 
 
 def move_up(name: str) -> str:
@@ -77,9 +86,9 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
     """Read students from pasted text, one per line. Returns (students, problems).
 
     A line can be "First Last", "Last, First", either one after a student number
-    ("007 Ada Lovelace"), or columns copied from a spreadsheet: first and last
-    name, or number, first and last name. Blank lines and a heading row
-    (containing "name") are skipped.
+    ("007 Ada Lovelace"), or columns copied from a spreadsheet or a CSV file
+    separated by tabs or semicolons: first and last name, or number, first and
+    last name. Blank lines and a heading row (containing "name") are skipped.
     """
     students: list[PastedStudent] = []
     problems: list[str] = []
@@ -87,8 +96,9 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
         line = raw.strip()
         if not line:
             continue
-        if "\t" in line:
-            cells = [c.strip() for c in line.split("\t")]
+        separator = "\t" if "\t" in line else ";" if ";" in line else None
+        if separator:
+            cells = [c.strip() for c in line.split(separator)]
             cells = [c for c in cells if c]
             if "name" in line.casefold() and not students and not problems:
                 continue  # header row
@@ -112,6 +122,20 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
         else:
             students.append(PastedStudent(line_no, name[0], name[1], student_no))
     return students, problems
+
+
+def repeated_names(students: list[PastedStudent]) -> list[str]:
+    """Names that appear more than once in a pasted list, ignoring case, each named once
+    as first written."""
+    first_seen: dict[tuple[str, str], str] = {}
+    repeated: dict[tuple[str, str], str] = {}
+    for s in students:
+        key = (s.first_name.casefold(), s.last_name.casefold())
+        if key in first_seen:
+            repeated.setdefault(key, first_seen[key])
+        else:
+            first_seen[key] = f"{s.first_name} {s.last_name}"
+    return list(repeated.values())
 
 
 class RosterService:
@@ -242,6 +266,14 @@ class RosterService:
         self.subjects.update(subject)
         return subject
 
+    def subject_names(self) -> list[str]:
+        """Subject names used in any class, to offer while typing a new one."""
+        return self.subjects.distinct_values("name")
+
+    def teacher_names(self) -> list[str]:
+        """Teachers named on any subject, to offer while typing one."""
+        return self.subjects.distinct_values("teacher")
+
     def delete_subject(self, subject_id: int) -> None:
         """Delete a subject only if it has no grades or attendance yet."""
         try:
@@ -357,6 +389,24 @@ class RosterService:
             student.class_id, _clean(student.first_name), _clean(student.last_name)
         )
         return [s for s in matches if s.id != student.id]
+
+    def can_delete_student(self, student_id: int) -> bool:
+        """True while no attendance, score or seat refers to the student."""
+        return not self.students.has_records(student_id)
+
+    def delete_student(self, student_id: int) -> None:
+        """Delete a student added by mistake, but only while nothing is recorded for
+        them; otherwise they can only be deactivated, so their history is kept."""
+        with transaction(self.students.conn):
+            if self.students.has_records(student_id):
+                raise RosterError(
+                    "This student has attendance, grades or a seat recorded and can't be "
+                    "deleted. Deactivate them instead."
+                )
+            try:
+                self.students.delete(student_id)
+            except sqlite3.IntegrityError:
+                raise RosterError("This student has records and can't be deleted.") from None
 
     def deactivate_student(self, student_id: int) -> None:
         """Hide a student from day-to-day lists. Their history is kept."""

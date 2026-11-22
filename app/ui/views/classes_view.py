@@ -216,6 +216,8 @@ class ClassesView(QWidget):
         self.edit_class_button.setEnabled(has_class)
         self.delete_class_button.setEnabled(has_class)
         self._refresh_subjects()
+        if self.roster_view.class_id == self.class_id:  # set_class() hands a new class over itself
+            self.roster_view.refresh()
 
     def _refresh_subjects(self) -> None:
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None

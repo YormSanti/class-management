@@ -1,17 +1,21 @@
 """Classroom Manager entry point: resolve the data folder, back up, open the DB, show the UI."""
 
 import logging
+import platform
 import sqlite3
 import sys
 from dataclasses import replace
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6 import __version__ as pyside_version
+from PySide6.QtCore import QSettings, qVersion
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
+from app import __version__
 from app.config import (
     APP_NAME,
+    LOG_FILENAME,
     AppConfig,
     default_data_dir,
     load_config,
@@ -19,7 +23,7 @@ from app.config import (
     save_config,
     settings_dir,
 )
-from app.db.connection import connect, find_problems, init_db
+from app.db.connection import close_db, connect, find_problems, init_db
 from app.repositories.attendance_repo import AttendanceRepository
 from app.repositories.class_repo import ClassRepository
 from app.repositories.dashboard_repo import DashboardRepository
@@ -43,7 +47,7 @@ def _setup_logging() -> None:
         settings_dir().mkdir(parents=True, exist_ok=True)
         handlers.append(
             RotatingFileHandler(
-                settings_dir() / "classroom.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+                settings_dir() / LOG_FILENAME, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
             )
         )
     except OSError:
@@ -52,6 +56,15 @@ def _setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=handlers,
+    )
+
+
+def startup_banner() -> str:
+    """One log line with the versions that matter when reading a problem report."""
+    return (
+        f"Classroom Manager {__version__} starting · Python {platform.python_version()} · "
+        f"PySide6 {pyside_version} (Qt {qVersion()}) · SQLite {sqlite3.sqlite_version} · "
+        f"{platform.platform()}"
     )
 
 
@@ -116,6 +129,7 @@ def _resolve_config() -> AppConfig | None:
 
 def main() -> int:
     _setup_logging()
+    log.info(startup_banner())
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName("Classroom Manager")
@@ -187,7 +201,7 @@ def main() -> int:
     try:
         return app.exec()
     finally:
-        conn.close()
+        close_db(conn)
 
 
 if __name__ == "__main__":

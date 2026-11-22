@@ -18,8 +18,23 @@ e.g. `C:\Users\<name>\AppData\Local\ClassroomManager\`). The choice is saved in
 To keep the data somewhere else later, use **Settings → Move data…**.
 
 Each start copies the database to `<data folder>/backups/`. The 10 newest copies are kept,
-plus the last copy of each of the 30 most recent days.
-To go back to one, select it on the Settings page and press **Restore…**.
+plus the last copy of each of the 30 most recent days. Every copy is checked for damage
+before it is kept.
+To go back to one, select it on the Settings page and press **Restore…**; a copy saved
+elsewhere with **File → Back up now…** (e.g. on a USB stick) can be restored with
+**Restore from file…**. Either way the current data is first saved as a backup marked
+"from just before a restore". **Check for damage** on the Settings page runs SQLite's
+integrity check on demand.
+
+Problems are logged to `classroom.log` in the settings folder (next to `config.json`);
+**File → Open log file** opens it.
+
+## Keyboard
+
+**Help → Keyboard shortcuts** (F1) lists them all. The main ones: Ctrl+1 … Ctrl+7 switch
+pages, F5 reloads the page, Ctrl+Shift+B backs up. On the Attendance page, P, L, A and E
+mark the selected student and move to the next, N writes a note, H shows their history,
+Alt+← / Alt+→ change the day, Alt+Home goes to today and Ctrl+Z undoes.
 
 ## Test
 
@@ -36,7 +51,8 @@ app/db/              connection (WAL, foreign keys, transactions) and schema.sql
 app/models.py        dataclasses for every table
 app/repositories/    all SQL, one repository per table group
 app/services/        business logic, no Qt imports (roster, backup, ...)
-app/ui/              PySide6 main window, views and dialogs
+app/ui/              PySide6 main window, views and dialogs; style.py, theme.py
+                     and files.py (save dialogs) are shared by every page
 tests/               pytest tests
 ```
 

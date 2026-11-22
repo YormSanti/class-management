@@ -51,3 +51,12 @@ class SubjectRepository:
             (class_id,),
         )
         return [_from_row(r) for r in rows]
+
+    def distinct_values(self, column: str) -> list[str]:
+        """Every different subject name or teacher in use, in any class, sorted."""
+        if column not in ("name", "teacher"):
+            raise ValueError(column)
+        rows = self.conn.execute(
+            f"SELECT DISTINCT {column} AS value FROM subjects WHERE {column} <> '' ORDER BY {column} COLLATE NOCASE"
+        )
+        return [r["value"] for r in rows]

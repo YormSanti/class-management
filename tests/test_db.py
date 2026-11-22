@@ -119,3 +119,16 @@ def test_find_problems_reports_damaged_pages(tmp_path: Path):
     data[3 * 1024 : 4 * 1024] = b"\xff" * 1024  # wipe a page in the middle
     path.write_bytes(bytes(data))
     assert find_problems(path) != []
+
+
+def test_close_db_optimizes_and_closes(db_path: Path):
+    from app.db.connection import close_db
+
+    conn = connect(db_path)
+    init_db(conn)
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+    close_db(conn)
+    assert "PRAGMA optimize" in statements
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 1")

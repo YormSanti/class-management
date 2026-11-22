@@ -51,9 +51,10 @@ def test_attendance_csv(tmp_path: Path):
     with path.open(encoding="utf-8-sig", newline="") as f:
         rows = list(csv.reader(f))
     assert rows == [
-        ["Student #", "Last name", "First name", "2026-10-01", "2026-10-02", "Absent", "Late", "Excused", "Attendance %"],
-        ["03", "Dubois", "Chloé", "P", "A", "1", "0", "0", "50"],
-        ["", "Lovelace", "Ada", "", "", "0", "0", "0", ""],
+        ["Student #", "Last name", "First name", "2026-10-01", "2026-10-02", "Present", "Absent", "Late", "Excused",
+         "Attendance %"],
+        ["03", "Dubois", "Chloé", "P", "A", "1", "1", "0", "0", "50"],
+        ["", "Lovelace", "Ada", "", "", "0", "0", "0", "0", ""],
     ]
 
 
@@ -97,3 +98,29 @@ def test_attendance_month_html():
     assert "O&lt;Brien, Chloé" in page  # names are escaped
     assert "Thu<br>1" in page and "Fri<br>2" in page
     assert "1 student · 2 days recorded · attendance 50%" in page
+
+
+def test_roster_tsv_has_a_heading_and_one_line_per_student():
+    from app.services.export import roster_tsv
+
+    students = [
+        Student(class_id=1, first_name="Ada", last_name="Lovelace", student_no="001", notes="Front row\nGlasses"),
+        Student(class_id=1, first_name="Alan", last_name="Turing", active=False),
+    ]
+    assert roster_tsv(students) == (
+        "Student #\tLast name\tFirst name\tStatus\tNotes\n"
+        "001\tLovelace\tAda\tActive\tFront row Glasses\n"
+        "\tTuring\tAlan\tInactive\t\n"
+    )
+
+
+def test_text_that_looks_like_a_formula_is_written_as_text(tmp_path: Path):
+    from app.services.export import roster_tsv
+
+    student = Student(class_id=1, first_name="=HYPERLINK(1)", last_name="+Lee", notes="@home")
+    path = tmp_path / "students.csv"
+    write_roster_csv(path, [student])
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[1] == ["", "'+Lee", "'=HYPERLINK(1)", "Active", "'@home"]
+    assert "'=HYPERLINK(1)" in roster_tsv([student])

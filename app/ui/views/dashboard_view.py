@@ -1,3 +1,4 @@
+import html
 from datetime import date
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 from app.repositories.dashboard_repo import AssignmentStats
 from app.services.dashboard import (
     ABSENT,
+    CHART_DAYS,
     EXCUSED,
     GRADE_SCALE,
     LATE,
@@ -40,6 +42,18 @@ from app.ui.style import Panel
 _KIND_COLOR = {"absent": "danger", "grades": "warn", "missing": "info", "late": "warn"}
 _KIND_LABEL = {"absent": "Attendance", "grades": "Grades", "missing": "Missing", "late": "Late"}
 ATTENTION_SHOWN = 5
+KPI_HELP = {
+    "Active students": "Students in this class who aren't deactivated. Inactive students are left out of every figure.",
+    "Attendance this week": (
+        "Present or late, as a share of the days marked present, late or absent in the daily register "
+        "since Monday. Excused days count neither way."
+    ),
+    "Class average": (
+        "The mean of the students' averages. Each student's average is the mean of their subject "
+        "averages, weighted by grade category; work not handed in is left out, unlike a score of 0."
+    ),
+    "Missing work": "Scores not entered for dated assignments up to today, over all active students.",
+}
 
 
 def _clear(layout: QGridLayout | QVBoxLayout | QHBoxLayout) -> None:
@@ -97,6 +111,8 @@ class AttendanceChart(QWidget):
     ORDER = (PRESENT, EXCUSED, LATE, ABSENT)
     LABEL_SPACE = 24
 
+    day_clicked = Signal(object)  # the date of the column clicked
+
     def __init__(self):
         super().__init__()
         self.days: list[DayAttendance] = []
@@ -118,16 +134,32 @@ class AttendanceChart(QWidget):
         height = self.height() - self.LABEL_SPACE
         return [QRectF(i * (width + gap), 0, width, height) for i in range(count)]
 
+    def _day_at(self, x: float) -> DayAttendance | None:
+        for day, rect in zip(self.days, self._column_rects()):
+            if rect.left() <= x <= rect.right():
+                return day
+        return None
+
     def event(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.ToolTip and isinstance(event, QHelpEvent):
-            for day, rect in zip(self.days, self._column_rects()):
-                if rect.left() <= event.position().x() <= rect.right():
-                    parts = [f"{day.counts[s]} {s}" for s in self.ORDER if day.counts.get(s)]
-                    QToolTip.showText(event.globalPos(), f"{day.day:%a %d %b}: " + ", ".join(parts), self)
-                    return True
-            QToolTip.hideText()
+            if day := self._day_at(event.position().x()):
+                parts = [f"{day.counts[s]} {s}" for s in self.ORDER if day.counts.get(s)]
+                text = f"{day.day:%a %d %b}: " + ", ".join(parts) + "\nClick to open this day"
+                QToolTip.showText(event.globalPos(), text, self)
+            else:
+                QToolTip.hideText()
             return True
         return super().event(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        over = self._day_at(event.position().x()) is not None
+        self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.ArrowCursor)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and (day := self._day_at(event.position().x())):
+            self.day_clicked.emit(day.day)
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -164,10 +196,23 @@ class AttendanceChart(QWidget):
             painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, f"{day.day:%a}"[:2] + f" {day.day.day}")
 
 
+class ClickableRow(QFrame):
+    """A frame that reports left clicks, for list rows that open something."""
+
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class DashboardView(QWidget):
     """Overview of the selected class: key numbers, attendance, grades, students to check on."""
 
     navigate_requested = Signal(str)  # page name, e.g. "Attendance"
+    day_requested = Signal(object)  # a date whose register to open on the Attendance page
+    history_requested = Signal(int)  # a student whose attendance history to show
     create_class_requested = Signal()
     manage_subjects_requested = Signal()
 
@@ -199,6 +244,7 @@ class DashboardView(QWidget):
         header.addWidget(gradebook_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(attendance_button, alignment=Qt.AlignmentFlag.AlignBottom)
         self.today_label = style.label("", bold=True)
+        self.today_label.linkActivated.connect(lambda _link: self.day_requested.emit(date.today()))
         self.today_label.hide()
 
         # --- key numbers ---
@@ -217,9 +263,11 @@ class DashboardView(QWidget):
             cell = QVBoxLayout()
             cell.setContentsMargins(20, 16, 20, 16)
             cell.setSpacing(4)
-            value, sub = style.label("—", 2.1), style.label("", 0.85, muted=True)
+            title, value, sub = style.label(name, 0.92, muted=True), style.label("—", 2.1), style.label("", 0.85, muted=True)
             sub.setWordWrap(True)
-            cell.addWidget(style.label(name, 0.92, muted=True))
+            for text in (title, value, sub):
+                text.setToolTip(KPI_HELP[name])
+            cell.addWidget(title)
             cell.addWidget(value)
             cell.addWidget(sub)
             cell.addStretch()
@@ -227,7 +275,7 @@ class DashboardView(QWidget):
             self.kpis[name] = (value, sub)
 
         # --- attendance chart + needs attention ---
-        chart_panel = Panel("Attendance", "Last 10 days with attendance recorded · hover for details")
+        chart_panel = Panel("Attendance", f"Last {CHART_DAYS} days with attendance recorded · click a day to open it")
         legend = QHBoxLayout()
         legend.setSpacing(14)
         self.legend_swatches: list[tuple[QLabel, str]] = []
@@ -240,6 +288,7 @@ class DashboardView(QWidget):
         legend.addStretch()
         chart_panel.body.addLayout(legend)
         self.chart = AttendanceChart()
+        self.chart.day_clicked.connect(self.day_requested)
         chart_panel.body.addWidget(self.chart, stretch=1)
 
         attention_panel = Panel("Needs attention")
@@ -425,6 +474,8 @@ class DashboardView(QWidget):
         self.today_label.setVisible(status is not None)
         if status is not None:
             text, tone = status
+            if tone == "warn":  # not finished: offer to open it
+                text = f'{html.escape(text, quote=False)} <a href="take">Take attendance now</a>'
             self.today_label.setText(text)
             style.set_color(self.today_label, style.color(self, tone))
 
@@ -443,8 +494,12 @@ class DashboardView(QWidget):
         shown = items if self._attention_expanded else items[:ATTENTION_SHOWN]
         for i, item in enumerate(shown):
             color, soft = style.color(self, _KIND_COLOR[item.kind]), style.soft(self, _KIND_COLOR[item.kind])
-            row = QFrame()
+            row = ClickableRow()
             row.setObjectName("AttentionRow")
+            if item.kind in ("absent", "late"):
+                row.setCursor(Qt.CursorShape.PointingHandCursor)
+                row.setToolTip(f"Click to see {item.student.first_name}'s attendance history")
+                row.clicked.connect(lambda sid=item.student.id: self.history_requested.emit(sid))
             if i:
                 row.setStyleSheet(f"#AttentionRow {{ border-top: 1px solid {self._border.name()}; }}")
             row_layout = QHBoxLayout(row)

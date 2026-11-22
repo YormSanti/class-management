@@ -128,3 +128,18 @@ class AttendanceRepository:
         for r in rows:
             result[r["student_id"]][r["status"]] = r["n"]
         return dict(result)
+
+    def recent_notes(self, class_id: int, limit: int) -> list[str]:
+        """Distinct notes written for the class's students, in any register, newest first."""
+        rows = self.conn.execute(
+            """
+            SELECT a.note FROM attendance a
+            JOIN students s ON s.id = a.student_id
+            WHERE s.class_id = ? AND a.note <> ''
+            GROUP BY a.note
+            ORDER BY max(a.date) DESC, max(a.id) DESC
+            LIMIT ?
+            """,
+            (class_id, limit),
+        )
+        return [r["note"] for r in rows]

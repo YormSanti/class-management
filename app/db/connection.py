@@ -22,6 +22,17 @@ def connect(db_path: str | Path = ":memory:") -> sqlite3.Connection:
     return conn
 
 
+def close_db(conn: sqlite3.Connection) -> None:
+    """Close the database, first letting SQLite refresh the statistics its query planner
+    uses (PRAGMA optimize, recommended before closing). A failure there is ignored."""
+    try:
+        conn.execute("PRAGMA optimize")
+    except sqlite3.Error:
+        pass
+    finally:
+        conn.close()
+
+
 @contextmanager
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     """Run a block of writes atomically: commit on success, roll back on any error.

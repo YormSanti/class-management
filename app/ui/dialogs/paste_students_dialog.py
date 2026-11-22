@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.roster import PastedStudent, RosterError, RosterService, parse_student_list
+from app.services.roster import PastedStudent, RosterError, RosterService, parse_student_list, repeated_names
+from app.ui import style
 
 
 class PasteStudentsDialog(QDialog):
@@ -35,8 +36,8 @@ class PasteStudentsDialog(QDialog):
 
         intro = QLabel(
             "One student per line, as <i>First Last</i> or <i>Last, First</i>, optionally after "
-            "a student number. Columns copied from a spreadsheet work too: first and last "
-            "name, or number, first and last name."
+            "a student number. Columns copied from a spreadsheet or a CSV file work too: "
+            "first and last name, or number, first and last name."
         )
         intro.setWordWrap(True)
 
@@ -82,8 +83,7 @@ class PasteStudentsDialog(QDialog):
                 self.preview.setItem(row, col, QTableWidgetItem(text))
 
         self.problems.setText("<br>".join(problems[:5]) + ("<br>…" if len(problems) > 5 else ""))
-        dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        self.problems.setStyleSheet(f"color: {'#E57A66' if dark else '#B9412E'};")  # dashboard's danger
+        style.set_color(self.problems, style.color(self, "danger"))
         self.problems.setVisible(bool(problems))
 
         n = len(self._students)
@@ -95,6 +95,8 @@ class PasteStudentsDialog(QDialog):
         summary = f"{n} student{'' if n == 1 else 's'} to add."
         if duplicates:
             summary += " Already in the class: " + ", ".join(duplicates) + "."
+        if repeated := repeated_names(self._students):
+            summary += " Listed twice: " + ", ".join(repeated) + "."
         self.summary.setText(summary if n else "")
         self._ok.setText(f"Add {n} student{'' if n == 1 else 's'}" if n else "Add students")
         self._ok.setEnabled(bool(n) and not problems)
