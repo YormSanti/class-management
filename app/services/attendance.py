@@ -434,17 +434,22 @@ class AttendanceService:
         when they aren't marked in the subject yet. Late isn't copied: being late for
         registration says nothing about a lesson later in the day.
         """
+        check_day(day)
+        records = self.daily_to_copy(class_id, day, subject_id)
+        self.attendance.save_many(records)
+        return len(records)
+
+    def daily_to_copy(self, class_id: int, day: date, subject_id: int) -> list[AttendanceRecord]:
+        """The marks copy_from_daily() would add, without adding them."""
         if subject_id is None:
             raise AttendanceError("Pick a subject register to copy the daily register into.")
-        check_day(day)
         daily = {row.student.id: row for row in self.day_register(class_id, day).rows}
         records = []
         for row in self.day_register(class_id, day, subject_id).rows:
             source = daily.get(row.student.id)
             if row.status is None and source and source.status in (AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED):
                 records.append(AttendanceRecord(row.student.id, day, source.status, source.note, subject_id))
-        self.attendance.save_many(records)
-        return len(records)
+        return records
 
     def clear_day(self, class_id: int, day: date, subject_id: int | None = None) -> int:
         """Remove the whole register for the day, notes included; returns how many."""

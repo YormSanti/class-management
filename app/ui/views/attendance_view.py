@@ -911,7 +911,10 @@ class AttendanceView(QWidget):
             self.status_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.mark_rest_button.setEnabled(unmarked > 0)
         self.daily_button.setVisible(self.subject_id is not None)
-        self.daily_button.setEnabled(unmarked > 0)
+        if self.subject_id is not None:
+            n = len(self.attendance.daily_to_copy(self.register.class_id, self.day, self.subject_id))
+            self.daily_button.setText(f"Copy from daily ({n})" if n else "Copy from daily")
+            self.daily_button.setEnabled(n > 0)
         self.clear_button.setEnabled(unmarked < total)
         self.copy_button.setEnabled(unmarked < total)
         self.days_button.setEnabled(total > 0)

@@ -1713,11 +1713,13 @@ def test_attendance_subject_register_copies_from_daily(window: MainWindow, roste
     view._row_widgets[1][0].buttons[AttendanceStatus.ABSENT].click()  # Lovelace
     view.register_combo.setCurrentIndex(1)  # Maths
     assert not view.daily_button.isHidden()
+    assert view.daily_button.text() == "Copy from daily (1)"
 
     view.daily_button.click()
     assert _statuses(view) == [None, "absent"]
     assert view.status_label.text() == "Marked 1 student as in the daily register"
-    view.daily_button.click()
+    assert view.daily_button.text() == "Copy from daily" and not view.daily_button.isEnabled()
+    view.copy_from_daily()
     assert view.status_label.text().startswith("No one")
     view.undo()
     assert _statuses(view) == [None, None]
