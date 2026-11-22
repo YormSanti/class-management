@@ -12,6 +12,7 @@ from app.services.attendance import (
     AttendanceError,
     AttendanceService,
     RegisterRow,
+    check_day,
     day_warning,
     school_day,
     school_days,
@@ -431,3 +432,20 @@ def test_mark_days_refuses_bad_periods(attendance, roster, klass):
     roster.deactivate_student(ada)
     with pytest.raises(AttendanceError, match="inactive"):
         attendance.mark_days(ada, DAY, DAY, A)
+
+
+def test_days_with_a_mistyped_year_are_refused(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    today = date(2026, 11, 6)
+    check_day(date(2027, 11, 6), today)  # a year ahead is still fine
+    with pytest.raises(AttendanceError, match="Check the year"):
+        check_day(date(2027, 11, 8), today)
+    with pytest.raises(AttendanceError, match="Check the year"):
+        check_day(date(1926, 11, 6), today)
+    with pytest.raises(AttendanceError):
+        attendance.mark(ada, date(1926, 11, 6), P)
+    with pytest.raises(AttendanceError):
+        attendance.mark_unmarked(klass, date(2126, 11, 6))
+    with pytest.raises(AttendanceError):
+        attendance.mark_days(ada, date(1999, 12, 31), DAY, P)
+    assert attendance.student_history(ada).records == []

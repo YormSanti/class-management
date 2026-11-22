@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
 
 from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
+    DAYS_AHEAD,
+    EARLIEST_DAY,
     RECENT_DAYS,
     STREAK_SHOWN,
     UNMARKED,
@@ -473,6 +475,8 @@ class AttendanceView(QWidget):
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("ddd d MMM yyyy")
         self.date_edit.setDate(QDate.currentDate())
+        # the same limits as the service: a mistyped year can't be picked
+        self.date_edit.setDateRange(QDate(EARLIEST_DAY), QDate.currentDate().addDays(DAYS_AHEAD))
         self.date_edit.dateChanged.connect(lambda _d: self.refresh())
         self.next_button = QPushButton("›")
         self.next_button.setToolTip("Next school day (Alt+Right)")

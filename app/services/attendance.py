@@ -20,6 +20,8 @@ RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on t
 NOTE_SUGGESTIONS = 50
 MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
 STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
+EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
+DAYS_AHEAD = 366  # marks further ahead than a year are surely a mistyped year
 
 
 class AttendanceError(ValueError):
@@ -44,6 +46,13 @@ def school_days(start: date, end: date) -> list[date]:
     """The weekdays from `start` to `end`, both included."""
     days = (start + timedelta(days=n) for n in range((end - start).days + 1))
     return [day for day in days if day.weekday() < 5]
+
+
+def check_day(day: date, today: date | None = None) -> None:
+    """Refuse a day whose year was surely mistyped: before 2000 or over a year ahead."""
+    today = today or date.today()
+    if day < EARLIEST_DAY or day > today + timedelta(days=DAYS_AHEAD):
+        raise AttendanceError(f"{day.day} {day:%B} {day.year} can't be right. Check the year.")
 
 
 def day_warning(day: date, today: date) -> str | None:
@@ -312,6 +321,7 @@ class AttendanceService:
         self, student_id: int, day: date, status: AttendanceStatus, subject_id: int | None = None
     ) -> None:
         """Set the student's status for the day, keeping any note already written."""
+        check_day(day)
         self._check_student(student_id, subject_id)
         existing = self.attendance.get(student_id, day, subject_id)
         record = (
@@ -354,6 +364,8 @@ class AttendanceService:
         """
         if end < start:
             raise AttendanceError("The last day is before the first.")
+        check_day(start)
+        check_day(end)
         days = school_days(start, end)
         if not days:
             raise AttendanceError("There are no school days between these dates, only a weekend.")
@@ -381,6 +393,7 @@ class AttendanceService:
         status: AttendanceStatus = AttendanceStatus.PRESENT,
     ) -> int:
         """Give every student who is not marked yet `status`; returns how many."""
+        check_day(day)
         register = self.day_register(class_id, day, subject_id)
         records = [
             AttendanceRecord(row.student.id, day, AttendanceStatus(status), subject_id=subject_id)
@@ -399,6 +412,7 @@ class AttendanceService:
         """
         if subject_id is None:
             raise AttendanceError("Pick a subject register to copy the daily register into.")
+        check_day(day)
         daily = {row.student.id: row for row in self.day_register(class_id, day).rows}
         records = []
         for row in self.day_register(class_id, day, subject_id).rows:
