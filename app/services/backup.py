@@ -15,6 +15,7 @@ TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 KEEP_AUTO_BACKUPS = 10  # the newest ones, whatever their date
 KEEP_DAILY_BACKUPS = 30  # plus the last one of each of this many days
 REQUIRED_TABLES = {"classes", "students", "attendance"}  # in the data of every version
+REMIND_AFTER_DAYS = 30  # suggest "Back up now" when no copy was saved elsewhere for this long
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,17 @@ def copy_database(src: Path, dest: Path) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def manual_backup_reminder(last: datetime | None, now: datetime) -> str | None:
+    """A nudge to save a copy elsewhere (automatic backups sit on the same disk as the
+    data), or None while the last manual backup is recent enough."""
+    if last is None:
+        return "Your data has never been backed up elsewhere."
+    days = (now - last).days
+    if days < REMIND_AFTER_DAYS:
+        return None
+    return f"Your data was last backed up elsewhere {days} days ago."
 
 
 def list_auto_backups(backup_dir: Path) -> list[Path]:

@@ -196,3 +196,14 @@ def test_restore_backup_refuses_files_that_are_not_app_data(
             restore_backup(path, conn, db_path, tmp_path / "backups")
     assert [r[0] for r in conn.execute("SELECT name FROM classes")] == ["7B"]  # untouched
     assert not (tmp_path / "backups").exists()  # refused before saving a copy
+
+
+def test_manual_backup_reminder():
+    from app.services.backup import manual_backup_reminder
+
+    now = datetime(2026, 11, 22, 9, 0)
+    assert manual_backup_reminder(None, now) == "Your data has never been backed up elsewhere."
+    assert manual_backup_reminder(now - timedelta(days=29, hours=23), now) is None
+    assert manual_backup_reminder(now - timedelta(days=45), now) == (
+        "Your data was last backed up elsewhere 45 days ago."
+    )

@@ -1614,3 +1614,39 @@ def test_attendance_copies_the_days_absences(
         "7B · Daily (homeroom) · Monday 2 November 2026\nAbsent (1): Ada Lovelace\nNot marked (1): Alan Turing\n"
     )
     assert view.status_label.text().startswith("Copied")
+
+
+def test_status_bar_reminds_to_back_up_elsewhere(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from datetime import datetime, timedelta
+
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QFileDialog
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+
+    def open_window() -> MainWindow:
+        return MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+
+    empty = open_window()  # nothing to back up yet
+    assert empty.statusBar().currentMessage().startswith("Data file:")
+    empty.close()
+
+    roster.save_class(SchoolClass(name="7B"))
+    never = open_window()
+    assert never.statusBar().currentMessage().startswith("Your data has never been backed up elsewhere.")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(tmp_path / "copy.db"), ""))
+    never.back_up_now()
+    never.close()
+
+    recent = open_window()
+    assert recent.statusBar().currentMessage().startswith("Data file:")
+    recent.close()
+
+    settings.setValue("backup/last", (datetime.now() - timedelta(days=40)).isoformat())
+    old = open_window()
+    assert "last backed up elsewhere 40 days ago" in old.statusBar().currentMessage()
+    old.close()

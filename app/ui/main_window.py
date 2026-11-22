@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from app import __version__
 from app.config import LOG_FILENAME, AppConfig, settings_dir
 from app.services.attendance import AttendanceService
-from app.services.backup import copy_database
+from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
             tab = self._saved_id("attendance_tab")  # Day or Month
             if tab is not None and 0 <= tab < self.attendance_view.tabs.count():
                 self.attendance_view.tabs.setCurrentIndex(tab)
+        self._remind_to_back_up()
 
     # --- menus ---------------------------------------------------------------
 
@@ -201,7 +202,21 @@ class MainWindow(QMainWindow):
             return
         if self.settings is not None:
             self.settings.setValue("backup/folder", str(dest.parent))  # e.g. the USB stick, next time
+            self.settings.setValue("backup/last", datetime.now().isoformat(timespec="seconds"))
         self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
+
+    def _remind_to_back_up(self, now: datetime | None = None) -> None:
+        """Suggest Back up now in the status bar if no copy was saved elsewhere lately."""
+        if self.settings is None or not self.roster.list_classes():
+            return  # nothing worth saving yet
+        try:
+            last = datetime.fromisoformat(str(self.settings.value("backup/last", "")))
+        except ValueError:
+            last = None
+        if reminder := manual_backup_reminder(last, now or datetime.now()):
+            self.statusBar().showMessage(
+                f"{reminder} Save a copy, e.g. on a USB stick: File → Back up now (Ctrl+Shift+B)."
+            )
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
