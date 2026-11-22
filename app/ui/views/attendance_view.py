@@ -234,7 +234,7 @@ class MonthView(QWidget):
     def _fill(self) -> None:
         register = self.register
         days, recorded = register.days, set(register.recorded_days)
-        totals = ("Abs.", "Late", "Exc.", "Rate")
+        totals = ("Abs.", "Late", "Exc.", "Not m.", "Rate")
         first_total = 1 + len(days)
         self.table.clear()
         self.table.setColumnCount(first_total + len(totals))
@@ -260,6 +260,9 @@ class MonthView(QWidget):
             self.table.setHorizontalHeaderItem(col, item)
         for col, text in enumerate(totals, start=first_total):
             self.table.setHorizontalHeaderItem(col, QTableWidgetItem(text))
+        self.table.horizontalHeaderItem(first_total + 3).setToolTip(
+            "Not marked: days the register was taken on which the student has no mark"
+        )
 
         looks = {
             s: (style.soft(self, "accent") if s is AttendanceStatus.PRESENT else _fill(self, style.STATUS_COLOR[s.value]))
@@ -289,8 +292,9 @@ class MonthView(QWidget):
                     f"{row.student.full_name}, {day:%a} {day.day} {day:%b}: {word}" + (f"\nNote: {note}" if note else "")
                 )
                 self.table.setItem(r, col, item)
-            counts, rate = row.counts(), row.rate
-            values = (counts["absent"], counts["late"], counts["excused"], "—" if rate is None else f"{rate:.0f}%")
+            counts, rate, gaps = row.counts(), row.rate, register.unmarked(row)
+            values = (counts["absent"], counts["late"], counts["excused"], gaps or "–",
+                      "—" if rate is None else f"{rate:.0f}%")  # fmt: skip
             for col, value in enumerate(values, start=first_total):
                 item = QTableWidgetItem(str(value))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -299,6 +303,8 @@ class MonthView(QWidget):
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
+                elif col == first_total + 3:
+                    item.setForeground(_fill(self, "warn") if gaps else muted)
                 self.table.setItem(r, col, item)
 
         # last row: how many were absent each day, and the class's totals
@@ -315,7 +321,9 @@ class MonthView(QWidget):
             item.setForeground(_fill(self, "danger") if n else muted)
             self.table.setItem(last, col, item)
         counts, rate = register.counts(), register.rate
-        values = (counts["absent"], counts["late"], counts["excused"], "—" if rate is None else f"{rate:.0f}%")
+        gaps = sum(register.unmarked(row) for row in register.rows)
+        values = (counts["absent"], counts["late"], counts["excused"], gaps or "–",
+                  "—" if rate is None else f"{rate:.0f}%")  # fmt: skip
         for col, value in enumerate(values, start=first_total):
             item = QTableWidgetItem(str(value))
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)

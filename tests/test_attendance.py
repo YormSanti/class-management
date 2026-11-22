@@ -472,3 +472,15 @@ def test_number_key_sorts_numbers_as_people_read_them():
     students = [Student(class_id=1, first_name=n, last_name="X", student_no=no)
                 for n, no in (("a", "S10"), ("b", None), ("c", "s2"), ("d", "S1"), ("e", ""))]  # fmt: skip
     assert [s.first_name for s in sorted(students, key=number_key)] == ["d", "c", "a", "b", "e"]
+
+
+def test_month_register_counts_days_not_marked(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    attendance.mark(ada, DAY, P)
+    attendance.mark(ada, date(2026, 11, 5), P)
+    attendance.mark(grace, DAY, A)
+    month = attendance.month_register(klass, 2026, 11)
+    rows = {r.student.id: r for r in month.rows}
+    assert month.unmarked(rows[ada]) == 0
+    assert month.unmarked(rows[grace]) == 1  # the 5th
