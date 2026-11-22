@@ -934,8 +934,14 @@ class AttendanceView(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         self._remember("mark the rest present")
-        self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
+        try:
+            n = self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
+        except AttendanceError as exc:
+            self._forget()
+            QMessageBox.information(self, "Attendance", str(exc))
+            return
         self.refresh()
+        self.status_label.setText(f"Marked {n} student{'' if n == 1 else 's'} present. {self.status_label.text()}")
 
     def copy_from_daily(self) -> None:
         """Give students away all day (absent or excused in the daily register) the same mark here."""
