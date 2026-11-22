@@ -389,10 +389,10 @@ class RosterView(QWidget):
                 "Their attendance and grades so far stay with this class, where they are "
                 "now listed as inactive."
             )
-        if student.student_no and not moved.student_no:
+        if student.student_no and moved.student_no != student.student_no:
             details.append(
                 f"Student number {student.student_no} is already used in {target.name}, "
-                "so they have no number there yet."
+                + (f"so they are {moved.student_no} there." if moved.student_no else "so they have no number there yet.")
             )
         QMessageBox.information(
             self,

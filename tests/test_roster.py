@@ -405,7 +405,7 @@ def test_transfer_student_with_records_keeps_history_in_old_class(roster: Roster
         "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
     )
     moved = roster.transfer_student(ada.id, other)
-    assert moved.id != ada.id and moved.student_no is None  # number 5 is taken in 7C
+    assert moved.id != ada.id and moved.student_no == "6"  # number 5 is taken in 7C
     old = roster.list_students(class_id, include_inactive=True)
     assert [(s.id, s.active) for s in old] == [(ada.id, False)]
     assert {s.full_name for s in roster.list_students(other)} == {"Ada Lovelace", "Alan Turing"}

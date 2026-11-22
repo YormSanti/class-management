@@ -256,6 +256,25 @@ def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeyp
     assert [s.full_name for s in roster.list_students(other)] == ["Ada Lovelace"]
 
 
+def test_roster_move_to_class_says_the_new_number(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    other = roster.save_class(SchoolClass(name="7C")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", student_no="S05"))
+    roster.save_student(Student(class_id=other, first_name="Alan", last_name="Turing", student_no="S05"))
+    window.select_class(class_id)
+    roster_view = window.classes_view.roster_view
+    roster_view.table.selectRow(0)
+    told = []
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
+    monkeypatch.setattr(QMessageBox, "information", lambda _parent, _title, text: told.append(text))
+    roster_view.transfer_selected()
+    assert told[0].endswith("Student number S05 is already used in 7C, so they are S06 there.")
+
+
 def test_roster_count_mentions_hidden_inactive_students(window: MainWindow, roster: RosterService):
     class_id = roster.save_class(SchoolClass(name="7B")).id
     roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))

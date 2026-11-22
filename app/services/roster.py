@@ -436,7 +436,8 @@ class RosterService:
         A student with nothing recorded yet simply moves. Otherwise their
         attendance and grades stay with the old class: that record is made
         inactive and a new, active one is created in `class_id`. The student
-        number is kept unless another student in the new class has it.
+        number is kept unless another student in the new class has it; then
+        they get the new class's next free number.
         Returns the student as they are in the new class.
         """
         student = self.students.get(student_id)
@@ -449,7 +450,7 @@ class RosterService:
 
         student_no = student.student_no
         if student_no and self.students.find_by_student_no(class_id, student_no):
-            student_no = None
+            student_no = self.suggest_student_no(class_id) or None  # taken: the next free one
         with transaction(self.students.conn):
             if not self.students.has_records(student.id):
                 moved = replace(student, class_id=class_id, student_no=student_no, active=True)
