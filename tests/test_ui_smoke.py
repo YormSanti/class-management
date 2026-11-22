@@ -1247,11 +1247,14 @@ def test_period_dialog_presets(qapp: QApplication):
 
     from app.ui.dialogs.period_dialog import PeriodDialog, preset_periods
 
-    today = date(2026, 3, 10)
+    today = date(2026, 3, 10)  # a Tuesday
     assert preset_periods(today) == {
+        "This week": (date(2026, 3, 9), date(2026, 3, 13)),
+        "Last week": (date(2026, 3, 2), date(2026, 3, 6)),
+        "Last 30 days": (date(2026, 2, 9), date(2026, 3, 10)),
         "This month": (date(2026, 3, 1), date(2026, 3, 31)),
         "Last month": (date(2026, 2, 1), date(2026, 2, 28)),
-        "Last 30 days": (date(2026, 2, 9), date(2026, 3, 10)),
+        "This year": (date(2026, 1, 1), date(2026, 12, 31)),
     }
     dialog = PeriodDialog("Export", date(2026, 1, 1), date(2026, 1, 31), today=today)
     dialog.preset_buttons["Last month"].click()

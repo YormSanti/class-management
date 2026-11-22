@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
+    QGridLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -23,12 +23,16 @@ def _qdate(day: date) -> QDate:
 
 def preset_periods(today: date) -> dict[str, tuple[date, date]]:
     """Common periods ending around `today`: {button text: (first day, last day)}."""
+    week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     last_month_end = month_start - timedelta(days=1)
     return {
+        "This week": (week_start, week_start + timedelta(days=4)),
+        "Last week": (week_start - timedelta(days=7), week_start - timedelta(days=3)),
+        "Last 30 days": (today - timedelta(days=29), today),
         "This month": (month_start, today.replace(day=calendar.monthrange(today.year, today.month)[1])),
         "Last month": (last_month_end.replace(day=1), last_month_end),
-        "Last 30 days": (today - timedelta(days=29), today),
+        "This year": (date(today.year, 1, 1), date(today.year, 12, 31)),
     }
 
 
@@ -57,18 +61,17 @@ class PeriodDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
 
-        presets = QHBoxLayout()
+        presets = QGridLayout()  # three to a row
         self.preset_buttons: dict[str, QPushButton] = {}
         self._presets = preset_periods(today or date.today())
-        for text in self._presets:
+        for n, text in enumerate(self._presets):
             button = QPushButton(text)
             button.setAutoDefault(False)
             # A bound method, not a lambda holding `self`: such a cycle lets Python's garbage
             # collector delete a parentless dialog at a random moment later, crashing Qt.
             button.clicked.connect(self._use_preset)
-            presets.addWidget(button)
+            presets.addWidget(button, n // 3, n % 3)
             self.preset_buttons[text] = button
-        presets.addStretch()
 
         form = QFormLayout()
         form.addRow("&From", self.start_edit)
