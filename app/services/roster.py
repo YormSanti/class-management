@@ -21,6 +21,15 @@ def _clean(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
+def number_key(student: Student) -> tuple:
+    """Sorts students by number as people read them ("S2" before "S10"); those
+    without a number come last, in the usual name order."""
+    if not student.student_no:
+        return (1, ())
+    parts = re.split(r"(\d+)", student.student_no.casefold())
+    return (0, tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p))
+
+
 # "2025-26" style: a full year, a dash or slash, then the next year's last two digits.
 _SHORT_YEAR_RANGE = r"\b(\d{4})(\s*[-/–]\s*)(\d{2})\b"
 

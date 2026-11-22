@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from app.models import Student
 from app.services.export import roster_tsv, write_roster_csv
-from app.services.roster import RosterError, RosterService
+from app.services.roster import RosterError, RosterService, number_key
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.files import ask_save_path
 from app.ui.dialogs.student_dialog import StudentDialog
@@ -101,6 +101,21 @@ class StudentTableModel(QAbstractTableModel):
         return None
 
 
+def sort_key(student: Student, column: int) -> tuple:
+    """How the table sorts `student` by `column`: numbers as people read them ("S2"
+    before "S10", students without one after the rest), everything else as text."""
+    if column == 0:
+        return number_key(student), student.last_name.casefold(), student.first_name.casefold()
+    return (StudentTableModel.text(student, column).casefold(),)
+
+
+class StudentSortModel(QSortFilterProxyModel):
+    def lessThan(self, left: _Index, right: _Index) -> bool:
+        model = self.sourceModel()
+        column = left.column()
+        return sort_key(model.student_at(left.row()), column) < sort_key(model.student_at(right.row()), column)
+
+
 class RosterView(QWidget):
     """Student list for the selected class: search, add, edit, (de)activate."""
 
@@ -155,9 +170,8 @@ class RosterView(QWidget):
 
         # --- table ---
         self.model = StudentTableModel(self)
-        self.proxy = QSortFilterProxyModel(self)
+        self.proxy = StudentSortModel(self)
         self.proxy.setSourceModel(self.model)
-        self.proxy.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
 
         self.table = QTableView()
         self.table.setModel(self.proxy)
@@ -446,7 +460,7 @@ class RosterView(QWidget):
         # Python's sort is stable, like the table's, so ties keep the name order.
         return sorted(
             students,
-            key=lambda s: StudentTableModel.text(s, column).casefold(),
+            key=lambda s: sort_key(s, column),
             reverse=order == Qt.SortOrder.DescendingOrder,
         )
 

@@ -200,6 +200,19 @@ def test_roster_export_follows_the_table_order(
     assert [line.split(",")[1] for line in lines[1:]] == ["Lovelace", "Turing", "Hopper"]
 
 
+def test_roster_sorts_numbers_as_people_read_them(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    for first, no in (("Ada", "S10"), ("Bea", None), ("Cy", "S2"), ("Dan", "S1")):
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name="X", student_no=no))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view.table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+    shown = [view.proxy.index(row, 2).data() for row in range(view.proxy.rowCount())]
+    assert shown == ["Dan", "Cy", "Ada", "Bea"]  # without a number last
+
+
 def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
     from PySide6.QtWidgets import QInputDialog, QMessageBox
 

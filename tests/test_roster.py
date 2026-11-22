@@ -1,7 +1,7 @@
 import pytest
 
 from app.models import SchoolClass, Student, Subject
-from app.services.roster import RosterError, RosterService, move_up, next_term
+from app.services.roster import RosterError, RosterService, move_up, next_term, number_key
 
 
 @pytest.fixture
@@ -525,3 +525,9 @@ def test_class_records_are_counted_and_described(roster: RosterService, conn):
         "2 attendance marks, 1 score, 1 assignment, 1 grade category and 1 seating plan"
     )
     assert describe_records({"attendance": 0}) == ""
+
+
+def test_number_key_sorts_numbers_as_people_read_them():
+    students = [Student(class_id=1, first_name=n, last_name="X", student_no=no)
+                for n, no in (("a", "S10"), ("b", None), ("c", "s2"), ("d", "S1"), ("e", ""))]  # fmt: skip
+    assert [s.first_name for s in sorted(students, key=number_key)] == ["d", "c", "a", "b", "e"]

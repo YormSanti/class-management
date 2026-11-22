@@ -466,14 +466,6 @@ def test_notes_are_kept_short(attendance, roster, klass):
     assert attendance.student_history(ada).records[0].note == "x" * NOTE_MAX
 
 
-def test_number_key_sorts_numbers_as_people_read_them():
-    from app.services.attendance import number_key
-
-    students = [Student(class_id=1, first_name=n, last_name="X", student_no=no)
-                for n, no in (("a", "S10"), ("b", None), ("c", "s2"), ("d", "S1"), ("e", ""))]  # fmt: skip
-    assert [s.first_name for s in sorted(students, key=number_key)] == ["d", "c", "a", "b", "e"]
-
-
 def test_month_register_counts_days_not_marked(attendance, roster, klass):
     ada = _student(roster, klass, "Ada", "Lovelace")
     grace = _student(roster, klass, "Grace", "Hopper")

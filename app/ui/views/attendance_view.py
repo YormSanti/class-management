@@ -41,7 +41,6 @@ from app.services.attendance import (
     MonthRegister,
     RegisterRow,
     day_warning,
-    number_key,
     school_day,
     school_days,
 )
@@ -53,7 +52,7 @@ from app.services.export import (
     write_attendance_csv,
     write_attendance_summary_csv,
 )
-from app.services.roster import RosterService
+from app.services.roster import RosterService, number_key
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
 from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
