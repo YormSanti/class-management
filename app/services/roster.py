@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -28,6 +29,17 @@ def number_key(student: Student) -> tuple:
         return (1, ())
     parts = re.split(r"(\d+)", student.student_no.casefold())
     return (0, tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p))
+
+
+def _free_numbers(prefix: str, value: int, width: int, taken: list[str]) -> Iterator[str]:
+    """prefix + value, value + 1, ... zero-padded to `width` digits, leaving out the
+    numbers in `taken` (ignoring case: "s008" takes "S008" too)."""
+    used = {number.casefold() for number in taken}
+    while True:
+        number = f"{prefix}{value:0{width}d}"
+        if number.casefold() not in used:
+            yield number
+        value += 1
 
 
 # "2025-26" style: a full year, a dash or slash, then the next year's last two digits.
@@ -452,8 +464,7 @@ class RosterService:
     def suggest_student_no(self, class_id: int) -> str:
         """The number after the highest one in the class, keeping its prefix and
         zero padding: "S007" -> "S008". "" if the class uses no numbers yet."""
-        numbers = [s.student_no for s in self.students.list_for_class(class_id, include_inactive=True) if s.student_no]
-        taken = {number.casefold() for number in numbers}  # "s008" takes "S008" too
+        numbers = self._numbers(class_id)
         best: tuple[int, str, int] | None = None  # (value, prefix, digit count)
         for number in numbers:
             if m := re.fullmatch(r"(.*?)(\d+)", number):
@@ -463,11 +474,32 @@ class RosterService:
         if best is None:
             return ""
         value, prefix, width = best
-        while True:
-            value += 1
-            suggestion = f"{prefix}{value:0{width}d}"
-            if suggestion.casefold() not in taken:
-                return suggestion
+        return next(_free_numbers(prefix, value + 1, width, numbers))
+
+    def _numbers(self, class_id: int) -> list[str]:
+        """Every number used in the class, inactive students' too."""
+        return [s.student_no for s in self.students.list_for_class(class_id, include_inactive=True) if s.student_no]
+
+    def unnumbered_students(self, class_id: int) -> list[Student]:
+        """The class's active students without a student number, in name order."""
+        return [s for s in self.students.list_for_class(class_id) if not s.student_no]
+
+    def number_students(self, class_id: int, first: str) -> list[Student]:
+        """Give each active student without a number one, in name order, counting up
+        from `first` ("S031", "S032", ...) and skipping numbers already used.
+        Returns the students numbered."""
+        m = re.fullmatch(r"(.*?)(\d+)", _clean(first))
+        if m is None:
+            raise RosterError("The first number has to end in digits, e.g. 31 or S031.")
+        prefix, digits = m.groups()
+        free = _free_numbers(prefix, int(digits), len(digits), self._numbers(class_id))
+        numbered = []
+        with transaction(self.students.conn):
+            for student in self.unnumbered_students(class_id):
+                student = replace(student, student_no=next(free))
+                self.students.update(student)
+                numbered.append(student)
+        return numbered
 
     def same_name_students(self, student: Student) -> list[Student]:
         """Other students in the same class with the same name, so the UI can ask

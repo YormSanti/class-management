@@ -367,6 +367,27 @@ def test_add_students_is_all_or_nothing(roster: RosterService, class_id: int):
     assert len(roster.list_students(class_id)) == 3
 
 
+def test_number_students_numbers_those_without_one_in_name_order(roster: RosterService, class_id: int):
+    _add(roster, class_id, "Ada", "Lovelace", no="S031")
+    turing = _add(roster, class_id, "Alan", "Turing")
+    hopper = _add(roster, class_id, "Grace", "Hopper")
+    gone = _add(roster, class_id, "Old", "Student")
+    roster.deactivate_student(gone.id)
+    assert [s.id for s in roster.unnumbered_students(class_id)] == [hopper.id, turing.id]
+    numbered = roster.number_students(class_id, "S030")
+    assert [(s.id, s.student_no) for s in numbered] == [(hopper.id, "S030"), (turing.id, "S032")]  # S031 is taken
+    assert roster.unnumbered_students(class_id) == []
+    everyone = roster.list_students(class_id, include_inactive=True)
+    assert [s.student_no for s in everyone if s.id == gone.id] == [None]  # inactive students are left alone
+
+
+def test_number_students_needs_a_number_ending_in_digits(roster: RosterService, class_id: int):
+    _add(roster, class_id, "Alan", "Turing")
+    with pytest.raises(RosterError, match="end in digits"):
+        roster.number_students(class_id, "S")
+    assert roster.number_students(class_id, " 7 ")[0].student_no == "7"
+
+
 def test_transfer_student_without_records_moves_them(roster: RosterService, class_id: int):
     other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
     ada = _add(roster, class_id, "Ada", "Lovelace", no="5")
