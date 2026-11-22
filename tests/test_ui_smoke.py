@@ -213,6 +213,33 @@ def test_roster_sorts_numbers_as_people_read_them(window: MainWindow, roster: Ro
     assert shown == ["Dan", "Cy", "Ada", "Bea"]  # without a number last
 
 
+def test_roster_numbers_the_students_without_one(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    assert view.number_button.isHidden()  # the class uses no numbers
+    roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing", student_no="S07"))
+    roster.save_student(Student(class_id=class_id, first_name="Grace", last_name="Hopper"))
+    view.refresh()
+    assert not view.number_button.isHidden()
+    assert view.number_button.text() == "Number 2 students…"
+    asked, told = [], []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, text: asked.append(text) or ("S08", True))
+    monkeypatch.setattr(QMessageBox, "information", lambda _parent, _title, text: told.append(text))
+    view.number_students()
+    assert asked == ["S08"]
+    assert {s.first_name: s.student_no for s in roster.list_students(class_id)} == {
+        "Grace": "S08", "Ada": "S09", "Alan": "S07"
+    }
+    assert told == ["New student numbers:\n\nS08  Grace Hopper\nS09  Ada Lovelace"]
+    assert view.number_button.isHidden()
+
+
 def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
     from PySide6.QtWidgets import QInputDialog, QMessageBox
 

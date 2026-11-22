@@ -36,6 +36,7 @@ from app.ui.files import ask_save_path
 from app.ui.dialogs.student_dialog import StudentDialog
 
 _Index = QModelIndex | QPersistentModelIndex
+NUMBERED_LISTED = 15  # students named after numbering; a longer list wouldn't fit on screen
 
 
 class StudentTableModel(QAbstractTableModel):
@@ -157,6 +158,10 @@ class RosterView(QWidget):
         self.copy_button = QPushButton("Copy list")
         self.copy_button.setToolTip("Copy the students shown, to paste into a spreadsheet (Ctrl+C)")
         self.copy_button.clicked.connect(self.copy_list)
+        self.number_button = QPushButton("Number students…")
+        self.number_button.setToolTip("Give the students without a student number the next free numbers")
+        self.number_button.clicked.connect(self.number_students)
+        self.number_button.hide()  # until a class has students without a number
         self.export_button = QPushButton("Export…")
         self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
@@ -167,6 +172,7 @@ class RosterView(QWidget):
         toolbar.addSpacing(12)
         toolbar.addWidget(self.add_button)
         toolbar.addWidget(self.paste_button)
+        toolbar.addWidget(self.number_button)
 
         # --- table ---
         self.model = StudentTableModel(self)
@@ -396,6 +402,35 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def number_students(self) -> None:
+        """Give every active student without a number one, counting up from a number
+        the teacher picks (the next free one to start with)."""
+        if self.class_id is None:
+            return
+        missing = self.roster.unnumbered_students(self.class_id)
+        if not missing:
+            return
+        noun = "student" if len(missing) == 1 else f"{len(missing)} students"
+        first, ok = QInputDialog.getText(
+            self,
+            "Number students",
+            f"Give the {noun} without a student number numbers, in name order, starting at:",
+            text=self.roster.suggest_student_no(self.class_id),
+        )
+        if not ok:
+            return
+        try:
+            numbered = self.roster.number_students(self.class_id, first)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Number students", str(exc))
+            return
+        self.refresh()
+        self.students_changed.emit()
+        lines = [f"{s.student_no}  {s.full_name}" for s in numbered[:NUMBERED_LISTED]]
+        if len(numbered) > NUMBERED_LISTED:
+            lines.append(f"and {len(numbered) - NUMBERED_LISTED} more")
+        QMessageBox.information(self, "Number students", "New student numbers:\n\n" + "\n".join(lines))
+
     def copy_list(self) -> None:
         """Put the students shown, in the order shown, on the clipboard as a table."""
         students = [
@@ -503,3 +538,12 @@ class RosterView(QWidget):
             if inactive:
                 text += f" · {inactive} inactive"
         self.count_label.setText(text)
+        self._update_number_button()
+
+    def _update_number_button(self) -> None:
+        """Offer to number the students without one, when the class uses numbers (some schools don't)."""
+        missing = len(self.roster.unnumbered_students(self.class_id)) if self.class_id is not None else 0
+        offer = bool(missing and self.roster.suggest_student_no(self.class_id))
+        self.number_button.setVisible(offer)
+        if offer:
+            self.number_button.setText(f"Number {missing} student{'' if missing == 1 else 's'}…")
