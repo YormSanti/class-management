@@ -968,6 +968,40 @@ def test_roster_deletes_a_student_without_records(
     assert window.classes_view.tabs.tabText(0) == "Students (1)"
 
 
+def test_delete_key_deletes_or_deactivates_the_selected_student(
+    window: MainWindow, roster: RosterService, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'absent')", (alan.id,))
+    window.show_page("Manage classes")
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    asked: list[str] = []
+
+    def answer_yes(_parent, title, *args):
+        asked.append(title)
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", answer_yes)
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    view._select(alan.id)
+    QTest.keyClick(view.table, Qt.Key.Key_Delete)
+    view._select(ada.id)
+    QTest.keyClick(view.table, Qt.Key.Key_Delete)
+
+    assert asked == ["Deactivate student", "Delete student"]
+    assert roster.list_students(class_id) == []
+    assert [s.full_name for s in roster.list_students(class_id, include_inactive=True)] == ["Alan Turing"]
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

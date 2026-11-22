@@ -212,6 +212,8 @@ class RosterView(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
         copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
         copy.setContext(Qt.ShortcutContext.WidgetShortcut)
+        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.table, activated=self.remove_selected)
+        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
 
         self._update_buttons()
 
@@ -319,6 +321,17 @@ class RosterView(QWidget):
             return
         self.refresh()
         self.students_changed.emit()
+
+    def remove_selected(self) -> None:
+        """The Delete key: delete a student added by mistake; one with records can only
+        be deactivated, so offer that instead (both ask first)."""
+        student = self._selected_student()
+        if student is None:
+            return
+        if self.roster.can_delete_student(student.id):
+            self.delete_selected()
+        elif student.active:
+            self.toggle_active_selected()
 
     def transfer_selected(self) -> None:
         student = self._selected_student()
