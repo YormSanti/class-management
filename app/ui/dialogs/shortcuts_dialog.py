@@ -18,7 +18,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Attendance, Day tab", "P  L  A  E", "Mark present, late, absent or excused and go to the next student"),
     ("Attendance, Day tab", "1  2  3  4, Space", "The same from the number pad; Space marks present"),
     ("Attendance, Day tab", "Delete", "Clear the student's mark"),
-    ("Attendance, Day tab", "N or Enter", "Write a note; Enter or Esc to finish"),
+    ("Attendance, Day tab", "N or Enter", "Write a note; Enter or Esc to finish, ↑ ↓ for the next note"),
     ("Attendance, Day tab", "H", "Show the student's attendance history"),
     ("Attendance, Day tab", "U", "Go to the next student not marked yet"),
     ("Attendance, Day tab", "D", "Mark the student for several days, e.g. a sick note"),

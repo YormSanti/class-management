@@ -1942,3 +1942,24 @@ def test_attendance_number_keys_and_space_mark(window: MainWindow, roster: Roste
     QTest.keyClick(view.table, Qt.Key.Key_1)
     QTest.keyClick(view.table, Qt.Key.Key_Space)
     assert _statuses(view) == ["absent", "late", "excused", "present", "present"]
+
+
+def test_attendance_arrows_move_between_notes(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster, ("Ada Lovelace", "Grace Hopper", "Alan Turing"))
+    for i in (0, 1):
+        view._row_widgets[i][0].buttons[AttendanceStatus.LATE].click()
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    first, second = view._row_widgets[0][1], view._row_widgets[1][1]
+    first.setFocus()
+    QTest.keyClicks(first, "Bus")
+    QTest.keyClick(first, Qt.Key.Key_Down)
+    assert second.hasFocus() and view.table.currentRow() == 1
+    assert view.register.rows[0].note == "Bus"  # saved on leaving
+    QTest.keyClick(second, Qt.Key.Key_Down)  # Turing isn't marked: back to the list
+    assert view.table.hasFocus() and view.table.currentRow() == 2

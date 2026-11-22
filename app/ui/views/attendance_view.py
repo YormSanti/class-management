@@ -594,8 +594,9 @@ class AttendanceView(QWidget):
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E (or 1 2 3 4, Space for present) mark and go to the next student · "
             "Delete clears · N writes a note · "
-            "U goes to the next one not marked · D marks several days · H or double-click shows a student's history · "
-            "Alt+← → change day · Alt+Home goes to today · F1 lists every key",
+            "U goes to the next one not marked · D marks several days · "
+            "H or double-click shows a student's history · Alt+← → change day · Alt+Home goes to today · "
+            "F1 lists every key",
             0.85,
             muted=True,
         )
@@ -1234,6 +1235,23 @@ class AttendanceView(QWidget):
                 if visible and self.table.currentRow() not in visible:
                     self.table.setCurrentCell(visible[0], COL_NAME)
                 return True
+        elif isinstance(watched, QLineEdit) and key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            # to the note above or below, as in a spreadsheet, saving this one first
+            # (focus may pass through the suggestions popup, which doesn't count as finishing)
+            i = next(n for n, (_b, note) in enumerate(self._row_widgets) if note is watched)
+            self.note_completer.popup().hide()
+            self._save_note(i)
+            visible = self._visible_rows()
+            nearby = [n for n in visible if n < i][-1:] if key == Qt.Key.Key_Up else [n for n in visible if n > i][:1]
+            if nearby:
+                self.table.setCurrentCell(nearby[0], COL_NAME)
+                note = self._row_widgets[nearby[0]][1]
+                if note.isEnabled():
+                    note.setFocus()
+                    note.selectAll()
+                else:  # not marked yet: back to the list, ready for P L A E
+                    self.table.setFocus()
+            return True
         elif isinstance(watched, QLineEdit) and key in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter):
             i = next(n for n, (_b, note) in enumerate(self._row_widgets) if note is watched)
             if key == Qt.Key.Key_Escape:
