@@ -58,8 +58,12 @@ class PeriodDialog(QDialog):
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export…")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export CSV…")
         self.buttons.accepted.connect(self.accept)
+        self.as_pdf = False  # the PDF button was pressed rather than the CSV one
+        self.pdf_button = self.buttons.addButton("Save PDF…", QDialogButtonBox.ButtonRole.ActionRole)
+        self.pdf_button.setAutoDefault(False)
+        self.pdf_button.clicked.connect(self._accept_pdf)
         self.buttons.rejected.connect(self.reject)
 
         presets = QGridLayout()  # three to a row
@@ -87,6 +91,10 @@ class PeriodDialog(QDialog):
         layout.addWidget(self.buttons)
         self._update_ok()
 
+    def _accept_pdf(self) -> None:
+        self.as_pdf = True
+        self.accept()
+
     def _use_preset(self) -> None:
         self.set_period(*self._presets[self.sender().text()])
 
@@ -106,6 +114,7 @@ class PeriodDialog(QDialog):
         """Say how many school days the dates cover, or that they are the wrong way round."""
         ok = self.start <= self.end
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
+        self.pdf_button.setEnabled(ok)
         if ok:
             days = len(school_days(self.start, self.end))
             self.problem.setText(f"{days} school day{'' if days == 1 else 's'}, weekends left out")

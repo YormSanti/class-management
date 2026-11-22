@@ -2239,3 +2239,26 @@ def test_attendance_history_dialog_switches_register(window: MainWindow, roster:
     view.show_history(0)
     assert seen == ["Daily (homeroom) register · 0 marked days", "Maths register · 1 marked day"]
     assert view.register_name == "Maths" and view.day == date(2026, 11, 4)
+
+
+def test_attendance_export_period_as_pdf(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+
+    def press_pdf(dialog):
+        dialog.pdf_button.click()
+        return dialog.result()
+
+    saved = tmp_path / "term.pdf"
+    told = []
+    monkeypatch.setattr(PeriodDialog, "exec", press_pdf)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: told.append(args[2]))
+    view.month_view.export_period()
+    assert saved.read_bytes().startswith(b"%PDF")
+    assert told == [f"Saved 1 recorded day to\n{saved}"]

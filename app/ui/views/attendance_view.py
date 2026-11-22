@@ -49,6 +49,7 @@ from app.services.export import (
     absence_report,
     attendance_month_html,
     attendance_month_tsv,
+    attendance_period_html,
     write_attendance_csv,
     write_attendance_summary_csv,
 )
@@ -79,6 +80,23 @@ def _fill(widget: QWidget, name: str) -> QColor:
 
 def _rgba(color: QColor) -> str:
     return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
+
+
+def _write_pdf(parent: QWidget, path, title: str, page_html: str, landscape: bool) -> bool:
+    """Print `page_html` to an A4 PDF at `path`; says so and returns False if it failed."""
+    writer = QPdfWriter(str(path))
+    writer.setTitle(title)
+    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    orientation = QPageLayout.Orientation.Landscape if landscape else QPageLayout.Orientation.Portrait
+    writer.setPageOrientation(orientation)
+    document = QTextDocument()
+    document.setHtml(page_html)
+    document.print_(writer)
+    del writer  # finishes the file
+    if not path.exists() or path.stat().st_size == 0:
+        QMessageBox.warning(parent, "Save PDF", f"The PDF could not be saved to\n{path}")
+        return False
+    return True
 
 
 class StatusButtons(QWidget):
@@ -434,20 +452,8 @@ class MonthView(QWidget):
         title = f"{self.file_label} · attendance {first:%B} {first.year}"
         name = f"{self.file_label} attendance {first:%B} {first.year}"
         path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
-        if path is None:
-            return
-        writer = QPdfWriter(str(path))
-        writer.setTitle(title)
-        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-        writer.setPageOrientation(QPageLayout.Orientation.Landscape)
-        document = QTextDocument()
-        document.setHtml(attendance_month_html(self.register, title))
-        document.print_(writer)
-        del writer  # finishes the file
-        if not path.exists() or path.stat().st_size == 0:
-            QMessageBox.warning(self, "Save PDF", f"The PDF could not be saved to\n{path}")
-            return
-        QMessageBox.information(self, "Save PDF", f"Saved {first:%B} {first.year} to\n{path}")
+        if path is not None and _write_pdf(self, path, title, attendance_month_html(self.register, title), True):
+            QMessageBox.information(self, "Save PDF", f"Saved {first:%B} {first.year} to\n{path}")
 
     def export_period(self) -> None:
         """Ask for the first and last day, then save each student's totals for them."""
@@ -465,6 +471,14 @@ class MonthView(QWidget):
             QMessageBox.information(self, "Export attendance", str(exc))
             return
         name = f"{self.file_label} attendance {start} to {end}"
+        days = summary.recorded_days
+        recorded = f"{days} recorded day{'' if days == 1 else 's'}"
+        if dialog.as_pdf:
+            title = f"{self.file_label} · attendance {start.day} {start:%b %Y} to {end.day} {end:%b %Y}"
+            path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
+            if path is not None and _write_pdf(self, path, title, attendance_period_html(summary, title), False):
+                QMessageBox.information(self, "Save PDF", f"Saved {recorded} to\n{path}")
+            return
         path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
         if path is None:
             return
@@ -473,9 +487,7 @@ class MonthView(QWidget):
         except OSError as exc:
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
-        QMessageBox.information(
-            self, "Export attendance", f"Saved {summary.recorded_days} recorded days to\n{path}"
-        )
+        QMessageBox.information(self, "Export attendance", f"Saved {recorded} to\n{path}")
 
     def apply_style(self) -> None:
         line = style.border(self).name()

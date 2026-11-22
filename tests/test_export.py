@@ -233,3 +233,17 @@ def test_history_text_lists_the_days_not_present_oldest_first():
         "Tue 3 Nov 2026: Absent (Flu)\n"
         "Wed 4 Nov 2026: Late\n"
     )
+
+
+def test_attendance_period_html():
+    from app.services.attendance import PeriodRow, PeriodSummary
+    from app.services.export import attendance_period_html
+
+    counts = {"present": 18, "late": 1, "absent": 2, "excused": 1}
+    summary = PeriodSummary(1, date(2026, 9, 1), date(2026, 9, 30), None, 22, [
+        PeriodRow(Student(class_id=1, first_name="Ada", last_name="O<Brien"), counts, 0),
+    ])  # fmt: skip
+    page = attendance_period_html(summary, "7B · September", printed=date(2026, 10, 1))
+    assert "O&lt;Brien, Ada" in page
+    assert "1 September 2026 to 30 September 2026 · 22 days recorded · printed 1 October 2026" in page
+    assert page.count("90%") == 2  # the student and the whole class

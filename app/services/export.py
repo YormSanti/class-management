@@ -241,6 +241,47 @@ def attendance_month_html(register: MonthRegister, title: str, printed: date | N
     )
 
 
+def attendance_period_html(summary: PeriodSummary, title: str, printed: date | None = None) -> str:
+    """Each student's totals for a period, e.g. a term, as a printable page."""
+    printed = printed or date.today()
+    cell = 'style="border: 1px solid #999; padding: 3px 6px; text-align: right;"'
+    name_cell = 'style="border: 1px solid #999; padding: 3px 6px; text-align: left;"'
+    labels = ("Present", "Late", "Absent", "Excused", "Not marked", "Attendance")
+    head = [f"<th {name_cell}>No.</th>", f"<th {name_cell}>Student</th>"] + [f"<th {cell}>{x}</th>" for x in labels]
+    lines = ["<tr>" + "".join(head) + "</tr>"]
+    totals = {key: 0 for key in ("present", "late", "absent", "excused")}
+    for n, row in enumerate(summary.rows, start=1):
+        c, rate = row.counts, row.rate
+        for key in totals:
+            totals[key] += c[key]
+        name = f"{row.student.last_name}, {row.student.first_name}"
+        cells = [f"<td {name_cell}>{html.escape(row.student.student_no or str(n))}</td>",
+                 f"<td {name_cell}>{html.escape(name)}</td>"]  # fmt: skip
+        cells += [f"<td {cell}>{v}</td>" for v in (c["present"], c["late"], c["absent"], c["excused"], row.unmarked)]
+        cells.append(f"<td {cell}>{'—' if rate is None else f'{rate:.0f}%'}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    if summary.rows:
+        rate = attendance_rate(totals)
+        cells = [f"<td {name_cell}></td>", f"<td {name_cell}><b>{WHOLE_CLASS}</b></td>"]
+        cells += [f"<td {cell}><b>{totals[k]}</b></td>" for k in ("present", "late", "absent", "excused")]
+        cells.append(f"<td {cell}><b>{sum(row.unmarked for row in summary.rows)}</b></td>")
+        cells.append(f"<td {cell}><b>{'—' if rate is None else f'{rate:.0f}%'}</b></td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    days = summary.recorded_days
+    about = (
+        f"{summary.start.day} {summary.start:%B %Y} to {summary.end.day} {summary.end:%B %Y} · "
+        f"{days} day{'' if days == 1 else 's'} recorded · printed {printed.day} {printed:%B} {printed.year}. "
+        "Attendance counts present and late out of the days marked; excused days count neither way."
+    )
+    return (
+        '<html><body style="font-family: sans-serif; font-size: 9pt;">'
+        f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
+        f'<p style="color: #555;">{about}</p>'
+        '<table width="100%" style="border-collapse: collapse;" cellspacing="0">' + "".join(lines) + "</table>"
+        "</body></html>"
+    )
+
+
 def _notes_html(register: MonthRegister) -> str:
     """The month's notes, by day and then in register order; "" when there are none."""
     notes = sorted(
