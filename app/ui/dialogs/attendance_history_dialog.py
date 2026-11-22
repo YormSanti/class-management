@@ -1,6 +1,6 @@
 from datetime import date
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -72,7 +72,8 @@ class AttendanceHistoryDialog(QDialog):
         head.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         head.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.cellDoubleClicked.connect(self._open_day)
-        self.table.setToolTip("Double-click a day to open it")
+        self.table.setToolTip("Double-click a day (or press Enter) to open it")
+        self.table.installEventFilter(self)
 
         self.show_all = QCheckBox("Show present days too")
         self.show_all.setEnabled(bool(marked))
@@ -178,6 +179,17 @@ class AttendanceHistoryDialog(QDialog):
         QMessageBox.information(
             self, "Export attendance", f"Saved {days} marked day{'' if days == 1 else 's'} to\n{path}"
         )
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self.table
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and self.table.currentRow() >= 0
+        ):
+            self._open_day(self.table.currentRow(), 0)
+            return True
+        return super().eventFilter(watched, event)
 
     def _open_day(self, row: int, _col: int) -> None:
         self.chosen_day = self._days[row]

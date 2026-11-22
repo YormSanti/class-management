@@ -2179,3 +2179,22 @@ def test_attendance_history_dialog_by_month(qapp: QApplication):
     assert rows == [["November 2026", "1", "0", "1", "0", "50%"], ["October 2026", "0", "1", "0", "0", "100%"]]
     empty = AttendanceHistoryDialog(StudentHistory(student, []), "Daily (homeroom)")
     assert not empty.tabs.isTabEnabled(1)
+
+
+def test_attendance_history_dialog_enter_opens_the_day(qapp: QApplication):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import AttendanceRecord, AttendanceStatus
+    from app.services.attendance import StudentHistory
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    student = Student(class_id=1, first_name="Ada", last_name="Lovelace", id=1)
+    records = [AttendanceRecord(1, date(2026, 11, 4), AttendanceStatus.LATE),
+               AttendanceRecord(1, date(2026, 11, 3), AttendanceStatus.ABSENT)]  # fmt: skip
+    dialog = AttendanceHistoryDialog(StudentHistory(student, records), "Daily (homeroom)")
+    dialog.table.setCurrentCell(1, 0)
+    QTest.keyClick(dialog.table, Qt.Key.Key_Return)
+    assert dialog.chosen_day == date(2026, 11, 3) and dialog.result() == dialog.DialogCode.Accepted
