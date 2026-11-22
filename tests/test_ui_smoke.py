@@ -313,6 +313,27 @@ def test_last_page_is_remembered(
     third.close()
 
 
+def test_attendance_tab_is_remembered(qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    roster.save_class(SchoolClass(name="7B"))
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.show_page("Attendance")
+    first.attendance_view.tabs.setCurrentWidget(first.attendance_view.month_view)
+    first.close()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.attendance_view.tabs.currentWidget() is second.attendance_view.month_view
+    second.close()
+
+    settings.setValue("session/attendance_tab", 9)
+    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert third.attendance_view.tabs.currentIndex() == 0
+    third.close()
+
+
 def test_class_and_subject_are_remembered(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ):

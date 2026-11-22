@@ -155,6 +155,9 @@ class MainWindow(QMainWindow):
             self.select_subject(saved_subject)
         if self.settings is not None:
             self.show_page(str(self.settings.value("session/page", "")))  # last session's page
+            tab = self._saved_id("attendance_tab")  # Day or Month
+            if tab is not None and 0 <= tab < self.attendance_view.tabs.count():
+                self.attendance_view.tabs.setCurrentIndex(tab)
 
     # --- menus ---------------------------------------------------------------
 
@@ -238,7 +241,7 @@ class MainWindow(QMainWindow):
             self.splitter.restoreState(splitter)
 
     def _saved_id(self, key: str) -> int | None:
-        """A class or subject id saved last session, if any."""
+        """A number (e.g. a class or subject id) saved last session, if any."""
         value = self.settings.value(f"session/{key}") if self.settings is not None else None
         try:
             return int(value) if value not in (None, "") else None
@@ -255,6 +258,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("window/geometry", self.saveGeometry())
             self.settings.setValue("window/splitter", self.splitter.saveState())
             self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
+            self.settings.setValue("session/attendance_tab", self.attendance_view.tabs.currentIndex())
             self.settings.sync()
         super().closeEvent(event)
 
