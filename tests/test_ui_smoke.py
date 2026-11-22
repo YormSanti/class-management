@@ -887,6 +887,28 @@ def test_paste_dialog_points_out_names_listed_twice(qapp: QApplication, roster: 
     assert "Listed twice: Ada Lovelace." in dialog.summary.text()
 
 
+def test_paste_dialog_leaves_out_students_already_in_the_class(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Grace Hopper\n")
+    assert dialog.skip_existing.isHidden()
+
+    dialog.text.setPlainText("Ada Lovelace\nGrace Hopper\n")
+    assert not dialog.skip_existing.isHidden() and dialog.skip_existing.isChecked()
+    assert dialog.preview.rowCount() == 1
+    assert "Leaving out, already in the class: Ada Lovelace." in dialog.summary.text()
+    assert dialog._ok.text() == "Add 1 student"
+
+    dialog.skip_existing.setChecked(False)
+    assert dialog.preview.rowCount() == 2 and dialog._ok.text() == "Add 2 students"
+    dialog.skip_existing.setChecked(True)
+    dialog.accept()
+    assert sorted(s.full_name for s in roster.list_students(class_id)) == ["Ada Lovelace", "Grace Hopper"]
+
+
 def test_roster_deletes_a_student_without_records(
     window: MainWindow, roster: RosterService, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ):

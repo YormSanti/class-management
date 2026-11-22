@@ -1,6 +1,7 @@
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -52,6 +53,11 @@ class PasteStudentsDialog(QDialog):
         self.preview.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.preview.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
+        self.skip_existing = QCheckBox("Leave out students already in the class")
+        self.skip_existing.setToolTip("e.g. when pasting an updated list of the whole class again")
+        self.skip_existing.setChecked(True)
+        self.skip_existing.toggled.connect(self._update_preview)
+
         self.problems = QLabel()
         self.problems.setWordWrap(True)
         self.summary = QLabel()
@@ -71,12 +77,16 @@ class PasteStudentsDialog(QDialog):
         layout.addWidget(intro)
         layout.addLayout(columns, stretch=1)
         layout.addWidget(self.problems)
+        layout.addWidget(self.skip_existing)
         layout.addWidget(self.summary)
         layout.addWidget(self.buttons)
         self._update_preview()
 
     def _update_preview(self) -> None:
-        self._students, problems = parse_student_list(self.text.toPlainText())
+        pasted, problems = parse_student_list(self.text.toPlainText())
+        existing = self.roster.already_in_class(self.class_id, pasted)
+        skip = self.skip_existing.isChecked()
+        self._students = [s for s in pasted if s not in existing] if skip else pasted
         self.preview.setRowCount(len(self._students))
         for row, s in enumerate(self._students):
             for col, text in enumerate((s.student_no or "", s.first_name, s.last_name)):
@@ -85,19 +95,16 @@ class PasteStudentsDialog(QDialog):
         self.problems.setText("<br>".join(problems[:5]) + ("<br>…" if len(problems) > 5 else ""))
         style.set_color(self.problems, style.color(self, "danger"))
         self.problems.setVisible(bool(problems))
+        self.skip_existing.setVisible(bool(existing))
 
         n = len(self._students)
-        duplicates = [
-            f"{s.first_name} {s.last_name}"
-            for s in self._students
-            if self.roster.same_name_students(Student(self.class_id, s.first_name, s.last_name))
-        ]
-        summary = f"{n} student{'' if n == 1 else 's'} to add."
-        if duplicates:
-            summary += " Already in the class: " + ", ".join(duplicates) + "."
+        names = ", ".join(f"{s.first_name} {s.last_name}" for s in existing)
+        parts = [f"{n} student{'' if n == 1 else 's'} to add."]
+        if existing:
+            parts.append(f"Leaving out, already in the class: {names}." if skip else f"Already in the class: {names}.")
         if repeated := repeated_names(self._students):
-            summary += " Listed twice: " + ", ".join(repeated) + "."
-        self.summary.setText(summary if n else "")
+            parts.append("Listed twice: " + ", ".join(repeated) + ".")
+        self.summary.setText(" ".join(parts) if pasted else "")
         self._ok.setText(f"Add {n} student{'' if n == 1 else 's'}" if n else "Add students")
         self._ok.setEnabled(bool(n) and not problems)
 

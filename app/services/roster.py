@@ -330,6 +330,15 @@ class RosterService:
                     raise RosterError(f"Line {p.line}: {exc}") from None
         return added
 
+    def already_in_class(self, class_id: int, pasted: list[PastedStudent]) -> list[PastedStudent]:
+        """The pasted students whose name a student of the class already has (ignoring
+        case, inactive students included), e.g. when an updated list is pasted again."""
+        return [
+            p
+            for p in pasted
+            if self.students.find_by_name(class_id, _clean(p.first_name), _clean(p.last_name))
+        ]
+
     def transfer_student(self, student_id: int, class_id: int) -> Student:
         """Move a student to another class, e.g. after a change of homeroom.
 

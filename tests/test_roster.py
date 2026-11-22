@@ -420,3 +420,13 @@ def test_subject_and_teacher_names_in_use(roster: RosterService, class_id: int):
     roster.save_subject(Subject(class_id=other, name="Science", teacher="Mr Lee"))
     assert roster.subject_names() == ["Maths", "science", "Science"]
     assert roster.teacher_names() == ["Mr Lee"]
+
+
+def test_already_in_class_finds_pasted_names_the_class_has(roster: RosterService, class_id: int):
+    from app.services.roster import parse_student_list
+
+    _add(roster, class_id, "Ada", "Lovelace")
+    gone = _add(roster, class_id, "Alan", "Turing")
+    roster.deactivate_student(gone.id)
+    pasted, _problems = parse_student_list("ada  LOVELACE\nGrace Hopper\nTuring, Alan")
+    assert [p.line for p in roster.already_in_class(class_id, pasted)] == [1, 3]
