@@ -1800,3 +1800,36 @@ def test_attendance_clear_the_day_says_what_goes(window: MainWindow, roster: Ros
     view.clear_day()
     assert asked[0].startswith("Remove 2 marks and 1 note for Friday 6 November in the Daily (homeroom) register?")
     assert _statuses(view) == ["absent", "present"]
+
+
+def test_attendance_redo(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    assert not view.redo_button.isEnabled()
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.mark_rest_button.click()
+    view.undo()
+    view.undo()
+    assert _statuses(view) == [None, None]
+    assert view.redo_button.toolTip().startswith("Redo: mark Grace Hopper absent")
+    view.redo()
+    assert _statuses(view) == ["absent", None]
+    view.redo()
+    assert _statuses(view) == ["absent", "present"] and not view.redo_button.isEnabled()
+    view.undo()
+    view._row_widgets[1][0].buttons[AttendanceStatus.LATE].click()  # a new change: nothing left to redo
+    assert not view.redo_button.isEnabled()
+    view.redo()
+    assert _statuses(view) == ["absent", "late"]
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    QTest.keyClick(view.table, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert _statuses(view) == ["absent", None]
+    QTest.keyClick(view.table, Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier)
+    assert _statuses(view) == ["absent", "late"]

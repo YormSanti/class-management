@@ -438,6 +438,7 @@ class AttendanceView(QWidget):
         self.note_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         # (subject id, {day: its register before the change}, what the change was), newest last
         self._undo: list[tuple[int | None, dict[date, list[AttendanceRecord]], str]] = []
+        self._redo: list[tuple[int | None, dict[date, list[AttendanceRecord]], str]] = []  # changes undone
 
         # --- header ---
         self.date_label = style.caption("")
@@ -532,6 +533,8 @@ class AttendanceView(QWidget):
         self.status_label.setWordWrap(True)  # the buttons beside it leave little room
         self.undo_button = QPushButton("Undo")
         self.undo_button.clicked.connect(self.undo)
+        self.redo_button = QPushButton("Redo")
+        self.redo_button.clicked.connect(self.redo)
         self.clear_button = QPushButton("Clear the day…")
         self.clear_button.clicked.connect(self.clear_day)
         self.copy_button = QPushButton("Copy absences")
@@ -551,6 +554,7 @@ class AttendanceView(QWidget):
         actions = QHBoxLayout()
         actions.addWidget(self.status_label, stretch=1)
         actions.addWidget(self.undo_button)
+        actions.addWidget(self.redo_button)
         actions.addWidget(self.copy_button)
         actions.addWidget(self.days_button)
         actions.addWidget(self.clear_button)
@@ -631,6 +635,11 @@ class AttendanceView(QWidget):
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
         undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         undo.activated.connect(self.undo)
+        # Named, not StandardKey.Redo: on Windows that is Ctrl+Y too, and two equal shortcuts both stop working.
+        for keys in ("Ctrl+Y", "Ctrl+Shift+Z"):
+            redo = QShortcut(QKeySequence(keys), self)
+            redo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            redo.activated.connect(self.redo)
         self._update_undo()
 
         self._apply_style()
@@ -666,8 +675,7 @@ class AttendanceView(QWidget):
 
     def set_class(self, class_id: int | None) -> None:
         if class_id != self.class_id:
-            self._undo.clear()  # undo stays within one class
-            self._update_undo()
+            self.clear_undo()  # undo stays within one class
             self.find_edit.clear()
         self.class_id = class_id
         self._fill_classes()
@@ -1049,10 +1057,12 @@ class AttendanceView(QWidget):
         before = {day: self.attendance.snapshot(self.class_id, day, self.subject_id) for day in days or [self.day]}
         self._undo.append((self.subject_id, before, what))
         del self._undo[:-UNDO_LIMIT]
+        self._redo.clear()  # a new change starts a new line of history
         self._update_undo()
 
     def clear_undo(self) -> None:
         self._undo.clear()
+        self._redo.clear()
         self._update_undo()
 
     def _forget(self) -> None:
@@ -1063,30 +1073,46 @@ class AttendanceView(QWidget):
 
     def undo(self) -> None:
         """Undo the newest change, showing the day and register it was made in."""
-        if not self._undo or self.class_id is None:
+        self._step_history(self._undo, self._redo, "Undo")
+
+    def redo(self) -> None:
+        """Make the newest change undone again."""
+        self._step_history(self._redo, self._undo, "Redo")
+
+    def _step_history(self, source: list, target: list, title: str) -> None:
+        """Put back the registers of the newest entry of `source`, keeping how they are now in `target`."""
+        if not source or self.class_id is None:
             return
-        subject_id, before, _what = self._undo.pop()
+        subject_id, registers, what = source.pop()
         self._update_undo()
         if subject_id != self.subject_id:
             index = self.register_combo.findData(subject_id)
             if index < 0:  # the subject was deleted since
-                self.undo()
+                self._step_history(source, target, title)
                 return
             self.register_combo.setCurrentIndex(index)
-        if self.day not in before:
-            self.set_day(min(before))
+        if self.day not in registers:
+            self.set_day(min(registers))
+        now = {day: self.attendance.snapshot(self.class_id, day, subject_id) for day in registers}
         try:
-            for day, records in before.items():
+            for day, records in registers.items():
                 self.attendance.restore(self.class_id, day, subject_id, records)
         except AttendanceError as exc:
-            QMessageBox.information(self, "Undo", str(exc))
+            QMessageBox.information(self, title, str(exc))
+        else:
+            target.append((subject_id, now, what))
+        self._update_undo()
         self.refresh()
 
     def _update_undo(self) -> None:
-        self.undo_button.setEnabled(bool(self._undo))
-        keys = QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText)
-        what = f": {self._undo[-1][2]}" if self._undo else ""
-        self.undo_button.setToolTip(f"Undo{what} ({keys})")
+        for button, stack, key, name in (
+            (self.undo_button, self._undo, QKeySequence.StandardKey.Undo, "Undo"),
+            (self.redo_button, self._redo, QKeySequence("Ctrl+Y"), "Redo"),
+        ):
+            button.setEnabled(bool(stack))
+            keys = QKeySequence(key).toString(QKeySequence.SequenceFormat.NativeText)
+            what = f": {stack[-1][2]}" if stack else ""
+            button.setToolTip(f"{name}{what} ({keys})")
 
     # --- keyboard ------------------------------------------------------------
 
