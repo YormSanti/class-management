@@ -1270,8 +1270,18 @@ class AttendanceView(QWidget):
         except AttendanceError as exc:
             QMessageBox.information(self, "Attendance", str(exc))
             return
-        dialog = AttendanceHistoryDialog(history, self.register_name, self)
+        registers = [
+            (self.register_combo.itemData(i, REGISTER_NAME) or self.register_combo.itemText(i),
+             self.register_combo.itemData(i))
+            for i in range(self.register_combo.count())
+        ]  # fmt: skip
+        dialog = AttendanceHistoryDialog(
+            history, self.register_name, self, registers,
+            lambda subject_id: self.attendance.student_history(student_id, subject_id), self.subject_id,
+        )  # fmt: skip
         if dialog.exec() and dialog.chosen_day is not None:
+            if dialog.chosen_subject != self.subject_id:  # a day picked in another register
+                self.register_combo.setCurrentIndex(self.register_combo.findData(dialog.chosen_subject))
             self.set_day(dialog.chosen_day)
 
     # --- undo ----------------------------------------------------------------

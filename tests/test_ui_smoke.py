@@ -2054,7 +2054,7 @@ def test_attendance_month_name_opens_the_history(window: MainWindow, roster: Ros
     class FakeDialog:
         chosen_day = None
 
-        def __init__(self, history, register_name, parent):
+        def __init__(self, history, register_name, *_args):
             shown.append((history.student.full_name, register_name))
 
         def exec(self):
@@ -2214,3 +2214,28 @@ def test_attendance_ctrl_enter_marks_the_rest_present(window: MainWindow, roster
     view.table.setFocus()
     QTest.keyClick(view.table, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
     assert _statuses(view) == ["present", "present"]
+
+
+def test_attendance_history_dialog_switches_register(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _attendance_page(window, roster)  # Friday 6 November
+    grace = view.register.rows[0].student.id
+    maths = view.register_combo.itemData(1)
+    view.attendance.mark(grace, date(2026, 11, 4), AttendanceStatus.ABSENT, maths)
+    seen = []
+
+    def pick_in_maths(dialog):
+        seen.append(dialog.subtitle.text())
+        dialog.register_combo.setCurrentIndex(1)
+        seen.append(dialog.subtitle.text())
+        dialog.table.cellDoubleClicked.emit(0, 0)
+        return dialog.result()
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", pick_in_maths)
+    view.show_history(0)
+    assert seen == ["Daily (homeroom) register · 0 marked days", "Maths register · 1 marked day"]
+    assert view.register_name == "Maths" and view.day == date(2026, 11, 4)
