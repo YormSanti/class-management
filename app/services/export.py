@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from app.models import Student
-from app.services.attendance import MonthRegister, PeriodSummary
+from app.services.attendance import MonthRegister, PeriodSummary, StudentHistory
 from app.services.dashboard import attendance_rate
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
@@ -104,6 +104,15 @@ def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
             ["", WHOLE_CLASS, "", totals["present"], totals["late"], totals["absent"], totals["excused"],
              sum(row.unmarked for row in summary.rows), _rate_cell(attendance_rate(totals))]
         )  # fmt: skip
+    _write_csv(path, rows)
+
+
+def write_student_history_csv(path: Path, history: StudentHistory) -> None:
+    """Save every marked day of one student in one register, oldest first, e.g. for a
+    meeting with their parents."""
+    rows: list[Sequence[object]] = [("Date", "Day", "Status", "Note")]
+    for record in sorted(history.records, key=lambda r: r.date):
+        rows.append((record.date.isoformat(), f"{record.date:%A}", record.status.value.capitalize(), record.note))
     _write_csv(path, rows)
 
 

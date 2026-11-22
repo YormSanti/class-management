@@ -1536,3 +1536,35 @@ def test_manage_classes_copies_subjects_from_another_class(
     assert [s.name for s in roster.list_subjects(target)] == ["Maths", "Science"]
     assert window.classes_view.subject_table.rowCount() == 2
     assert window.subject_id == roster.list_subjects(target)[0].id
+
+
+def test_history_dialog_exports_the_students_marks(
+    qapp: QApplication, roster: RosterService, conn: sqlite3.Connection, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from datetime import date
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    service = _attendance(conn)
+    assert not AttendanceHistoryDialog(service.student_history(ada), "Daily (homeroom)").export_button.isEnabled()
+    service.mark(ada, date(2026, 11, 2), "absent")
+    service.mark(ada, date(2026, 11, 3), "present")
+    dialog = AttendanceHistoryDialog(service.student_history(ada), "Daily (homeroom)")
+    suggested: list[str] = []
+
+    def save_name(_parent, _title, start, _filter):
+        suggested.append(start)
+        return str(tmp_path / "ada"), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", save_name)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    dialog.export_button.click()
+    assert Path(suggested[0]).name == "Ada Lovelace attendance Daily (homeroom).csv"
+    assert (tmp_path / "ada.csv").read_text(encoding="utf-8-sig").splitlines()[1:] == [
+        "2026-11-02,Monday,Absent,", "2026-11-03,Tuesday,Present,"
+    ]

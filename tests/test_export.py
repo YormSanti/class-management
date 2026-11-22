@@ -158,3 +158,24 @@ def test_attendance_csvs_have_no_totals_row_without_students(tmp_path: Path):
     write_attendance_summary_csv(tmp_path / "term.csv", summary)
     for name in ("month.csv", "term.csv"):
         assert len((tmp_path / name).read_text(encoding="utf-8-sig").splitlines()) == 1
+
+
+def test_student_history_csv_lists_every_marked_day_oldest_first(tmp_path: Path):
+    from app.models import AttendanceRecord
+    from app.services.attendance import StudentHistory
+    from app.services.export import write_student_history_csv
+
+    ada = Student(class_id=1, first_name="Ada", last_name="Lovelace", id=1)
+    history = StudentHistory(ada, [
+        AttendanceRecord(1, date(2026, 10, 2), AttendanceStatus.ABSENT, "=Flu"),
+        AttendanceRecord(1, date(2026, 10, 1), AttendanceStatus.PRESENT),
+    ])  # fmt: skip
+    path = tmp_path / "ada.csv"
+    write_student_history_csv(path, history)
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows == [
+        ["Date", "Day", "Status", "Note"],
+        ["2026-10-01", "Thursday", "Present", ""],
+        ["2026-10-02", "Friday", "Absent", "'=Flu"],
+    ]

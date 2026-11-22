@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHeaderView,
+    QMessageBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -15,7 +16,9 @@ from PySide6.QtWidgets import (
 
 from app.models import AttendanceStatus
 from app.services.attendance import StudentHistory
+from app.services.export import write_student_history_csv
 from app.ui import style
+from app.ui.files import ask_save_path
 
 
 class AttendanceHistoryDialog(QDialog):
@@ -30,6 +33,7 @@ class AttendanceHistoryDialog(QDialog):
         self.setMinimumSize(480, 420)
         self.chosen_day: date | None = None
         self._history = history
+        self._register_name = register_name
         self._days: list[date] = []
 
         counts = history.counts()
@@ -64,6 +68,11 @@ class AttendanceHistoryDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
+        self.export_button = buttons.addButton("Export CSV…", QDialogButtonBox.ButtonRole.ActionRole)
+        self.export_button.setToolTip("Save every marked day as a CSV file, e.g. for a meeting with parents")
+        self.export_button.setAutoDefault(False)
+        self.export_button.setEnabled(bool(marked))
+        self.export_button.clicked.connect(self.export_csv)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -96,6 +105,22 @@ class AttendanceHistoryDialog(QDialog):
         self.empty_label.setText("Present every marked day." if marked else "No marks yet in this register.")
         self.table.setVisible(bool(records))
         self.empty_label.setVisible(not records)
+
+    def export_csv(self) -> None:
+        """Save every marked day of the student in this register as CSV."""
+        name = f"{self._history.student.full_name} attendance {self._register_name}"
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        if path is None:
+            return
+        try:
+            write_student_history_csv(path, self._history)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
+            return
+        days = len(self._history.records)
+        QMessageBox.information(
+            self, "Export attendance", f"Saved {days} marked day{'' if days == 1 else 's'} to\n{path}"
+        )
 
     def _open_day(self, row: int, _col: int) -> None:
         self.chosen_day = self._days[row]
