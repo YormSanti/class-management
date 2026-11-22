@@ -64,25 +64,27 @@ def _rate_cell(rate: float | None) -> object:
 
 
 def _month_rows(register: MonthRegister) -> list[Sequence[object]]:
-    """One column per day with P, L, A or E (blank = not marked), then each student's totals
-    and attendance rate. A last "Whole class" row gives how many were absent each recorded
-    day and the class's totals, as on screen."""
+    """One column per day with P, L, A or E (blank = not marked), then each student's totals,
+    the days the register was taken without a mark for them, and their attendance rate.
+    A last "Whole class" row gives how many were absent each recorded day and the class's
+    totals, as on screen."""
     header = ["Student #", "Last name", "First name"]
     header += [day.isoformat() for day in register.days]
-    header += ["Present", "Absent", "Late", "Excused", "Attendance %"]
+    header += ["Present", "Absent", "Late", "Excused", "Not marked", "Attendance %"]
     rows: list[Sequence[object]] = [header]
     for row in register.rows:
         s, counts, rate = row.student, row.counts(), row.rate
         line: list[object] = [s.student_no or "", s.last_name, s.first_name]
         line += [row.statuses[day].value[0].upper() if day in row.statuses else "" for day in register.days]
-        line += [counts["present"], counts["absent"], counts["late"], counts["excused"]]
+        line += [counts["present"], counts["absent"], counts["late"], counts["excused"], register.unmarked(row)]
         line.append(_rate_cell(rate))
         rows.append(line)
     if register.rows:
         recorded, totals = set(register.recorded_days), register.counts()
         line = ["", WHOLE_CLASS, ""]
         line += [register.absent_on(day) if day in recorded else "" for day in register.days]
-        line += [totals["present"], totals["absent"], totals["late"], totals["excused"], _rate_cell(register.rate)]
+        line += [totals["present"], totals["absent"], totals["late"], totals["excused"],
+                 sum(register.unmarked(row) for row in register.rows), _rate_cell(register.rate)]  # fmt: skip
         rows.append(line)
     return rows
 

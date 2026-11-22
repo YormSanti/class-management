@@ -52,10 +52,10 @@ def test_attendance_csv(tmp_path: Path):
         rows = list(csv.reader(f))
     assert rows == [
         ["Student #", "Last name", "First name", "2026-10-01", "2026-10-02", "Present", "Absent", "Late", "Excused",
-         "Attendance %"],
-        ["03", "Dubois", "Chloé", "P", "A", "1", "1", "0", "0", "50"],
-        ["", "Lovelace", "Ada", "", "", "0", "0", "0", "0", ""],
-        ["", "Whole class", "", "0", "1", "1", "1", "0", "0", "50"],
+         "Not marked", "Attendance %"],
+        ["03", "Dubois", "Chloé", "P", "A", "1", "1", "0", "0", "0", "50"],
+        ["", "Lovelace", "Ada", "", "", "0", "0", "0", "0", "2", ""],
+        ["", "Whole class", "", "0", "1", "1", "1", "0", "0", "2", "50"],
     ]
 
 
