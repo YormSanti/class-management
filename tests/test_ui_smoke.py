@@ -1150,7 +1150,7 @@ def test_attendance_note_fields_suggest_earlier_notes(window: MainWindow, roster
     view._row_widgets[0][1].setText("Dentist")
     view._save_note(0)
     view.refresh()
-    assert view.note_completer.model().stringList() == ["Dentist"]
+    assert view.note_completer.model().stringList()[0] == "Dentist"
     assert view._row_widgets[1][1].completer() is view.note_completer
 
 

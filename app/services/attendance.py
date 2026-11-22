@@ -19,6 +19,7 @@ PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
 RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on the dashboard
 NOTE_SUGGESTIONS = 50
+COMMON_NOTES = ("Sick", "Doctor's appointment", "Family reason", "School trip", "Bus late")
 NOTE_MAX = 200  # characters: a reason, not a report
 MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
 STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
@@ -332,8 +333,11 @@ class AttendanceService:
         return StudentHistory(student, self.attendance.for_student(student_id, subject_id))
 
     def note_suggestions(self, class_id: int) -> list[str]:
-        """Notes already written in this class, newest first, to offer while typing one."""
-        return self.attendance.recent_notes(class_id, NOTE_SUGGESTIONS)
+        """Notes already written in this class, newest first, to offer while typing one,
+        then the common reasons not written yet, so a new class has some to start with."""
+        written = self.attendance.recent_notes(class_id, NOTE_SUGGESTIONS)
+        known = {note.casefold() for note in written}
+        return written + [note for note in COMMON_NOTES if note.casefold() not in known]
 
     # --- marking -------------------------------------------------------------
 

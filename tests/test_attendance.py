@@ -366,7 +366,9 @@ def test_note_suggestions_are_the_class_notes_newest_first(attendance, roster, k
         attendance.mark(student, day, L)
         attendance.set_note(student, day, note)
     attendance.mark(ada, date(2026, 10, 6), P)  # no note
-    assert attendance.note_suggestions(klass) == ["Bus late", "Dentist"]
+    assert attendance.note_suggestions(klass) == [
+        "Bus late", "Dentist", "Sick", "Doctor's appointment", "Family reason", "School trip"
+    ]  # then the common reasons not written yet ("bus late" is)
 
 
 def test_copy_from_daily_marks_students_away_all_day(attendance, roster, klass):
