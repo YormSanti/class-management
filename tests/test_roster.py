@@ -1,7 +1,7 @@
 import pytest
 
 from app.models import SchoolClass, Student, Subject
-from app.services.roster import RosterError, RosterService, move_up, next_term, number_key
+from app.services.roster import RosterError, RosterService, move_up, next_term, number_key, parse_student_list
 
 
 @pytest.fixture
@@ -386,6 +386,17 @@ def test_number_students_needs_a_number_ending_in_digits(roster: RosterService, 
     with pytest.raises(RosterError, match="end in digits"):
         roster.number_students(class_id, "S")
     assert roster.number_students(class_id, " 7 ")[0].student_no == "7"
+
+
+def test_number_pasted_gives_the_next_free_numbers_in_list_order(roster: RosterService, class_id: int):
+    _add(roster, class_id, "Ada", "Lovelace", no="S07")
+    pasted, _ = parse_student_list("Grace Hopper\nS09 Alan Turing\nKay Mauchly\n")
+    assert [p.student_no for p in roster.number_pasted(class_id, pasted)] == ["S10", "S09", "S11"]
+
+
+def test_number_pasted_leaves_a_class_without_numbers_alone(roster: RosterService, class_id: int):
+    pasted, _ = parse_student_list("Grace Hopper\nAlan Turing\n")
+    assert roster.number_pasted(class_id, pasted) == pasted
 
 
 def test_transfer_student_without_records_moves_them(roster: RosterService, class_id: int):

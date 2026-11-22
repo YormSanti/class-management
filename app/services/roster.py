@@ -31,6 +31,20 @@ def number_key(student: Student) -> tuple:
     return (0, tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p))
 
 
+def _numbers_after(numbers: list[str]) -> Iterator[str]:
+    """The free numbers after the highest of `numbers`, keeping its prefix and zero
+    padding: "S007" -> "S008", "S009", ... Nothing if none of them ends in digits."""
+    best: tuple[int, str, int] | None = None  # (value, prefix, digit count)
+    for number in numbers:
+        if m := re.fullmatch(r"(.*?)(\d+)", number):
+            candidate = (int(m.group(2)), m.group(1), len(m.group(2)))
+            if best is None or candidate[0] > best[0]:
+                best = candidate
+    if best is not None:
+        value, prefix, width = best
+        yield from _free_numbers(prefix, value + 1, width, numbers)
+
+
 def _free_numbers(prefix: str, value: int, width: int, taken: list[str]) -> Iterator[str]:
     """prefix + value, value + 1, ... zero-padded to `width` digits, leaving out the
     numbers in `taken` (ignoring case: "s008" takes "S008" too)."""
@@ -466,16 +480,14 @@ class RosterService:
         """The number after the highest one in the class, keeping its prefix and
         zero padding: "S007" -> "S008". "" if the class uses no numbers yet."""
         numbers = self._numbers(class_id)
-        best: tuple[int, str, int] | None = None  # (value, prefix, digit count)
-        for number in numbers:
-            if m := re.fullmatch(r"(.*?)(\d+)", number):
-                candidate = (int(m.group(2)), m.group(1), len(m.group(2)))
-                if best is None or candidate[0] > best[0]:
-                    best = candidate
-        if best is None:
-            return ""
-        value, prefix, width = best
-        return next(_free_numbers(prefix, value + 1, width, numbers))
+        return next(_numbers_after(numbers), "")
+
+    def number_pasted(self, class_id: int, pasted: list[PastedStudent]) -> list[PastedStudent]:
+        """`pasted`, with the next free numbers of the class given, in list order, to
+        those without one. Unchanged if neither the class nor the list uses numbers."""
+        numbers = self._numbers(class_id) + [p.student_no for p in pasted if p.student_no]
+        free = _numbers_after(numbers)
+        return [p if p.student_no else replace(p, student_no=next(free, None)) for p in pasted]
 
     def _numbers(self, class_id: int) -> list[str]:
         """Every number used in the class, inactive students' too."""
