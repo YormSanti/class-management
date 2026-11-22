@@ -134,16 +134,16 @@ class MonthView(QWidget):
         self.register: MonthRegister | None = None
 
         self.prev_button = QPushButton("‹")
-        self.prev_button.setToolTip("Previous month")
+        self.prev_button.setToolTip("Previous month (Alt+Left or Page Up)")
         self.prev_button.setFixedWidth(36)
-        self.prev_button.clicked.connect(lambda: self._step(-1))
+        self.prev_button.clicked.connect(lambda: self.step(-1))
         self.month_label = style.label("", 1.1, bold=True)
         self.month_label.setMinimumWidth(130)
         self.month_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.next_button = QPushButton("›")
-        self.next_button.setToolTip("Next month")
+        self.next_button.setToolTip("Next month (Alt+Right or Page Down)")
         self.next_button.setFixedWidth(36)
-        self.next_button.clicked.connect(lambda: self._step(1))
+        self.next_button.clicked.connect(lambda: self.step(1))
         self.this_month_button = QPushButton("This month")
         self.this_month_button.clicked.connect(lambda: self.set_month(self._today().year, self._today().month))
         self.export_button = QPushButton("Export CSV…")
@@ -194,6 +194,10 @@ class MonthView(QWidget):
         self.table.cellDoubleClicked.connect(self._open_cell)
         self.table.horizontalHeader().sectionDoubleClicked.connect(lambda col: self._open_cell(-1, col))
         self.table.installEventFilter(self)  # Enter opens the selected day
+        for keys, months in (("PgUp", -1), ("PgDown", 1)):  # the month has no pages to scroll
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda months=months: self.step(months))
 
         hint = style.label(
             "Hover over a mark to see its note; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
@@ -226,7 +230,7 @@ class MonthView(QWidget):
             self.year, self.month = year, month
             self.refresh()
 
-    def _step(self, months: int) -> None:
+    def step(self, months: int) -> None:
         index = self.year * 12 + self.month - 1 + months
         self.set_month(index // 12, index % 12 + 1)
 
@@ -722,7 +726,7 @@ class AttendanceView(QWidget):
         for keys, step in (("Alt+Left", -1), ("Alt+Right", 1)):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            shortcut.activated.connect(lambda step=step: self.set_day(school_day(self.day, step)))
+            shortcut.activated.connect(lambda step=step: self._step(step))
         today = QShortcut(QKeySequence("Alt+Home"), self)
         today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         today.activated.connect(lambda: self.set_day(date.today()))
@@ -789,6 +793,13 @@ class AttendanceView(QWidget):
     def set_subject(self, _subject_id: int | None) -> None:
         """Called when subjects change; the register picker keeps its own choice."""
         self._fill_registers()
+
+    def _step(self, step: int) -> None:
+        """Alt+← / Alt+→: the previous or next school day, or month on the Month tab."""
+        if self.tabs.currentWidget() is self.month_view:
+            self.month_view.step(step)
+        else:
+            self.set_day(school_day(self.day, step))
 
     def set_day(self, day: date) -> None:
         self.date_edit.setDate(QDate(day.year, day.month, day.day))  # dateChanged refreshes

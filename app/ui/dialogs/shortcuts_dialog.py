@@ -29,6 +29,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Attendance, Day tab", "Ctrl+Y", "Redo what was undone"),
     ("Attendance, Day tab", "Ctrl+F", "Find a student by name or number; Enter goes back to the list"),
     ("Attendance, Month tab", "Enter", "Open the selected day"),
+    ("Attendance, Month tab", "Alt+Left  Alt+Right, Page Up  Page Down", "Previous or next month"),
     ("Students", "Ctrl+F", "Search; Esc clears the search"),
     ("Students", "Ctrl+N", "Add a student"),
     ("Students", "Enter", "Edit the selected student"),

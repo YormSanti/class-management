@@ -2117,3 +2117,23 @@ def test_attendance_month_copies_as_a_table(window: MainWindow, roster: RosterSe
     assert lines[1].split("\t")[1:3] == ["Hopper", "Grace"]
     assert "\tA\t" in lines[1]
     assert lines[-1].split("\t")[1] == "Whole class"
+
+
+def test_attendance_month_keys_change_the_month(window: MainWindow, roster: RosterService, qapp):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    view.tabs.setCurrentWidget(view.month_view)
+    month = view.month_view
+    month.table.setFocus()
+    QTest.keyClick(month.table, Qt.Key.Key_PageDown)
+    assert month.month_label.text() == "December 2026"
+    QTest.keyClick(month.table, Qt.Key.Key_Left, Qt.KeyboardModifier.AltModifier)
+    QTest.keyClick(month.table, Qt.Key.Key_Left, Qt.KeyboardModifier.AltModifier)
+    assert month.month_label.text() == "October 2026"
+    assert view.day == date(2026, 11, 6)  # the Day tab keeps its day
