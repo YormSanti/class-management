@@ -45,6 +45,15 @@ class AttendanceHistoryDialog(QDialog):
         parts.append("attendance —" if rate is None else f"attendance {rate:.0f}%")
         self.totals_label = style.label(" · ".join(parts), bold=True)
         self.totals_label.setWordWrap(True)
+        current, longest = history.absence_runs()
+        runs = []
+        if current >= 2:
+            runs.append(f"Absent the last {current} marked days in a row")
+        if longest >= 2 and longest > current:
+            runs.append(f"longest run of absences: {longest} days")
+        self.runs_label = style.label(" · ".join(runs).capitalize() if runs else "", bold=True)
+        self.runs_label.setVisible(bool(runs))
+        style.set_color(self.runs_label, style.color(self, "danger" if current >= 2 else "warn"))
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Day", "Status", "Note"])
@@ -79,6 +88,7 @@ class AttendanceHistoryDialog(QDialog):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addWidget(self.totals_label)
+        layout.addWidget(self.runs_label)
         layout.addSpacing(4)
         layout.addWidget(self.list_caption)
         layout.addWidget(self.table, stretch=1)

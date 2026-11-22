@@ -232,6 +232,17 @@ class StudentHistory:
         """The days the student was absent, late or excused."""
         return [r for r in self.records if r.status is not AttendanceStatus.PRESENT]
 
+    def absence_runs(self) -> tuple[int, int]:
+        """(current, longest): marks in a row that are absences, the current run ending
+        with the newest mark."""
+        current = longest = run = 0
+        for n, record in enumerate(self.records):  # newest first
+            run = run + 1 if record.status is AttendanceStatus.ABSENT else 0
+            longest = max(longest, run)
+            if run == n + 1:
+                current = run
+        return current, longest
+
 
 @dataclass
 class PeriodRow:

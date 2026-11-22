@@ -484,3 +484,16 @@ def test_month_register_counts_days_not_marked(attendance, roster, klass):
     rows = {r.student.id: r for r in month.rows}
     assert month.unmarked(rows[ada]) == 0
     assert month.unmarked(rows[grace]) == 1  # the 5th
+
+
+def test_history_finds_the_current_and_longest_absence_runs(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    marks = [A, A, A, P, A, A, L, A]  # oldest first, on consecutive school days
+    for n, status in enumerate(marks):
+        attendance.mark(ada, school_day(date(2026, 10, 1), n), status)
+    assert attendance.student_history(ada).absence_runs() == (1, 3)
+    attendance.mark(ada, school_day(date(2026, 10, 1), len(marks)), A)
+    attendance.mark(ada, school_day(date(2026, 10, 1), len(marks) + 1), A)
+    assert attendance.student_history(ada).absence_runs() == (3, 3)
+    attendance.mark(ada, school_day(date(2026, 10, 1), len(marks) + 2), P)
+    assert attendance.student_history(ada).absence_runs() == (0, 3)

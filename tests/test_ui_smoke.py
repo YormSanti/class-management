@@ -2143,3 +2143,20 @@ def test_attendance_month_keys_change_the_month(window: MainWindow, roster: Rost
     QTest.keyClick(month.table, Qt.Key.Key_Left, Qt.KeyboardModifier.AltModifier)
     assert month.month_label.text() == "October 2026"
     assert view.day == date(2026, 11, 6)  # the Day tab keeps its day
+
+
+def test_attendance_history_dialog_shows_absence_runs(qapp: QApplication):
+    from datetime import date
+
+    from app.models import AttendanceRecord, AttendanceStatus
+    from app.services.attendance import StudentHistory
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    student = Student(class_id=1, first_name="Ada", last_name="Lovelace", id=1)
+    A, P = AttendanceStatus.ABSENT, AttendanceStatus.PRESENT
+    statuses = [A, A, P, A, A, A]  # newest first
+    records = [AttendanceRecord(1, date(2026, 11, 20 - n), s) for n, s in enumerate(statuses)]
+    dialog = AttendanceHistoryDialog(StudentHistory(student, records), "Daily (homeroom)")
+    assert dialog.runs_label.text() == "Absent the last 2 marked days in a row · longest run of absences: 3 days"
+    dialog = AttendanceHistoryDialog(StudentHistory(student, records[2:3]), "Daily (homeroom)")
+    assert dialog.runs_label.isHidden()
