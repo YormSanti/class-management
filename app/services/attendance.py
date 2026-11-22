@@ -186,6 +186,11 @@ class MonthRegister:
         marked = {day for row in self.rows for day in row.statuses}
         return [day for day in self.days if day in marked]
 
+    def not_taken(self, today: date) -> list[date]:
+        """School days up to `today` on which no student is marked: forgotten, or holidays."""
+        marked = set(self.recorded_days)
+        return [day for day in self.days if day <= today and day.weekday() < 5 and day not in marked]
+
     def unmarked(self, row: MonthRow) -> int:
         """Days the register was taken on which this student has no mark."""
         return sum(1 for day in self.recorded_days if day not in row.statuses)

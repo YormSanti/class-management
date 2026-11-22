@@ -2080,3 +2080,27 @@ def test_attendance_month_shades_weekend_days(window: MainWindow, roster: Roster
     assert month.table.item(1, col).background().style() != no_brush  # Lovelace isn't marked: shaded
     friday = 1 + month.register.days.index(date(2026, 11, 6))
     assert month.table.item(1, friday).background().style() == no_brush
+
+
+def test_attendance_month_names_days_without_a_register(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    month._today = lambda: date(2026, 11, 6)
+    student = view.register.rows[0].student.id
+    for day in (2, 3, 5):
+        view.attendance.mark(student, date(2026, 11, day), AttendanceStatus.PRESENT)
+    view.refresh()
+    assert not month.not_taken_label.isHidden()
+    assert month.not_taken_label.text().startswith("No register taken on Wed 4, Fri 6.")
+    for day in (4, 6):
+        view.attendance.mark(student, date(2026, 11, day), AttendanceStatus.PRESENT)
+    view.refresh()
+    assert month.not_taken_label.isHidden()
+
+    month._today = lambda: date(2026, 11, 30)
+    month.refresh()
+    assert " and 8 more." in month.not_taken_label.text()  # 16 school days left in November

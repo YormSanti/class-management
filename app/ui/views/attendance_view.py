@@ -67,6 +67,7 @@ COL_NO, COL_NAME, COL_STATUS, COL_NOTE, COL_RECENT = range(5)
 UNDO_LIMIT = 50
 REGISTER_NAME = Qt.ItemDataRole.UserRole + 1  # a register's name without its teacher
 NAMED_UNMARKED = 3  # this few students left to mark are named in the status line
+NOT_TAKEN_NAMED = 8  # school days without a register named on the Month tab before "and N more"
 
 
 def _fill(widget: QWidget, name: str) -> QColor:
@@ -203,7 +204,12 @@ class MonthView(QWidget):
         layout.setContentsMargins(0, 12, 0, 0)
         layout.setSpacing(12)
         layout.addLayout(toolbar)
+        self.not_taken_label = style.label("", 0.9, bold=True)
+        self.not_taken_label.setWordWrap(True)
+        self.not_taken_label.hide()
+
         layout.addWidget(self.table, stretch=1)
+        layout.addWidget(self.not_taken_label)
         layout.addWidget(hint)
 
     def load(self, class_id: int, subject_id: int | None, file_label: str) -> None:
@@ -344,6 +350,20 @@ class MonthView(QWidget):
             head.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.export_button.setEnabled(bool(register.rows))
         self.pdf_button.setEnabled(bool(register.rows))
+        self._show_not_taken()
+
+    def _show_not_taken(self) -> None:
+        """Name the school days so far without a register, e.g. a forgotten Monday."""
+        days = self.register.not_taken(self._today()) if self.register.rows else []
+        if days:
+            listed = ", ".join(f"{day:%a} {day.day}" for day in days[:NOT_TAKEN_NAMED])
+            if len(days) > NOT_TAKEN_NAMED:
+                listed += f" and {len(days) - NOT_TAKEN_NAMED} more"
+            self.not_taken_label.setText(
+                f"No register taken on {listed}. Double-click a day to take it (holidays need none)."
+            )
+            style.set_color(self.not_taken_label, _fill(self, "warn"))
+        self.not_taken_label.setVisible(bool(days))
 
     def _open_cell(self, row: int, col: int) -> None:
         """A day opens its register; a student's name opens their history."""
