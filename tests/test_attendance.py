@@ -497,3 +497,15 @@ def test_history_finds_the_current_and_longest_absence_runs(attendance, roster, 
     assert attendance.student_history(ada).absence_runs() == (3, 3)
     attendance.mark(ada, school_day(date(2026, 10, 1), len(marks) + 2), P)
     assert attendance.student_history(ada).absence_runs() == (0, 3)
+
+
+def test_week_progress_counts_marks_from_monday_to_friday(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    attendance.mark(ada, date(2026, 11, 2), P)
+    attendance.mark(grace, date(2026, 11, 2), A)
+    attendance.mark(ada, date(2026, 11, 4), L)
+    attendance.mark(ada, date(2026, 11, 9), P)  # next week
+    assert attendance.week_progress(klass, date(2026, 11, 5)) == [
+        (date(2026, 11, 2), 2), (date(2026, 11, 3), 0), (date(2026, 11, 4), 1), (date(2026, 11, 5), 0), (DAY, 0)
+    ]

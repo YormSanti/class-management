@@ -345,6 +345,16 @@ class AttendanceService:
             rows.append(PeriodRow(student, counts, recorded - sum(counts.values())))
         return PeriodSummary(class_id, start, end, subject_id, recorded, rows)
 
+    def week_progress(self, class_id: int, day: date, subject_id: int | None = None) -> list[tuple[date, int]]:
+        """(day, students marked) for Monday to Friday of the week of `day`."""
+        self._check_subject(class_id, subject_id)
+        monday = day - timedelta(days=day.weekday())
+        records = self.attendance.for_period(class_id, monday, monday + timedelta(days=4), subject_id)
+        marked: dict[date, int] = {}
+        for r in records:
+            marked[r.date] = marked.get(r.date, 0) + 1
+        return [(d, marked.get(d, 0)) for d in (monday + timedelta(days=n) for n in range(5))]
+
     def student_history(self, student_id: int, subject_id: int | None = None) -> StudentHistory:
         student = self.students.get(student_id)
         if student is None:

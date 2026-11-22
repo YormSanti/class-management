@@ -538,6 +538,7 @@ class AttendanceView(QWidget):
         self.by_number = False  # the register in student number order instead of by name
         self._clock = date.today  # replaceable in tests
         self._showing_today: date | None = None  # the date, when the day shown was "today"
+        self._week: list[tuple[date, int]] = []  # Monday to Friday of the day shown, with students marked
         self._day_timer = QTimer(self)  # the page may stay open on screen past midnight
         self._day_timer.setInterval(60_000)
         self._day_timer.timeout.connect(lambda: self.isVisible() and self.follow_today())
@@ -606,6 +607,17 @@ class AttendanceView(QWidget):
         date_row.addWidget(self.next_button)
         date_row.addSpacing(8)
         date_row.addWidget(self.today_button)
+        date_row.addSpacing(12)
+        # the week at a glance: which days are done, and a click to open one
+        self.week_buttons: list[QToolButton] = []
+        for n in range(5):
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(lambda _checked, n=n: self._open_weekday(n))
+            date_row.addWidget(button)
+            self.week_buttons.append(button)
         date_row.addStretch()
         date_row.addWidget(style.label("Every change is saved as you go", 0.9, muted=True))
         date_row.addSpacing(12)
@@ -905,6 +917,7 @@ class AttendanceView(QWidget):
         self.month_view.load(school_class.id, self.subject_id, file_label)
 
         self.register = self.attendance.day_register(school_class.id, day, self.subject_id)
+        self._show_week(school_class.id)
         if self.by_number:
             self.register.rows.sort(key=lambda row: number_key(row.student))  # stable: by name within
         self.note_completer.model().setStringList(self.attendance.note_suggestions(school_class.id))
@@ -931,6 +944,21 @@ class AttendanceView(QWidget):
         self.by_number = by_number
         self.table.horizontalHeader().setSortIndicator(COL_NO if by_number else COL_NAME, Qt.SortOrder.AscendingOrder)
         self.refresh()
+
+    def _show_week(self, class_id: int) -> None:
+        """Mark each weekday button ✓ when everyone is marked, • when some are."""
+        students = len(self.register.rows)
+        self._week = self.attendance.week_progress(class_id, self.day, self.subject_id)
+        for button, (day, marked) in zip(self.week_buttons, self._week):
+            sign = " ✓" if students and marked >= students else " •" if marked else ""
+            button.setText(f"{day:%a}{sign}")
+            button.setChecked(day == self.day)
+            state = "everyone marked" if sign == " ✓" else f"{marked} of {students} marked" if marked else "not taken"
+            button.setToolTip(f"{day:%A} {day.day} {day:%B}: {state}")
+
+    def _open_weekday(self, n: int) -> None:
+        self.set_day(self._week[n][0])
+        self.week_buttons[n].setChecked(True)  # also when it was the day shown already
 
     def _shown_ids(self) -> list[int]:
         ids = []

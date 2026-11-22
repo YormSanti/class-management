@@ -2305,3 +2305,20 @@ def test_roster_opens_a_students_attendance_history(window: MainWindow, roster: 
     view.table.selectRow(0)
     view.history_button.click()
     assert shown == [("Ada Lovelace", "Daily (homeroom)")]
+
+
+def test_attendance_week_strip(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)  # Friday 6 November
+    view.mark_rest_button.click()
+    view.attendance.mark(view.register.rows[0].student.id, date(2026, 11, 4), AttendanceStatus.ABSENT)
+    view.refresh()
+    assert [b.text() for b in view.week_buttons] == ["Mon", "Tue", "Wed •", "Thu", "Fri ✓"]
+    assert view.week_buttons[4].isChecked()
+    assert view.week_buttons[2].toolTip() == "Wednesday 4 November: 1 of 2 marked"
+    view.week_buttons[2].click()
+    assert view.day == date(2026, 11, 4) and view.week_buttons[2].isChecked()
+    assert not view.week_buttons[4].isChecked()
