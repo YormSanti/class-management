@@ -298,6 +298,8 @@ class AttendanceService:
         self.attendance.delete(student_id, day, subject_id)
 
     def set_note(self, student_id: int, day: date, note: str, subject_id: int | None = None) -> None:
+        """Write the note of the student's mark for the day; the same checks as mark()."""
+        self._check_student(student_id, subject_id)
         existing = self.attendance.get(student_id, day, subject_id)
         if existing is None:
             raise AttendanceError("Mark the student before adding a note.")

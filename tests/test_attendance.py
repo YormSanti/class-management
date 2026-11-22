@@ -81,6 +81,21 @@ def test_note_needs_a_status(attendance, roster, klass):
         attendance.set_note(ada, DAY, "Bus late")
 
 
+def test_note_is_checked_like_a_mark(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, DAY, A)
+    other_class = roster.save_class(SchoolClass(name="8C"), "Science").id
+    science = roster.list_subjects(other_class)[0].id
+    with pytest.raises(AttendanceError, match="doesn't belong"):
+        attendance.set_note(ada, DAY, "Bus late", subject_id=science)
+
+    roster.deactivate_student(ada)
+    with pytest.raises(AttendanceError, match="inactive"):
+        attendance.set_note(ada, DAY, "Bus late")
+    roster.reactivate_student(ada)
+    assert attendance.day_register(klass, DAY).rows[0].note == ""
+
+
 def test_daily_and_subject_registers_are_separate(attendance, roster, klass):
     ada = _student(roster, klass, "Ada", "Lovelace")
     maths = roster.list_subjects(klass)[0].id
