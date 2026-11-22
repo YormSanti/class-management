@@ -30,6 +30,7 @@ from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
     DAYS_AHEAD,
     EARLIEST_DAY,
+    LOW_RATE,
     NOTE_MAX,
     RECENT_DAYS,
     STREAK_SHOWN,
@@ -305,6 +306,9 @@ class MonthView(QWidget):
                     item.setFont(font)
                 elif col == first_total + 3:
                     item.setForeground(_fill(self, "warn") if gaps else muted)
+                elif col == first_total + 4 and rate is not None and rate < LOW_RATE:
+                    item.setForeground(_fill(self, "warn"))
+                    item.setToolTip(f"Under {LOW_RATE:.0f}%")
                 self.table.setItem(r, col, item)
 
         # last row: how many were absent each day, and the class's totals

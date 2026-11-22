@@ -22,6 +22,7 @@ NOTE_SUGGESTIONS = 50
 COMMON_NOTES = ("Sick", "Doctor's appointment", "Family reason", "School trip", "Bus late")
 NOTE_MAX = 200  # characters: a reason, not a report
 MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
+LOW_RATE = 90.0  # percent: an attendance rate under this is worth a look
 STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
 EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
 DAYS_AHEAD = 366  # marks further ahead than a year are surely a mistyped year

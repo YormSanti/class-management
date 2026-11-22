@@ -639,6 +639,8 @@ def test_attendance_month_tab(window: MainWindow, roster: RosterService, tmp_pat
     not_marked = month.table.columnCount() - 2
     assert month.table.horizontalHeaderItem(not_marked).text() == "Not m."
     assert [month.table.item(r, not_marked).text() for r in range(3)] == ["–", "1", "1"]  # Lovelace on Friday
+    rate = month.table.item(0, not_marked + 1)
+    assert rate.text() == "0%" and rate.toolTip() == "Under 90%"
 
     month.prev_button.click()
     assert month.month_label.text() == "October 2026"
