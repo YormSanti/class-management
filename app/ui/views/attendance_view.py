@@ -64,6 +64,7 @@ KEYS |= {Qt.Key.Key_1: STATUSES[0], Qt.Key.Key_2: STATUSES[1], Qt.Key.Key_3: STA
 KEYS[Qt.Key.Key_Space] = AttendanceStatus.PRESENT
 COL_NO, COL_NAME, COL_STATUS, COL_NOTE, COL_RECENT = range(5)
 UNDO_LIMIT = 50
+REGISTER_NAME = Qt.ItemDataRole.UserRole + 1  # a register's name without its teacher
 NAMED_UNMARKED = 3  # this few students left to mark are named in the status line
 
 
@@ -697,6 +698,11 @@ class AttendanceView(QWidget):
     def subject_id(self) -> int | None:
         return self.register_combo.currentData()
 
+    @property
+    def register_name(self) -> str:
+        """ "Daily (homeroom)" or the subject's name."""
+        return self.register_combo.currentData(REGISTER_NAME) or self.register_combo.currentText()
+
     def set_class(self, class_id: int | None) -> None:
         if class_id != self.class_id:
             self.clear_undo()  # undo stays within one class
@@ -742,7 +748,10 @@ class AttendanceView(QWidget):
         self.register_combo.clear()
         self.register_combo.addItem("Daily (homeroom)", None)
         for subject in self.roster.list_subjects(self.class_id) if self.class_id is not None else []:
-            self.register_combo.addItem(subject.name, subject.id)
+            # whose lesson it is, when someone else teaches it; titles and files use the name alone
+            label = subject.name + (f" · {subject.teacher}" if subject.teacher else "")
+            self.register_combo.addItem(label, subject.id)
+            self.register_combo.setItemData(self.register_combo.count() - 1, subject.name, REGISTER_NAME)
         self.register_combo.setCurrentIndex(max(0, self.register_combo.findData(wanted)))
         self.register_combo.blockSignals(False)
 
@@ -763,14 +772,14 @@ class AttendanceView(QWidget):
         day = self.day
         self._showing_today = day if day == self._clock() else None
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
-        register = f" · {self.register_combo.currentText()}" if self.subject_id is not None else ""
+        register = f" · {self.register_name}" if self.subject_id is not None else ""
         self.title_label.setText(f"Attendance · {school_class.name}{register}")
         self.today_button.setEnabled(day != date.today())
         warning = day_warning(day, date.today())
         self.day_notice.setText(warning or "")
         self.day_notice.setVisible(warning is not None)
         style.set_color(self.day_notice, _fill(self, "warn"))
-        file_label = " ".join(x for x in (school_class.display_name, self.subject_id and self.register_combo.currentText()) if x)
+        file_label = " ".join(x for x in (school_class.display_name, self.subject_id and self.register_name) if x)
         if day != self._month_follows:  # the month follows the day, until changed by hand
             self._month_follows = day
             self.month_view.year, self.month_view.month = day.year, day.month
@@ -1043,7 +1052,7 @@ class AttendanceView(QWidget):
             self,
             "Clear the day",
             f"Remove {what} for {self.day:%A} {self.day.day} {self.day:%B} "
-            f"in the {self.register_combo.currentText()} register? Undo can bring them back.",
+            f"in the {self.register_name} register? Undo can bring them back.",
         )
         if answer == QMessageBox.StandardButton.Yes:
             self._remember("clear the day")
@@ -1055,7 +1064,7 @@ class AttendanceView(QWidget):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if self.register is None or school_class is None:
             return
-        title = f"{school_class.name} · {self.register_combo.currentText()}"
+        title = f"{school_class.name} · {self.register_name}"
         QApplication.clipboard().setText(absence_report(self.register, title))
         self.status_label.setText("Copied · paste it into an email or message")
         style.set_color(self.status_label, _fill(self, "accent"))
@@ -1097,7 +1106,7 @@ class AttendanceView(QWidget):
         if self.register is None or not 0 <= i < len(self.register.rows):
             return
         student = self.register.rows[i].student
-        dialog = MarkDaysDialog(student.full_name, self.register_combo.currentText(), self.day, self)
+        dialog = MarkDaysDialog(student.full_name, self.register_name, self.day, self)
         if not dialog.exec():
             return
         days = school_days(dialog.start, dialog.end)
@@ -1133,7 +1142,7 @@ class AttendanceView(QWidget):
         except AttendanceError as exc:
             QMessageBox.information(self, "Attendance", str(exc))
             return
-        dialog = AttendanceHistoryDialog(history, self.register_combo.currentText(), self)
+        dialog = AttendanceHistoryDialog(history, self.register_name, self)
         if dialog.exec() and dialog.chosen_day is not None:
             self.set_day(dialog.chosen_day)
 

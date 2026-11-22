@@ -1979,3 +1979,15 @@ def test_attendance_goes_on_to_the_new_day_after_midnight(window: MainWindow, ro
     view.set_day(date(2026, 11, 2))  # an earlier day picked on purpose stays
     view.follow_today()
     assert view.day == date(2026, 11, 2)
+
+
+def test_attendance_register_picker_names_the_teacher(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    roster.save_subject(Subject(class_id=window.class_id, name="Science", teacher="Mr Dara"))
+    view.set_subject(None)
+    assert [view.register_combo.itemText(i) for i in range(view.register_combo.count())] == [
+        "Daily (homeroom)", "Maths", "Science · Mr Dara"
+    ]
+    view.register_combo.setCurrentIndex(2)
+    assert view.register_name == "Science"
+    assert view.title_label.text() == "Attendance · 7B · Science"
