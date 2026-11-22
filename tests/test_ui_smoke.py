@@ -2020,6 +2020,19 @@ def test_attendance_sorts_by_number_and_remembers_it(
     second.close()
 
 
+def test_attendance_shows_a_dash_for_a_student_without_a_number(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    assert view.table.isColumnHidden(0)  # nobody has a number
+    hopper = view.register.rows[0].student
+    hopper.student_no = "S01"
+    roster.save_student(hopper)
+    view.refresh()
+    assert not view.table.isColumnHidden(0)
+    assert [view.table.item(i, 0).text() for i in range(2)] == ["S01", "—"]
+    assert "No student number" in view.table.item(1, 0).toolTip()
+    assert view.table.item(0, 0).toolTip() == ""
+
+
 def test_attendance_name_tooltip_shows_the_last_mark(window: MainWindow, roster: RosterService):
     from datetime import date
 

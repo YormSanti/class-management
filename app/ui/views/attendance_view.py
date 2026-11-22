@@ -994,7 +994,12 @@ class AttendanceView(QWidget):
         tint = style.soft(self, "warn") if unmarked else None
 
         number = self.table.item(i, COL_NO)
-        number.setText(student.student_no or "")
+        number.setText(student.student_no or "—")  # the column only shows when others have one
+        number.setToolTip("" if student.student_no else "No student number yet; give one in Manage classes")
+        if student.student_no:
+            number.setData(Qt.ItemDataRole.ForegroundRole, None)
+        else:
+            number.setForeground(self.palette().color(QPalette.ColorRole.PlaceholderText))
         name = self.table.item(i, COL_NAME)
         name.setText(student.full_name)
         name.setData(Qt.ItemDataRole.UserRole, student.id)
