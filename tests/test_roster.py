@@ -471,3 +471,15 @@ def test_rename_term_refuses_a_clash_and_changes_nothing(roster: RosterService):
     assert roster.get_class(keep.id).term == "2026"
     with pytest.raises(RosterError, match="Enter the school year"):
         roster.rename_term("2026", "  ")
+
+
+def test_copy_subjects_adds_the_missing_ones_with_teachers(roster: RosterService):
+    source = roster.save_class(SchoolClass(name="7A"), "Maths").id
+    roster.save_subject(Subject(class_id=source, name="Science", teacher="Mr Smith"))
+    target = roster.save_class(SchoolClass(name="7B"), "maths").id
+
+    added = roster.copy_subjects(source, target)
+
+    assert [(s.name, s.teacher) for s in added] == [("Science", "Mr Smith")]
+    assert [s.name for s in roster.list_subjects(target)] == ["maths", "Science"]
+    assert roster.copy_subjects(source, target) == []

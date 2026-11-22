@@ -61,6 +61,7 @@ class ClassesView(QWidget):
     edit_class_requested = Signal()
     delete_class_requested = Signal()
     new_subject_requested = Signal()
+    copy_subjects_requested = Signal()
     edit_subject_requested = Signal()
     delete_subject_requested = Signal()
 
@@ -121,6 +122,9 @@ class ClassesView(QWidget):
         self.subject_table.doubleClicked.connect(lambda _index: self.edit_subject_requested.emit())
         self.new_subject_button = QPushButton("Add subject…")
         self.new_subject_button.clicked.connect(self.new_subject_requested)
+        self.copy_subjects_button = QPushButton("Copy from class…")
+        self.copy_subjects_button.setToolTip("Add the subjects and teachers of another class")
+        self.copy_subjects_button.clicked.connect(self.copy_subjects_requested)
         self.edit_subject_button = QPushButton("Edit…")
         self.edit_subject_button.clicked.connect(self.edit_subject_requested)
         self.delete_subject_button = QPushButton("Delete")
@@ -131,6 +135,7 @@ class ClassesView(QWidget):
 
         subject_buttons = QHBoxLayout()
         subject_buttons.addWidget(self.new_subject_button)
+        subject_buttons.addWidget(self.copy_subjects_button)
         subject_buttons.addStretch()
         subject_buttons.addWidget(self.edit_subject_button)
         subject_buttons.addWidget(self.delete_subject_button)

@@ -93,6 +93,7 @@ class MainWindow(QMainWindow):
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
         self.classes_view.new_subject_requested.connect(self.new_subject)
+        self.classes_view.copy_subjects_requested.connect(self.copy_subjects)
         self.classes_view.edit_subject_requested.connect(self.edit_subject)
         self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
@@ -420,6 +421,39 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec() and dialog.saved:
             self.select_subject(dialog.saved.id)
+
+    def copy_subjects(self) -> None:
+        """Ask which class to copy subjects from, then add the ones this class lacks."""
+        if self.class_id is None:
+            return
+        counts = self.roster.class_counts()
+        order = {term: i for i, term in enumerate(self.roster.list_terms())}  # newest year first
+        sources = sorted(
+            (c for c in self.roster.list_classes() if c.id != self.class_id and counts.get(c.id, (0, 0))[1]),
+            key=lambda c: order.get(c.term, len(order)),
+        )
+        if not sources:
+            QMessageBox.information(self, "Copy subjects", "No other class has subjects yet.")
+            return
+        names = [f"{c.display_name} · {counts[c.id][1]} subject{'' if counts[c.id][1] == 1 else 's'}" for c in sources]
+        name, ok = QInputDialog.getItem(self, "Copy subjects", "Copy the subjects and teachers of:", names, 0, False)
+        if not ok:
+            return
+        source = sources[names.index(name)]
+        try:
+            added = self.roster.copy_subjects(source.id, self.class_id)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Copy subjects", str(exc))
+            return
+        if not added:
+            QMessageBox.information(
+                self, "Copy subjects", f"This class already has every subject of {source.display_name}."
+            )
+            return
+        self.select_subject(added[0].id)
+        self.statusBar().showMessage(
+            f"Added {len(added)} subject{'' if len(added) == 1 else 's'} from {source.display_name}", 5_000
+        )
 
     def edit_subject(self) -> None:
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None

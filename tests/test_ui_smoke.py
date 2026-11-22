@@ -1459,3 +1459,26 @@ def test_manage_classes_renames_the_school_year_shown(
     view.rename_year_button.click()
     assert roster.list_terms() == ["2027"]
     assert view.year_combo.currentText() == "2027"
+
+
+def test_manage_classes_copies_subjects_from_another_class(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QInputDialog
+
+    source = roster.save_class(SchoolClass(name="7A", term="2026"), "Maths").id
+    roster.save_subject(Subject(class_id=source, name="Science", teacher="Mr Smith"))
+    target = roster.save_class(SchoolClass(name="7B", term="2026")).id
+    window.select_class(target)
+    offered: list[list[str]] = []
+
+    def pick(_parent, _title, _label, items, *args):
+        offered.append(list(items))
+        return items[0], True
+
+    monkeypatch.setattr(QInputDialog, "getItem", pick)
+    window.classes_view.copy_subjects_button.click()
+    assert offered == [["7A (2026) · 2 subjects"]]
+    assert [s.name for s in roster.list_subjects(target)] == ["Maths", "Science"]
+    assert window.classes_view.subject_table.rowCount() == 2
+    assert window.subject_id == roster.list_subjects(target)[0].id

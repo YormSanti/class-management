@@ -303,6 +303,19 @@ class RosterService:
         self.subjects.update(subject)
         return subject
 
+    def copy_subjects(self, from_class_id: int, to_class_id: int) -> list[Subject]:
+        """Give `to_class_id` each subject of `from_class_id` it doesn't have yet (by name,
+        ignoring case), with its teacher. Grades and attendance aren't copied.
+        Returns the subjects added, which may be none."""
+        if self.classes.get(to_class_id) is None or self.classes.get(from_class_id) is None:
+            raise RosterError("The selected class no longer exists.")
+        added = []
+        with transaction(self.subjects.conn):
+            for subject in self.subjects.list_for_class(from_class_id):
+                if self.subjects.find_by_name(to_class_id, subject.name) is None:
+                    added.append(self.subjects.add(Subject(to_class_id, subject.name, subject.teacher)))
+        return added
+
     def subject_names(self) -> list[str]:
         """Subject names used in any class, to offer while typing a new one."""
         return self.subjects.distinct_values("name")
