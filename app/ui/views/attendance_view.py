@@ -519,6 +519,11 @@ class AttendanceView(QWidget):
         self.copy_button = QPushButton("Copy absences")
         self.copy_button.setToolTip("Copy who is absent, late or excused today, e.g. to send to the school office")
         self.copy_button.clicked.connect(self.copy_absences)
+        self.daily_button = QPushButton("Copy from daily")
+        self.daily_button.setToolTip(
+            "Mark students who are absent or excused in the daily register the same way here"
+        )
+        self.daily_button.clicked.connect(self.copy_from_daily)
         self.mark_rest_button = QPushButton("Mark the rest present")
         self.mark_rest_button.setObjectName("Primary")
         self.mark_rest_button.clicked.connect(self.mark_rest_present)
@@ -527,6 +532,7 @@ class AttendanceView(QWidget):
         actions.addWidget(self.undo_button)
         actions.addWidget(self.copy_button)
         actions.addWidget(self.clear_button)
+        actions.addWidget(self.daily_button)
         actions.addWidget(self.mark_rest_button)
 
         # students
@@ -809,6 +815,8 @@ class AttendanceView(QWidget):
         else:
             self.status_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.mark_rest_button.setEnabled(unmarked > 0)
+        self.daily_button.setVisible(self.subject_id is not None)
+        self.daily_button.setEnabled(unmarked > 0)
         self.clear_button.setEnabled(unmarked < total)
         self.copy_button.setEnabled(unmarked < total)
 
@@ -868,6 +876,27 @@ class AttendanceView(QWidget):
         self._remember("mark the rest present")
         self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
         self.refresh()
+
+    def copy_from_daily(self) -> None:
+        """Give students away all day (absent or excused in the daily register) the same mark here."""
+        if self.class_id is None or self.subject_id is None:
+            return
+        self._remember("copy from the daily register")
+        try:
+            n = self.attendance.copy_from_daily(self.class_id, self.day, self.subject_id)
+        except AttendanceError as exc:
+            self._forget()
+            QMessageBox.information(self, "Attendance", str(exc))
+            return
+        if not n:
+            self._forget()
+        self.refresh()
+        if n:
+            text = f"Marked {n} student{'' if n == 1 else 's'} as in the daily register"
+        else:
+            text = "No one who isn't marked here is absent or excused in the daily register"
+        self.status_label.setText(text)
+        style.set_color(self.status_label, _fill(self, "accent" if n else "warn"))
 
     def clear_day(self) -> None:
         if self.class_id is None:

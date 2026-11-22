@@ -365,3 +365,28 @@ def test_note_suggestions_are_the_class_notes_newest_first(attendance, roster, k
         attendance.set_note(student, day, note)
     attendance.mark(ada, date(2026, 10, 6), P)  # no note
     assert attendance.note_suggestions(klass) == ["Bus late", "Dentist"]
+
+
+def test_copy_from_daily_marks_students_away_all_day(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    alan = _student(roster, klass, "Alan", "Turing")
+    kay = _student(roster, klass, "Kay", "Mauchly")
+    maths = roster.list_subjects(klass)[0].id
+    attendance.mark(ada, DAY, A)
+    attendance.set_note(ada, DAY, "Flu")
+    attendance.mark(grace, DAY, E)
+    attendance.mark(alan, DAY, L)
+    attendance.mark(kay, DAY, A)
+    attendance.mark(kay, DAY, P, subject_id=maths)  # already marked in the lesson: kept
+
+    assert attendance.copy_from_daily(klass, DAY, maths) == 2
+    rows = {r.student.id: r for r in attendance.day_register(klass, DAY, maths).rows}
+    assert (rows[ada].status, rows[ada].note) == (A, "Flu")
+    assert rows[grace].status is E
+    assert rows[alan].status is None  # late for registration says nothing about the lesson
+    assert rows[kay].status is P
+    assert attendance.copy_from_daily(klass, DAY, maths) == 0
+
+    with pytest.raises(AttendanceError):
+        attendance.copy_from_daily(klass, DAY, None)

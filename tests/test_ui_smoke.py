@@ -1688,3 +1688,21 @@ def test_attendance_shows_absences_in_a_row(window: MainWindow, roster: RosterSe
     recent = view.table.item(0, 4)
     assert recent.text() == "2 absences (2 in a row)"
     assert "last 2 registers" in recent.toolTip()
+
+
+def test_attendance_subject_register_copies_from_daily(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    assert view.daily_button.isHidden()  # the daily register itself
+    view._row_widgets[1][0].buttons[AttendanceStatus.ABSENT].click()  # Lovelace
+    view.register_combo.setCurrentIndex(1)  # Maths
+    assert not view.daily_button.isHidden()
+
+    view.daily_button.click()
+    assert _statuses(view) == [None, "absent"]
+    assert view.status_label.text() == "Marked 1 student as in the daily register"
+    view.daily_button.click()
+    assert view.status_label.text().startswith("No one")
+    view.undo()
+    assert _statuses(view) == [None, None]
