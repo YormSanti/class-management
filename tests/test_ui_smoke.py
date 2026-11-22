@@ -1748,3 +1748,33 @@ def test_attendance_marks_a_student_for_several_days(window: MainWindow, roster:
     assert view.day == date(2026, 11, 4)
     history = view.attendance.student_history(view.register.rows[1].student.id)
     assert [r.date.day for r in history.records] == [6]
+
+
+def test_attendance_find_shows_matching_students(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster, ("Ada Lovelace", "Grace Hopper", "Alan Turing", "Alan Kay"))
+    window.show()
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    QTest.keyClick(view.table, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert view.find_edit.hasFocus()
+
+    QTest.keyClicks(view.find_edit, "alan")
+    shown = [view.register.rows[i].student.full_name for i in view._visible_rows()]
+    assert shown == ["Alan Kay", "Alan Turing"]  # the list is sorted by last name
+
+    QTest.keyClick(view.find_edit, Qt.Key.Key_Return)  # back to the list, on the first student found
+    assert view.table.hasFocus()
+    assert view.register.rows[view.table.currentRow()].student.full_name == "Alan Kay"
+    QTest.keyClick(view.table, Qt.Key.Key_A)  # marks and moves to the next student shown
+    assert view.register.rows[view.table.currentRow()].student.full_name == "Alan Turing"
+    QTest.keyClick(view.table, Qt.Key.Key_P)
+    assert _statuses(view) == [None, "absent", None, "present"]
+
+    view.refresh()  # stays filtered after a change
+    assert len(view._visible_rows()) == 2
+    view.find_edit.setFocus()
+    QTest.keyClick(view.find_edit, Qt.Key.Key_Escape)
+    assert view.find_edit.text() == "" and len(view._visible_rows()) == 4

@@ -491,6 +491,15 @@ class AttendanceView(QWidget):
         date_row.addWidget(self.today_button)
         date_row.addStretch()
         date_row.addWidget(style.label("Every change is saved as you go", 0.9, muted=True))
+        date_row.addSpacing(12)
+        self.find_edit = QLineEdit()
+        self.find_edit.setPlaceholderText("Find a student (Ctrl+F)")
+        self.find_edit.setToolTip("Show only students whose name or number contains this; Esc shows everyone")
+        self.find_edit.setClearButtonEnabled(True)
+        self.find_edit.setFixedWidth(220)
+        self.find_edit.textChanged.connect(self._apply_filter)
+        self.find_edit.installEventFilter(self)
+        date_row.addWidget(self.find_edit)
 
         self.day_notice = style.label("", bold=True)
         self.day_notice.setWordWrap(True)
@@ -514,6 +523,7 @@ class AttendanceView(QWidget):
 
         # actions
         self.status_label = style.label("", bold=True)
+        self.status_label.setWordWrap(True)  # the buttons beside it leave little room
         self.undo_button = QPushButton("Undo")
         self.undo_button.clicked.connect(self.undo)
         self.clear_button = QPushButton("Clear the day…")
@@ -610,6 +620,8 @@ class AttendanceView(QWidget):
         today = QShortcut(QKeySequence("Alt+Home"), self)
         today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         today.activated.connect(lambda: self.set_day(date.today()))
+        find = QShortcut(QKeySequence.StandardKey.Find, self)  # like the class list: whole window, page shown
+        find.activated.connect(self._start_find)
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
         undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         undo.activated.connect(self.undo)
@@ -650,6 +662,7 @@ class AttendanceView(QWidget):
         if class_id != self.class_id:
             self._undo.clear()  # undo stays within one class
             self._update_undo()
+            self.find_edit.clear()
         self.class_id = class_id
         self._fill_classes()
         self._fill_registers()
@@ -732,6 +745,7 @@ class AttendanceView(QWidget):
         for i, row in enumerate(self.register.rows):
             self._fill_row(i, row)
         self._show_totals()
+        self._apply_filter()
 
     def _shown_ids(self) -> list[int]:
         ids = []
@@ -826,6 +840,34 @@ class AttendanceView(QWidget):
         self.clear_button.setEnabled(unmarked < total)
         self.copy_button.setEnabled(unmarked < total)
         self.days_button.setEnabled(total > 0)
+
+    # --- finding a student ---------------------------------------------------
+
+    def _start_find(self) -> None:
+        self.tabs.setCurrentIndex(0)
+        self.find_edit.setFocus()
+        self.find_edit.selectAll()
+
+    def _apply_filter(self) -> None:
+        """Hide the students whose name and number don't contain the text in the find box."""
+        if self.register is None:
+            return
+        text = self.find_edit.text().strip().casefold()
+        for i, row in enumerate(self.register.rows):
+            student = row.student
+            found = text in student.full_name.casefold() or text in (student.student_no or "").casefold()
+            self.table.setRowHidden(i, not found)
+        if self.table.isRowHidden(self.table.currentRow()) or self.table.currentRow() < 0:
+            visible = self._visible_rows()
+            if visible:
+                self.table.setCurrentCell(visible[0], COL_NAME)
+
+    def _visible_rows(self) -> list[int]:
+        return [i for i in range(self.table.rowCount()) if not self.table.isRowHidden(i)]
+
+    def _next_row(self, i: int) -> int:
+        """The next row shown after row `i`, or `i` itself at the end."""
+        return next((n for n in self._visible_rows() if n > i), i)
 
     # --- actions -------------------------------------------------------------
 
@@ -1035,7 +1077,7 @@ class AttendanceView(QWidget):
             if 0 <= i < len(self.register.rows):
                 if key in KEYS:
                     self._set_status(i, KEYS[key])
-                    self.table.setCurrentCell(min(i + 1, self.table.rowCount() - 1), COL_NAME)
+                    self.table.setCurrentCell(self._next_row(i), COL_NAME)
                     return True
                 if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                     self._set_status(i, None)
@@ -1052,6 +1094,15 @@ class AttendanceView(QWidget):
                         note.setFocus()
                         note.selectAll()
                     return True
+        elif watched is self.find_edit:
+            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Down):
+                if key == Qt.Key.Key_Escape:
+                    self.find_edit.clear()
+                self.table.setFocus()  # mark the student found straight away with P L A E
+                visible = self._visible_rows()
+                if visible and self.table.currentRow() not in visible:
+                    self.table.setCurrentCell(visible[0], COL_NAME)
+                return True
         elif isinstance(watched, QLineEdit) and key in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter):
             i = next(n for n, (_b, note) in enumerate(self._row_widgets) if note is watched)
             if key == Qt.Key.Key_Escape:
