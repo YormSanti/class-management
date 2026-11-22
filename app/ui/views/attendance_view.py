@@ -29,6 +29,7 @@ from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
     DAYS_AHEAD,
     EARLIEST_DAY,
+    NOTE_MAX,
     RECENT_DAYS,
     STREAK_SHOWN,
     UNMARKED,
@@ -770,6 +771,7 @@ class AttendanceView(QWidget):
             buttons.status_clicked.connect(lambda status, i=i: self._set_status(i, status))
             note = QLineEdit()
             note.setFrame(False)
+            note.setMaxLength(NOTE_MAX)
             note.editingFinished.connect(lambda i=i: self._save_note(i))
             note.installEventFilter(self)
             note.setCompleter(self.note_completer)

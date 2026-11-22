@@ -449,3 +449,16 @@ def test_days_with_a_mistyped_year_are_refused(attendance, roster, klass):
     with pytest.raises(AttendanceError):
         attendance.mark_days(ada, date(1999, 12, 31), DAY, P)
     assert attendance.student_history(ada).records == []
+
+
+def test_notes_are_kept_short(attendance, roster, klass):
+    from app.services.attendance import NOTE_MAX
+
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, DAY, A)
+    attendance.set_note(ada, DAY, "x" * NOTE_MAX + "   ")  # spaces around don't count
+    with pytest.raises(AttendanceError, match="at most"):
+        attendance.set_note(ada, DAY, "x" * (NOTE_MAX + 1))
+    with pytest.raises(AttendanceError, match="at most"):
+        attendance.mark_days(ada, DAY, DAY, E, "x" * (NOTE_MAX + 1), replace_marks=True)
+    assert attendance.student_history(ada).records[0].note == "x" * NOTE_MAX

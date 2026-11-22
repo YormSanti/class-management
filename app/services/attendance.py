@@ -18,6 +18,7 @@ PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
 RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on the dashboard
 NOTE_SUGGESTIONS = 50
+NOTE_MAX = 200  # characters: a reason, not a report
 MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
 STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
 EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
@@ -40,6 +41,13 @@ def school_day(day: date, step: int) -> date:
         while day.weekday() >= 5:
             day += timedelta(days=direction)
     return day
+
+
+def _checked_note(note: str) -> str:
+    note = note.strip()
+    if len(note) > NOTE_MAX:
+        raise AttendanceError(f"A note can be at most {NOTE_MAX} characters; this one has {len(note)}.")
+    return note
 
 
 def school_days(start: date, end: date) -> list[date]:
@@ -345,7 +353,7 @@ class AttendanceService:
         existing = self.attendance.get(student_id, day, subject_id)
         if existing is None:
             raise AttendanceError("Mark the student before adding a note.")
-        self.attendance.save(replace(existing, note=note.strip()))
+        self.attendance.save(replace(existing, note=_checked_note(note)))
 
     def mark_days(
         self,
@@ -374,7 +382,7 @@ class AttendanceService:
                 f"That is {len(days)} school days. Mark at most {MAX_DAYS_AT_ONCE} at once, about a term."
             )
         self._check_student(student_id, subject_id)
-        status, note = AttendanceStatus(status), note.strip()
+        status, note = AttendanceStatus(status), _checked_note(note)
         records = []
         for day in days:
             existing = self.attendance.get(student_id, day, subject_id)

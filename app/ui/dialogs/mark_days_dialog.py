@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import AttendanceStatus
-from app.services.attendance import MAX_DAYS_AT_ONCE, school_days
+from app.services.attendance import MAX_DAYS_AT_ONCE, NOTE_MAX, school_days
 from app.ui import style
 
 # Excused first: a sick note or a school trip is the usual reason to mark several days.
@@ -45,6 +45,7 @@ class MarkDaysDialog(QDialog):
             self.status_combo.addItem(status.value.capitalize(), status)
         self.note_edit = QLineEdit()
         self.note_edit.setPlaceholderText("e.g. Sick note, School trip")
+        self.note_edit.setMaxLength(NOTE_MAX)
         self.replace_box = QCheckBox("Replace marks already made on these days")
         self.replace_box.setToolTip("Otherwise days the student is already marked stay as they are")
 
