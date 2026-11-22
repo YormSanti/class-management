@@ -362,6 +362,9 @@ class MonthView(QWidget):
             n = register.absent_on(day)
             item = QTableWidgetItem(("–" if n == 0 else str(n)) if day in recorded else "")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if n:
+                absent = [r.student.full_name for r in register.rows if r.statuses.get(day) is AttendanceStatus.ABSENT]
+                item.setToolTip(f"Absent {day:%a} {day.day} {day:%b}: " + ", ".join(absent))
             item.setForeground(_fill(self, "danger") if n else muted)
             self.table.setItem(last, col, item)
         counts, rate = register.counts(), register.rate

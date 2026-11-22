@@ -637,6 +637,7 @@ def test_attendance_month_tab(window: MainWindow, roster: RosterService, tmp_pat
     friday = 1 + month.register.days.index(date(2026, 11, 6))
     assert month.table.item(0, friday).text() == "A"
     assert month.table.item(2, friday).text() == "1"
+    assert month.table.item(2, friday).toolTip() == "Absent Fri 6 Nov: Grace Hopper"
     not_marked = month.table.columnCount() - 2
     assert month.table.horizontalHeaderItem(not_marked).text() == "Not m."
     assert [month.table.item(r, not_marked).text() for r in range(3)] == ["–", "1", "1"]  # Lovelace on Friday
