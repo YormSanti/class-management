@@ -95,6 +95,7 @@ class SettingsView(QWidget):
         self.save = save
         self.restore = restore
         self._shown_backups: list[Path] = []
+        self._all_backups = False  # every backup listed, not only the SHOWN_BACKUPS newest
 
         # --- your data ---
         data = style.Panel("Your data", "Everything is kept in one file on this computer.")
@@ -164,8 +165,15 @@ class SettingsView(QWidget):
             muted=True,
         )
         restore_hint.setWordWrap(True)
+        self.show_all_button = QPushButton()
+        self.show_all_button.setToolTip("List every automatic backup, e.g. to go back to an older day")
+        self.show_all_button.clicked.connect(self._toggle_all_backups)
+        show_all_row = QHBoxLayout()
+        show_all_row.addWidget(self.show_all_button)
+        show_all_row.addStretch()
         backups.body.addLayout(backup_buttons)
         backups.body.addWidget(self.backup_table)
+        backups.body.addLayout(show_all_row)
         backups.body.addWidget(restore_hint)
 
         # --- rankings ---
@@ -269,7 +277,9 @@ class SettingsView(QWidget):
             self.backup_summary.setToolTip(f"{total} in all")
         else:
             self.backup_summary.setText("No automatic backups yet")
-        shown = found[:SHOWN_BACKUPS]
+        shown = found if self._all_backups else found[:SHOWN_BACKUPS]
+        self.show_all_button.setText("Show the newest only" if self._all_backups else f"Show all {len(found)}")
+        self.show_all_button.setVisible(len(found) > SHOWN_BACKUPS)
         self._shown_backups = shown
         self.backup_table.clearSelection()
         self.backup_table.setRowCount(len(shown))
@@ -288,6 +298,10 @@ class SettingsView(QWidget):
         rows = sum(self.backup_table.rowHeight(i) for i in range(len(shown)))
         self.backup_table.setFixedHeight(header + rows + 2 * self.backup_table.frameWidth())
         self._update_restore()
+
+    def _toggle_all_backups(self) -> None:
+        self._all_backups = not self._all_backups
+        self.refresh()
 
     def check_data(self) -> None:
         """Run SQLite's integrity check on the data file and say what it found."""

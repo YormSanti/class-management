@@ -1426,6 +1426,29 @@ def test_settings_page_shows_sizes(window: MainWindow, db_path: Path):
     assert view.backup_summary.toolTip().endswith(" in all")
 
 
+def test_settings_page_lists_every_backup_on_request(window: MainWindow, db_path: Path):
+    from datetime import datetime
+
+    from app.services.backup import auto_backup
+    from app.ui.views.settings_view import SHOWN_BACKUPS
+
+    view = window.settings_view
+    auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, 1, 8, 0))
+    view.refresh()
+    assert view.show_all_button.isHidden()
+
+    for day in range(2, 13):
+        auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, day, 8, 0))
+    view.refresh()
+    assert view.backup_table.rowCount() == SHOWN_BACKUPS
+    assert not view.show_all_button.isHidden() and view.show_all_button.text() == "Show all 12"
+    view.show_all_button.click()
+    assert view.backup_table.rowCount() == 12
+    assert view.backup_table.item(11, 0).text().startswith("Sun 1 Nov 2026")
+    view.show_all_button.click()
+    assert view.backup_table.rowCount() == SHOWN_BACKUPS
+
+
 def test_help_menu_lists_the_keyboard_shortcuts(window: MainWindow, monkeypatch: pytest.MonkeyPatch):
     from app.ui.dialogs.shortcuts_dialog import SHORTCUTS, ShortcutsDialog
 
