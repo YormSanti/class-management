@@ -37,6 +37,7 @@ from app.services.attendance import (
     RegisterRow,
     day_warning,
     school_day,
+    school_days,
 )
 from app.services.export import (
     absence_report,
@@ -47,6 +48,7 @@ from app.services.export import (
 from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
 from app.ui.dialogs.period_dialog import PeriodDialog
 from app.ui.files import ask_save_path
 
@@ -430,8 +432,8 @@ class AttendanceView(QWidget):
         self.note_completer = QCompleter(QStringListModel(self), self)
         self.note_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.note_completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        # (day, subject id, register before the change, what the change was), newest last
-        self._undo: list[tuple[date, int | None, list[AttendanceRecord], str]] = []
+        # (subject id, {day: its register before the change}, what the change was), newest last
+        self._undo: list[tuple[int | None, dict[date, list[AttendanceRecord]], str]] = []
 
         # --- header ---
         self.date_label = style.caption("")
@@ -519,6 +521,9 @@ class AttendanceView(QWidget):
         self.copy_button = QPushButton("Copy absences")
         self.copy_button.setToolTip("Copy who is absent, late or excused today, e.g. to send to the school office")
         self.copy_button.clicked.connect(self.copy_absences)
+        self.days_button = QPushButton("Several days…")
+        self.days_button.setToolTip("Mark the selected student for several days, e.g. a sick note or a trip (D)")
+        self.days_button.clicked.connect(lambda: self.mark_days(self.table.currentRow()))
         self.daily_button = QPushButton("Copy from daily")
         self.daily_button.setToolTip(
             "Mark students who are absent or excused in the daily register the same way here"
@@ -531,6 +536,7 @@ class AttendanceView(QWidget):
         actions.addWidget(self.status_label, stretch=1)
         actions.addWidget(self.undo_button)
         actions.addWidget(self.copy_button)
+        actions.addWidget(self.days_button)
         actions.addWidget(self.clear_button)
         actions.addWidget(self.daily_button)
         actions.addWidget(self.mark_rest_button)
@@ -554,8 +560,8 @@ class AttendanceView(QWidget):
 
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · "
-            "N writes a note · H or double-click shows a student's history · Alt+← → change day · "
-            "Alt+Home goes to today",
+            "N writes a note · D marks several days · H or double-click shows a student's history · "
+            "Alt+← → change day · Alt+Home goes to today",
             0.85,
             muted=True,
         )
@@ -819,6 +825,7 @@ class AttendanceView(QWidget):
         self.daily_button.setEnabled(unmarked > 0)
         self.clear_button.setEnabled(unmarked < total)
         self.copy_button.setEnabled(unmarked < total)
+        self.days_button.setEnabled(total > 0)
 
     # --- actions -------------------------------------------------------------
 
@@ -922,6 +929,34 @@ class AttendanceView(QWidget):
         self.status_label.setText("Copied · paste it into an email or message")
         style.set_color(self.status_label, _fill(self, "accent"))
 
+    def mark_days(self, i: int) -> None:
+        """Ask for a period, then mark student `i` on each school day of it."""
+        if self.register is None or not 0 <= i < len(self.register.rows):
+            return
+        student = self.register.rows[i].student
+        dialog = MarkDaysDialog(student.full_name, self.register_combo.currentText(), self.day, self)
+        if not dialog.exec():
+            return
+        days = school_days(dialog.start, dialog.end)
+        self._remember(f"mark {student.full_name} for {len(days)} days", days)
+        try:
+            changed = self.attendance.mark_days(
+                student.id, dialog.start, dialog.end, dialog.status, dialog.note, self.subject_id, dialog.replace_marks
+            )
+        except AttendanceError as exc:
+            self._forget()
+            QMessageBox.information(self, "Attendance", str(exc))
+            return
+        if not changed:
+            self._forget()
+        self.refresh()
+        n, skipped = len(changed), len(days) - len(changed)
+        text = f"Marked {student.full_name} {dialog.status.value} on {n} day{'' if n == 1 else 's'}"
+        if skipped:
+            text += f" · {skipped} day{'' if skipped == 1 else 's'} already marked kept as before"
+        self.status_label.setText(text)
+        style.set_color(self.status_label, _fill(self, "accent" if n else "warn"))
+
     def show_history(self, i: int) -> None:
         """Show student `i`'s marks in this register; a day picked there opens on the Day tab."""
         if self.register is None or not 0 <= i < len(self.register.rows):
@@ -941,12 +976,13 @@ class AttendanceView(QWidget):
 
     # --- undo ----------------------------------------------------------------
 
-    def _remember(self, what: str) -> None:
-        """Keep the register as it is now, before a change, so undo() can bring it back."""
+    def _remember(self, what: str, days: list[date] | None = None) -> None:
+        """Keep the register of the days (the day shown by default) as it is now, before a
+        change, so undo() can bring it back."""
         if self.class_id is None:
             return
-        before = self.attendance.snapshot(self.class_id, self.day, self.subject_id)
-        self._undo.append((self.day, self.subject_id, before, what))
+        before = {day: self.attendance.snapshot(self.class_id, day, self.subject_id) for day in days or [self.day]}
+        self._undo.append((self.subject_id, before, what))
         del self._undo[:-UNDO_LIMIT]
         self._update_undo()
 
@@ -964,7 +1000,7 @@ class AttendanceView(QWidget):
         """Undo the newest change, showing the day and register it was made in."""
         if not self._undo or self.class_id is None:
             return
-        day, subject_id, before, _what = self._undo.pop()
+        subject_id, before, _what = self._undo.pop()
         self._update_undo()
         if subject_id != self.subject_id:
             index = self.register_combo.findData(subject_id)
@@ -972,10 +1008,11 @@ class AttendanceView(QWidget):
                 self.undo()
                 return
             self.register_combo.setCurrentIndex(index)
-        if day != self.day:
-            self.set_day(day)
+        if self.day not in before:
+            self.set_day(min(before))
         try:
-            self.attendance.restore(self.class_id, day, subject_id, before)
+            for day, records in before.items():
+                self.attendance.restore(self.class_id, day, subject_id, records)
         except AttendanceError as exc:
             QMessageBox.information(self, "Undo", str(exc))
         self.refresh()
@@ -983,7 +1020,7 @@ class AttendanceView(QWidget):
     def _update_undo(self) -> None:
         self.undo_button.setEnabled(bool(self._undo))
         keys = QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText)
-        what = f": {self._undo[-1][3]}" if self._undo else ""
+        what = f": {self._undo[-1][2]}" if self._undo else ""
         self.undo_button.setToolTip(f"Undo{what} ({keys})")
 
     # --- keyboard ------------------------------------------------------------
@@ -1005,6 +1042,9 @@ class AttendanceView(QWidget):
                     return True
                 if key == Qt.Key.Key_H:
                     self.show_history(i)
+                    return True
+                if key == Qt.Key.Key_D:
+                    self.mark_days(i)
                     return True
                 if key in (Qt.Key.Key_N, Qt.Key.Key_Return, Qt.Key.Key_Enter):
                     note = self._row_widgets[i][1]

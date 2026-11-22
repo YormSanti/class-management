@@ -1706,3 +1706,45 @@ def test_attendance_subject_register_copies_from_daily(window: MainWindow, roste
     assert view.status_label.text().startswith("No one")
     view.undo()
     assert _statuses(view) == [None, None]
+
+
+def test_attendance_marks_a_student_for_several_days(window: MainWindow, roster: RosterService, monkeypatch, qapp):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    dialog_seen = {}
+
+    def fake_exec(dialog: MarkDaysDialog) -> int:
+        assert (dialog.start, dialog.end) == (date(2026, 11, 6), date(2026, 11, 6))
+        dialog.set_period(date(2026, 11, 6), date(2026, 11, 7))
+        assert dialog.days_label.text() == "1 school day"
+        dialog.set_period(date(2026, 11, 7), date(2026, 11, 8))
+        assert not dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
+        dialog.set_period(date(2026, 11, 4), date(2026, 11, 10))
+        assert dialog.days_label.text() == "5 school days"
+        dialog_seen["title"] = dialog.windowTitle()
+        dialog.note_edit.setText("Sick note")
+        return 1
+
+    monkeypatch.setattr(MarkDaysDialog, "exec", fake_exec)
+    view._row_widgets[1][0].buttons[AttendanceStatus.PRESENT].click()  # Lovelace, already marked today
+    view.table.setCurrentCell(1, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_D)
+    assert dialog_seen["title"] == "Mark several days · Ada Lovelace"
+    assert _statuses(view) == [None, "present"]  # kept
+    assert view.status_label.text() == "Marked Ada Lovelace excused on 4 days · 1 day already marked kept as before"
+    history = view.attendance.student_history(view.register.rows[1].student.id)
+    assert [r.date.day for r in history.records] == [10, 9, 6, 5, 4]
+    assert history.records[0].note == "Sick note"
+
+    view.set_day(date(2026, 11, 20))
+    view.undo()  # every day goes back, and the page shows the first of them
+    assert view.day == date(2026, 11, 4)
+    history = view.attendance.student_history(view.register.rows[1].student.id)
+    assert [r.date.day for r in history.records] == [6]

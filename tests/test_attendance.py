@@ -14,6 +14,7 @@ from app.services.attendance import (
     RegisterRow,
     day_warning,
     school_day,
+    school_days,
 )
 from app.services.roster import RosterService
 
@@ -390,3 +391,43 @@ def test_copy_from_daily_marks_students_away_all_day(attendance, roster, klass):
 
     with pytest.raises(AttendanceError):
         attendance.copy_from_daily(klass, DAY, None)
+
+
+def test_school_days_leave_out_weekends():
+    assert school_days(DAY, date(2026, 11, 10)) == [DAY, date(2026, 11, 9), date(2026, 11, 10)]
+    assert school_days(date(2026, 11, 7), date(2026, 11, 8)) == []
+    assert school_days(DAY, date(2026, 11, 5)) == []
+
+
+def test_mark_days_marks_each_school_day(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    maths = roster.list_subjects(klass)[0].id
+    tuesday = date(2026, 11, 10)
+    attendance.mark(ada, date(2026, 11, 9), P)
+    attendance.set_note(ada, date(2026, 11, 9), "Came in late morning")
+
+    changed = attendance.mark_days(ada, DAY, tuesday, E, " Sick note ")
+    assert changed == [DAY, tuesday]  # Monday was marked already: left alone
+    history = {r.date: r for r in attendance.student_history(ada).records}
+    assert set(history) == {DAY, date(2026, 11, 9), tuesday}  # not the weekend
+    assert (history[DAY].status, history[DAY].note) == (E, "Sick note")
+    assert history[date(2026, 11, 9)].status is P
+    assert attendance.student_history(ada, maths).records == []  # one register at a time
+
+    changed = attendance.mark_days(ada, DAY, tuesday, E, replace_marks=True)
+    assert changed == [date(2026, 11, 9)]
+    monday = attendance.student_history(ada).records[1]
+    assert (monday.status, monday.note) == (E, "Came in late morning")  # no new note: kept
+
+
+def test_mark_days_refuses_bad_periods(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    with pytest.raises(AttendanceError, match="before the first"):
+        attendance.mark_days(ada, DAY, date(2026, 11, 5), A)
+    with pytest.raises(AttendanceError, match="weekend"):
+        attendance.mark_days(ada, date(2026, 11, 7), date(2026, 11, 8), A)
+    with pytest.raises(AttendanceError, match="at most"):
+        attendance.mark_days(ada, date(2026, 9, 1), date(2026, 12, 31), A)
+    roster.deactivate_student(ada)
+    with pytest.raises(AttendanceError, match="inactive"):
+        attendance.mark_days(ada, DAY, DAY, A)

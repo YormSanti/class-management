@@ -18,6 +18,7 @@ PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
 RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on the dashboard
 NOTE_SUGGESTIONS = 50
+MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
 STREAK_SHOWN = 2  # absent in this many registers in a row is worth pointing out
 
 
@@ -37,6 +38,12 @@ def school_day(day: date, step: int) -> date:
         while day.weekday() >= 5:
             day += timedelta(days=direction)
     return day
+
+
+def school_days(start: date, end: date) -> list[date]:
+    """The weekdays from `start` to `end`, both included."""
+    days = (start + timedelta(days=n) for n in range((end - start).days + 1))
+    return [day for day in days if day.weekday() < 5]
 
 
 def day_warning(day: date, today: date) -> str | None:
@@ -329,6 +336,42 @@ class AttendanceService:
         if existing is None:
             raise AttendanceError("Mark the student before adding a note.")
         self.attendance.save(replace(existing, note=note.strip()))
+
+    def mark_days(
+        self,
+        student_id: int,
+        start: date,
+        end: date,
+        status: AttendanceStatus,
+        note: str = "",
+        subject_id: int | None = None,
+        replace_marks: bool = False,
+    ) -> list[date]:
+        """Mark the student on every school day from `start` to `end`, e.g. for a sick note.
+
+        Days the student is already marked are left alone unless `replace_marks`; a
+        replaced mark keeps its note when no new one is given. Returns the days changed.
+        """
+        if end < start:
+            raise AttendanceError("The last day is before the first.")
+        days = school_days(start, end)
+        if not days:
+            raise AttendanceError("There are no school days between these dates, only a weekend.")
+        if len(days) > MAX_DAYS_AT_ONCE:
+            raise AttendanceError(
+                f"That is {len(days)} school days. Mark at most {MAX_DAYS_AT_ONCE} at once, about a term."
+            )
+        self._check_student(student_id, subject_id)
+        status, note = AttendanceStatus(status), note.strip()
+        records = []
+        for day in days:
+            existing = self.attendance.get(student_id, day, subject_id)
+            if existing is None:
+                records.append(AttendanceRecord(student_id, day, status, note, subject_id))
+            elif replace_marks and (existing.status, existing.note) != (status, note or existing.note):
+                records.append(replace(existing, status=status, note=note or existing.note))
+        self.attendance.save_many(records)
+        return [r.date for r in records]
 
     def mark_unmarked(
         self,
