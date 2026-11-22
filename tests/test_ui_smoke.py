@@ -180,6 +180,26 @@ def test_roster_export_writes_csv(
     assert "Lovelace" in (tmp_path / "out.csv").read_text(encoding="utf-8-sig")
 
 
+def test_roster_export_follows_the_table_order(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    for first, last, no in (("Ada", "Lovelace", "3"), ("Grace", "Hopper", "1"), ("Alan", "Turing", "2")):
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name=last, student_no=no))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view.search.setText("Ada")  # the search doesn't limit the export
+    view.table.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(tmp_path / "out.csv"), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    view.export_csv()
+    lines = (tmp_path / "out.csv").read_text(encoding="utf-8-sig").splitlines()
+    assert [line.split(",")[1] for line in lines[1:]] == ["Lovelace", "Turing", "Hopper"]
+
+
 def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
     from PySide6.QtWidgets import QInputDialog, QMessageBox
 

@@ -72,22 +72,26 @@ class StudentTableModel(QAbstractTableModel):
         column = index.column()
 
         if role == Qt.ItemDataRole.DisplayRole:
-            if column == 0:
-                return student.student_no or ""
-            if column == 1:
-                return student.last_name
-            if column == 2:
-                return student.first_name
-            if column == 3:
-                return "Active" if student.active else "Inactive"
-            if column == 4:
-                return student.notes.splitlines()[0] if student.notes else ""
-        elif role == Qt.ItemDataRole.ToolTipRole and column == 4 and student.notes:
+            return self.text(student, column)
+        if role == Qt.ItemDataRole.ToolTipRole and column == 4 and student.notes:
             return student.notes
-        elif role == Qt.ItemDataRole.ForegroundRole and not student.active:
+        if role == Qt.ItemDataRole.ForegroundRole and not student.active:
             # Grey out inactive students using the theme's placeholder colour.
             return QApplication.palette().color(QPalette.ColorRole.PlaceholderText)
         return None
+
+    @staticmethod
+    def text(student: Student, column: int) -> str:
+        """What column `column` shows for `student`."""
+        if column == 0:
+            return student.student_no or ""
+        if column == 1:
+            return student.last_name
+        if column == 2:
+            return student.first_name
+        if column == 3:
+            return "Active" if student.active else "Inactive"
+        return student.notes.splitlines()[0] if student.notes else ""
 
     def headerData(
         self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
@@ -373,14 +377,17 @@ class RosterView(QWidget):
         self.count_label.setText(f"Copied {len(students)} {noun} · paste them into a spreadsheet")
 
     def export_csv(self) -> None:
-        """Save every student of the class (inactive ones too if they are shown) as CSV."""
+        """Save every student of the class (inactive ones too if they are shown) as CSV,
+        in the order of the table."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
         path = ask_save_path(self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv")
         if path is None:
             return
-        students = self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
+        students = self._in_table_order(
+            self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
+        )
         try:
             write_roster_csv(path, students)
         except OSError as exc:
@@ -408,6 +415,18 @@ class RosterView(QWidget):
         if not rows:
             return None
         return self.model.student_at(self.proxy.mapToSource(rows[0]).row())
+
+    def _in_table_order(self, students: list[Student]) -> list[Student]:
+        """`students` sorted the way the table is, by the column header clicked last."""
+        column, order = self.proxy.sortColumn(), self.proxy.sortOrder()
+        if column < 0:
+            return students
+        # Python's sort is stable, like the table's, so ties keep the name order.
+        return sorted(
+            students,
+            key=lambda s: StudentTableModel.text(s, column).casefold(),
+            reverse=order == Qt.SortOrder.DescendingOrder,
+        )
 
     def _select(self, student_id: int | None) -> None:
         row = self.model.row_of(student_id) if student_id is not None else None
