@@ -166,7 +166,12 @@ def test_subject_with_grades_cannot_be_deleted(roster: RosterService, class_id: 
     maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
     art = roster.save_subject(Subject(class_id=class_id, name="Art")).id
     conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (maths,))
-    with pytest.raises(RosterError):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    conn.execute(
+        "INSERT INTO attendance (student_id, subject_id, date, status) VALUES (?, ?, '2026-09-01', 'late')",
+        (ada.id, maths),
+    )
+    with pytest.raises(RosterError, match="it has 1 attendance mark and 1 grade category recorded"):
         roster.delete_subject(maths)
     roster.delete_subject(art)
     assert [s.name for s in roster.list_subjects(class_id)] == ["Maths"]

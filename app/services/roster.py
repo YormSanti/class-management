@@ -350,9 +350,8 @@ class RosterService:
         try:
             self.subjects.delete(subject_id)
         except sqlite3.IntegrityError:
-            raise RosterError(
-                "This subject has grades or attendance and can't be deleted."
-            ) from None
+            what = describe_records(self.subjects.recorded(subject_id)) or "grades or attendance"
+            raise RosterError(f"This subject can't be deleted: it has {what} recorded.") from None
 
     # --- students --------------------------------------------------------
 
