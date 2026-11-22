@@ -21,6 +21,7 @@ RECENT_ASSIGNMENTS = 5
 ATTENTION_WINDOW_DAYS = 30
 ABSENCE_LIMIT = 3
 LATE_LIMIT = 3
+NAMED_ABSENT = 5  # absent students named in "Today's register is done"
 STREAK_LIMIT = 2  # absent in this many daily registers in a row
 MISSING_LIMIT = 2
 LOW_AVERAGE = 60.0
@@ -63,6 +64,7 @@ class DashboardSummary:
     grade_distribution: dict[str, int] = field(default_factory=dict)
     subjects: list[SubjectSummary] = field(default_factory=list)
     today_counts: dict[str, int] = field(default_factory=dict)  # today's daily register, status -> students
+    absent_today: list[str] = field(default_factory=list)  # names, in the daily register
 
 
 def letter_grade(percent: float) -> str:
@@ -106,9 +108,11 @@ def overall_averages(by_subject: dict[tuple[int, int], float]) -> dict[int, floa
     return {sid: sum(values) / len(values) for sid, values in per_student.items()}
 
 
-def today_register(today: date, counts: dict[str, int], active: int) -> tuple[str, str] | None:
+def today_register(
+    today: date, counts: dict[str, int], active: int, absent: list[str] | None = None
+) -> tuple[str, str] | None:
     """(text, tone) about today's daily register, tone "warn" or "accent"; None on
-    weekends or without students."""
+    weekends or without students. A done register names the absent students, when few."""
     if today.weekday() >= 5 or not active:
         return None
     marked = sum(counts.values())
@@ -116,7 +120,13 @@ def today_register(today: date, counts: dict[str, int], active: int) -> tuple[st
         return "Today's register hasn't been taken yet.", "warn"
     if marked < active:
         return f"Today's register: {marked} of {active} students marked.", "warn"
-    parts = [f"{counts[s]} {s}" for s in (PRESENT, LATE, ABSENT, EXCUSED) if counts.get(s)]
+    parts = []
+    for status in (PRESENT, LATE, ABSENT, EXCUSED):
+        if counts.get(status):
+            part = f"{counts[status]} {status}"
+            if status == ABSENT and absent and len(absent) <= NAMED_ABSENT:
+                part += f" ({', '.join(absent)})"
+            parts.append(part)
     return "Today's register is done: " + " · ".join(parts) + ".", "accent"
 
 
@@ -210,7 +220,12 @@ class DashboardService:
             grade_distribution=distribution,
             subjects=subject_summaries,
             today_counts=by_date.get(today, {}),
+            absent_today=self._absent_on(class_id, today),
         )
+
+    def _absent_on(self, class_id: int, day: date) -> list[str]:
+        marks = self.dashboard.daily_marks(class_id, day, day)
+        return [s.full_name for s in self.students.list_for_class(class_id) if marks.get(s.id, {}).get(day) == ABSENT]
 
     def _needs_attention(
         self,

@@ -274,6 +274,19 @@ def test_today_register_status():
     assert today_register(friday, {"present": 23, "absent": 1, "late": 1}, 25) == (
         "Today's register is done: 23 present · 1 late · 1 absent.", "accent",
     )
+    assert today_register(friday, {"present": 23, "absent": 2}, 25, ["Ada Lovelace", "Kim Lee"])[0] == (
+        "Today's register is done: 23 present · 2 absent (Ada Lovelace, Kim Lee)."
+    )
+    many = [f"S{n}" for n in range(6)]
+    assert today_register(friday, {"present": 19, "absent": 6}, 25, many)[0].endswith("6 absent.")
+
+
+def test_summary_names_who_is_absent_today(service, roster, conn, class_id):
+    ada = _student(roster, class_id, "Ada", "Lovelace")
+    kim = _student(roster, class_id, "Kim", "Adams")
+    _mark(conn, ada, TODAY, "absent")
+    _mark(conn, kim, TODAY - timedelta(days=1), "absent")
+    assert service.summary(class_id, TODAY).absent_today == ["Ada Lovelace"]
 
 
 def test_summary_has_todays_daily_register(service, roster, conn, class_id, maths):
