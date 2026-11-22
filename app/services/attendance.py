@@ -232,6 +232,14 @@ class StudentHistory:
         """The days the student was absent, late or excused."""
         return [r for r in self.records if r.status is not AttendanceStatus.PRESENT]
 
+    def by_month(self) -> list[tuple[date, dict[str, int]]]:
+        """(first day of the month, {status: days}) for each month with marks, newest first."""
+        months: dict[date, dict[str, int]] = {}
+        for record in self.records:
+            counts = months.setdefault(record.date.replace(day=1), {s.value: 0 for s in AttendanceStatus})
+            counts[record.status.value] += 1
+        return sorted(months.items(), reverse=True)
+
     def absence_runs(self) -> tuple[int, int]:
         """(current, longest): marks in a row that are absences, the current run ending
         with the newest mark."""

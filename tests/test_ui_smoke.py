@@ -2160,3 +2160,22 @@ def test_attendance_history_dialog_shows_absence_runs(qapp: QApplication):
     assert dialog.runs_label.text() == "Absent the last 2 marked days in a row · longest run of absences: 3 days"
     dialog = AttendanceHistoryDialog(StudentHistory(student, records[2:3]), "Daily (homeroom)")
     assert dialog.runs_label.isHidden()
+
+
+def test_attendance_history_dialog_by_month(qapp: QApplication):
+    from datetime import date
+
+    from app.models import AttendanceRecord, AttendanceStatus
+    from app.services.attendance import StudentHistory
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    student = Student(class_id=1, first_name="Ada", last_name="Lovelace", id=1)
+    A, P, L = AttendanceStatus.ABSENT, AttendanceStatus.PRESENT, AttendanceStatus.LATE
+    records = [AttendanceRecord(1, date(2026, 11, 3), A), AttendanceRecord(1, date(2026, 11, 2), P),
+               AttendanceRecord(1, date(2026, 10, 30), L)]  # fmt: skip
+    dialog = AttendanceHistoryDialog(StudentHistory(student, records), "Daily (homeroom)")
+    table = dialog.months_table
+    rows = [[table.item(r, c).text() for c in range(6)] for r in range(table.rowCount())]
+    assert rows == [["November 2026", "1", "0", "1", "0", "50%"], ["October 2026", "0", "1", "0", "0", "100%"]]
+    empty = AttendanceHistoryDialog(StudentHistory(student, []), "Daily (homeroom)")
+    assert not empty.tabs.isTabEnabled(1)

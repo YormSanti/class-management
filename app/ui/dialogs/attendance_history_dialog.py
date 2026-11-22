@@ -10,15 +10,20 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from app.models import AttendanceStatus
 from app.services.attendance import StudentHistory
+from app.services.dashboard import attendance_rate
 from app.services.export import write_student_history_csv
 from app.ui import style
 from app.ui.files import ask_save_path
+
+
+STATUS_ORDER = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 
 
 class AttendanceHistoryDialog(QDialog):
@@ -89,11 +94,30 @@ class AttendanceHistoryDialog(QDialog):
         layout.addWidget(subtitle)
         layout.addWidget(self.totals_label)
         layout.addWidget(self.runs_label)
+        days_page = QWidget()
+        days_layout = QVBoxLayout(days_page)
+        days_layout.setContentsMargins(0, 8, 0, 0)
+        days_layout.addWidget(self.list_caption)
+        days_layout.addWidget(self.table, stretch=1)
+        days_layout.addWidget(self.empty_label, stretch=1)
+        days_layout.addWidget(self.show_all)
+
+        self.months_table = QTableWidget(0, 6)
+        self.months_table.setHorizontalHeaderLabels(["Month", "Present", "Late", "Absent", "Excused", "Rate"])
+        self.months_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.months_table.verticalHeader().setVisible(False)
+        self.months_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.months_table.horizontalHeader().setStretchLastSection(True)
+        self._fill_months()
+
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(days_page, "&Days")
+        self.tabs.addTab(self.months_table, "By &month")
+        self.tabs.setTabEnabled(1, marked > 0)
+
         layout.addSpacing(4)
-        layout.addWidget(self.list_caption)
-        layout.addWidget(self.table, stretch=1)
-        layout.addWidget(self.empty_label, stretch=1)
-        layout.addWidget(self.show_all)
+        layout.addWidget(self.tabs, stretch=1)
         layout.addWidget(buttons)
         self._fill()
 
@@ -115,6 +139,20 @@ class AttendanceHistoryDialog(QDialog):
         self.empty_label.setText("Present every marked day." if marked else "No marks yet in this register.")
         self.table.setVisible(bool(records))
         self.empty_label.setVisible(not records)
+
+    def _fill_months(self) -> None:
+        """Each month's totals and rate, newest first, to see a change over the year."""
+        months = self._history.by_month()
+        self.months_table.setRowCount(len(months))
+        for i, (first, counts) in enumerate(months):
+            rate = attendance_rate(counts)
+            values = [f"{first:%B %Y}"] + [str(counts[s.value]) for s in STATUS_ORDER]
+            values.append("—" if rate is None else f"{rate:.0f}%")
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.months_table.setItem(i, col, item)
 
     def export_csv(self) -> None:
         """Save every marked day of the student in this register as CSV."""
