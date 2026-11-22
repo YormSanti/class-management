@@ -48,6 +48,14 @@ def test_duplicate_student_number_in_same_class_is_rejected(roster: RosterServic
         _add(roster, class_id, "Alan", "Turing", no="001")
 
 
+def test_student_numbers_differing_only_in_case_are_the_same(roster: RosterService, class_id: int):
+    _add(roster, class_id, "Ada", "Lovelace", no="S007")
+    with pytest.raises(RosterError, match="already used by Ada Lovelace"):
+        _add(roster, class_id, "Alan", "Turing", no="s007")
+    _add(roster, class_id, "Grace", "Hopper", no="s008")
+    assert roster.suggest_student_no(class_id) == "s009"
+
+
 def test_same_student_number_allowed_in_other_class(roster: RosterService, class_id: int):
     other = roster.save_class(SchoolClass(name="8A")).id
     _add(roster, class_id, "Ada", "Lovelace", no="001")

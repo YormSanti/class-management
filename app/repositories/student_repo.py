@@ -93,8 +93,9 @@ class StudentRepository:
         return _from_row(row) if row else None
 
     def find_by_student_no(self, class_id: int, student_no: str) -> Student | None:
+        """Ignoring case, so "s007" and "S007" count as the same number."""
         row = self.conn.execute(
-            "SELECT * FROM students WHERE class_id = ? AND student_no = ?",
+            "SELECT * FROM students WHERE class_id = ? AND student_no = ? COLLATE NOCASE",
             (class_id, student_no),
         ).fetchone()
         return _from_row(row) if row else None
