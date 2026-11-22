@@ -109,6 +109,17 @@ def test_attendance_month_html():
     assert "Notes" not in page
 
 
+def test_printed_numbers_column_uses_a_dash_when_the_class_uses_numbers():
+    from app.services.export import _numbers_column
+
+    def students(*numbers):
+        return [Student(class_id=1, first_name="A", last_name=str(i), student_no=no) for i, no in enumerate(numbers)]
+
+    assert _numbers_column(students("S01", None, "S03")) == ["S01", "—", "S03"]  # not "2", a number of its own
+    assert _numbers_column(students(None, None)) == ["1", "2"]
+    assert _numbers_column([]) == []
+
+
 def test_attendance_month_html_lists_the_notes_by_day():
     from app.services.export import attendance_month_html
 

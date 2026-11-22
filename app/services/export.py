@@ -191,6 +191,14 @@ def _absence_details(row: RegisterRow) -> str:
 STATUS_MARK = {"present": "/", "late": "L", "absent": "A", "excused": "E"}
 
 
+def _numbers_column(students: list[Student]) -> list[str]:
+    """The printed No. column: the students' numbers when the class uses them ("—"
+    for one without), otherwise 1, 2, 3... so the rows can still be pointed at."""
+    if any(s.student_no for s in students):
+        return [s.student_no or "—" for s in students]
+    return [str(n) for n in range(1, len(students) + 1)]
+
+
 def attendance_month_html(register: MonthRegister, title: str, printed: date | None = None) -> str:
     """A printable month register: students down the side, days across, totals on the right.
 
@@ -210,9 +218,10 @@ def attendance_month_html(register: MonthRegister, title: str, printed: date | N
     head += [f"<th {day_cell(day)}>{day:%a}<br>{day.day}</th>" for day in days]
     head += [f"<th {cell}>{label}</th>" for label in ("Abs", "Late", "Exc", "%")]
     lines = ["<tr>" + "".join(head) + "</tr>"]
-    for n, row in enumerate(register.rows, start=1):
+    numbers = _numbers_column([row.student for row in register.rows])
+    for number, row in zip(numbers, register.rows):
         counts, rate = row.counts(), row.rate
-        cells = [f"<td {cell}>{html.escape(row.student.student_no or str(n))}</td>"]
+        cells = [f"<td {cell}>{html.escape(number)}</td>"]
         cells.append(f"<td {name_cell}>{html.escape(row.student.last_name)}, {html.escape(row.student.first_name)}</td>")
         for day in days:
             status = row.statuses.get(day)
@@ -250,12 +259,13 @@ def attendance_period_html(summary: PeriodSummary, title: str, printed: date | N
     head = [f"<th {name_cell}>No.</th>", f"<th {name_cell}>Student</th>"] + [f"<th {cell}>{x}</th>" for x in labels]
     lines = ["<tr>" + "".join(head) + "</tr>"]
     totals = {key: 0 for key in ("present", "late", "absent", "excused")}
-    for n, row in enumerate(summary.rows, start=1):
+    numbers = _numbers_column([row.student for row in summary.rows])
+    for number, row in zip(numbers, summary.rows):
         c, rate = row.counts, row.rate
         for key in totals:
             totals[key] += c[key]
         name = f"{row.student.last_name}, {row.student.first_name}"
-        cells = [f"<td {name_cell}>{html.escape(row.student.student_no or str(n))}</td>",
+        cells = [f"<td {name_cell}>{html.escape(number)}</td>",
                  f"<td {name_cell}>{html.escape(name)}</td>"]  # fmt: skip
         cells += [f"<td {cell}>{v}</td>" for v in (c["present"], c["late"], c["absent"], c["excused"], row.unmarked)]
         cells.append(f"<td {cell}>{'—' if rate is None else f'{rate:.0f}%'}</td>")
