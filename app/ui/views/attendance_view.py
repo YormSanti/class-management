@@ -1001,6 +1001,12 @@ class AttendanceView(QWidget):
             value.setText(str(counts[key]))
         rate = self.register.rate
         self.rate_label.setText("—" if rate is None else f"{rate:.0f}%")
+        here = counts["present"] + counts["late"]
+        self.rate_label.setToolTip(
+            "Present or late, out of the students marked present, late or absent. "
+            "Excused and not marked count neither way."
+            + ("" if rate is None else f"\nHere: {here} of {here + counts['absent']}.")
+        )
 
         total, unmarked = len(self.register.rows), counts[UNMARKED]
         if not total:

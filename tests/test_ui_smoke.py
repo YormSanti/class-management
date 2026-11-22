@@ -499,6 +499,7 @@ def test_attendance_mark_rest_and_registers(window: MainWindow, roster: RosterSe
     assert view.status_label.text() == "Marked 1 student present. Everyone is marked."
     assert not view.mark_rest_button.isEnabled()
     assert view.rate_label.text() == "50%"
+    assert view.rate_label.toolTip().endswith("\nHere: 1 of 2.")
 
     assert [view.register_combo.itemText(i) for i in range(view.register_combo.count())] == [
         "Daily (homeroom)",
