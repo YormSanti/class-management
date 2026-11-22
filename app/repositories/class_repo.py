@@ -59,6 +59,12 @@ class ClassRepository:
         rows = self.conn.execute("SELECT DISTINCT term FROM classes WHERE term <> '' ORDER BY term DESC")
         return [r["term"] for r in rows]
 
+    def rename_term(self, old: str, new: str) -> int:
+        """Give every class of school year `old` the year `new`; returns how many changed."""
+        with transaction(self.conn):
+            cur = self.conn.execute("UPDATE classes SET term = ? WHERE term = ?", (new, old))
+        return cur.rowcount
+
     def counts(self) -> dict[int, tuple[int, int]]:
         """{class id: (active students, subjects)} for every class, in one query."""
         rows = self.conn.execute(

@@ -1428,3 +1428,34 @@ def test_subject_dialog_offers_names_from_other_classes(qapp: QApplication, rost
     dialog = SubjectDialog(roster.save_subject, class_id, names=["Maths", "Science"], teachers=["Mr Lee"])
     assert dialog.name.completer().model().rowCount() == 2
     assert dialog.teacher.completer().model().rowCount() == 1
+
+
+def test_manage_classes_renames_the_school_year_shown(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QInputDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-207")).id
+    roster.save_class(SchoolClass(name="8C", term="2026-207"))
+    window.select_class(class_id)
+    view = window.classes_view
+    asked: list[str] = []
+
+    def answer(_parent, _title, label, *args, text=""):
+        asked.append(label + " | " + text)
+        return "2026-2027", True
+
+    monkeypatch.setattr(QInputDialog, "getText", answer)
+    assert view.rename_year_button.isEnabled()
+    view.rename_year_button.click()
+    assert asked == ["New school year for the 2 classes of 2026-207: | 2026-207"]
+    assert roster.list_terms() == ["2026-2027"]
+    assert window.windowTitle() == "Classroom Manager — 7B (2026-2027)"
+
+    # A year picked in the list is the one renamed.
+    view.year_combo.setCurrentIndex(view.year_combo.findData("2026-2027"))
+    view._on_year_picked(view.year_combo.currentIndex())
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("2027", True))
+    view.rename_year_button.click()
+    assert roster.list_terms() == ["2027"]
+    assert view.year_combo.currentText() == "2027"

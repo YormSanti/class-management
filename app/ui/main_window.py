@@ -7,6 +7,7 @@ from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QInputDialog,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -88,6 +89,7 @@ class MainWindow(QMainWindow):
         self.classes_view.subject_selected.connect(self.select_subject)
         self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))
         self.classes_view.new_year_requested.connect(self.start_new_year)
+        self.classes_view.rename_year_requested.connect(self.rename_year)
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
         self.classes_view.new_subject_requested.connect(self.new_subject)
@@ -332,6 +334,23 @@ class MainWindow(QMainWindow):
         dialog = NewYearDialog(self.roster, from_term, parent=self)
         if dialog.exec() and dialog.created:
             self.select_class(dialog.created[0].id)
+
+    def rename_year(self, term: str) -> None:
+        """Ask for a new name for school year `term` and give it to every class in it."""
+        count = len(self.roster.list_classes(term))
+        what = f"the {count} class{'' if count == 1 else 'es'} of {term}" if term else "the classes without a school year"
+        new, ok = QInputDialog.getText(self, "Rename school year", f"New school year for {what}:", text=term)
+        if not ok:
+            return
+        try:
+            changed = self.roster.rename_term(term, new)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Rename school year", str(exc))
+            return
+        if changed:
+            if self.classes_view.year == term:
+                self.classes_view.year = " ".join(new.split())  # keep showing the renamed year
+            self.select_class(self.class_id)
 
     def edit_class(self) -> None:
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None

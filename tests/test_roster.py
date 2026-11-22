@@ -442,3 +442,32 @@ def test_fix_name_case(typed: str, expected: str):
     from app.services.roster import fix_name_case
 
     assert fix_name_case(typed) == expected
+
+
+def test_rename_term_changes_every_class_of_the_year(roster: RosterService):
+    a = roster.save_class(SchoolClass(name="7B", term="2026-207")).id
+    b = roster.save_class(SchoolClass(name="8C", term="2026-207")).id
+    other = roster.save_class(SchoolClass(name="7B", term="2025-2026")).id
+
+    assert roster.rename_term("2026-207", "  2026-2027 ") == 2
+    assert {roster.get_class(i).term for i in (a, b)} == {"2026-2027"}
+    assert roster.get_class(other).term == "2025-2026"
+    assert roster.list_terms() == ["2026-2027", "2025-2026"]
+    assert roster.rename_term("2026-2027", "2026-2027") == 0
+
+
+def test_rename_term_gives_classes_without_a_year_one(roster: RosterService):
+    a = roster.save_class(SchoolClass(name="7B")).id
+    assert roster.rename_term("", "2026-2027") == 1
+    assert roster.get_class(a).term == "2026-2027"
+
+
+def test_rename_term_refuses_a_clash_and_changes_nothing(roster: RosterService):
+    roster.save_class(SchoolClass(name="7B", term="2025-2026"))
+    keep = roster.save_class(SchoolClass(name="8C", term="2026"))
+    roster.save_class(SchoolClass(name="7b", term="2026"))
+    with pytest.raises(RosterError, match="already a class called 7B in 2025-2026"):
+        roster.rename_term("2026", "2025-2026")
+    assert roster.get_class(keep.id).term == "2026"
+    with pytest.raises(RosterError, match="Enter the school year"):
+        roster.rename_term("2026", "  ")

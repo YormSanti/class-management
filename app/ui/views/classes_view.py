@@ -57,6 +57,7 @@ class ClassesView(QWidget):
     subject_selected = Signal(int)
     new_class_requested = Signal(str)  # school year to suggest for the new class
     new_year_requested = Signal(str)  # school year to copy classes from
+    rename_year_requested = Signal(str)  # school year to rename ("" = classes without one)
     edit_class_requested = Signal()
     delete_class_requested = Signal()
     new_subject_requested = Signal()
@@ -83,6 +84,10 @@ class ClassesView(QWidget):
         self.new_year_button.clicked.connect(
             lambda: self.new_year_requested.emit("" if self.year == ALL_YEARS else self.year or "")
         )
+        self.rename_year_button = QPushButton("Rename year…")
+        self.rename_year_button.setToolTip("Change the school year of every class in it, e.g. to fix a typo")
+        self.rename_year_button.clicked.connect(self._rename_year)
+        year_row.addWidget(self.rename_year_button)
         year_row.addWidget(self.new_year_button)
 
         # --- classes ---
@@ -197,6 +202,7 @@ class ClassesView(QWidget):
             self.year_combo.setCurrentIndex(max(0, self.year_combo.findData(self.year)))
 
         self.new_year_button.setEnabled(bool(classes))
+        self.rename_year_button.setEnabled(self._year_to_rename() is not None)
         shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
         self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
         counts = self.roster.class_counts()
@@ -245,6 +251,17 @@ class ClassesView(QWidget):
         has_subject = self.subject_id is not None and bool(subjects)
         self.edit_subject_button.setEnabled(has_subject)
         self.delete_subject_button.setEnabled(has_subject)
+
+    def _year_to_rename(self) -> str | None:
+        """The school year shown, or the current class's while all years are shown."""
+        if self.year != ALL_YEARS:
+            return self.year if self.roster.list_classes(self.year or "") else None
+        current = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        return current.term if current is not None else None
+
+    def _rename_year(self) -> None:
+        if (year := self._year_to_rename()) is not None:
+            self.rename_year_requested.emit(year)
 
     def _selected_id(self, table: QTableWidget) -> int | None:
         rows = table.selectionModel().selectedRows()

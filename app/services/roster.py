@@ -242,6 +242,24 @@ class RosterService:
                 created.append(new_class)
         return created
 
+    def rename_term(self, old: str, new: str) -> int:
+        """Change the school year of every class in `old` to `new`, e.g. to fix a typo
+        ("2026-207"), or give the classes without a school year (`old` "") one.
+        Returns how many classes changed. All or nothing: a class name already used
+        in `new` stops the whole rename."""
+        new = _clean(new)
+        if not new:
+            raise RosterError("Enter the school year, e.g. 2026-2027.")
+        if new == old:
+            return 0
+        classes = self.list_classes(old)
+        if not classes:
+            raise RosterError("There are no classes in that school year any more.")
+        with transaction(self.classes.conn):
+            for school_class in classes:
+                self._check_name_free(school_class.name, new, school_class.id)
+            return self.classes.rename_term(old, new)
+
     def _check_name_free(self, name: str, term: str, class_id: int | None) -> None:
         existing = self.classes.find_by_name(name, term)
         if existing and existing.id != class_id:
