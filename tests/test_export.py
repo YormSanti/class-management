@@ -216,3 +216,20 @@ def test_ordinal():
     assert [_ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111)] == [
         "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st", "111th"
     ]
+
+
+def test_history_text_lists_the_days_not_present_oldest_first():
+    from app.models import AttendanceRecord
+    from app.services.attendance import StudentHistory
+    from app.services.export import history_text
+
+    student = Student(class_id=1, first_name="Ada", last_name="Lovelace")
+    records = [AttendanceRecord(1, date(2026, 11, 4), AttendanceStatus.LATE),
+               AttendanceRecord(1, date(2026, 11, 3), AttendanceStatus.ABSENT, "Flu"),
+               AttendanceRecord(1, date(2026, 11, 2), AttendanceStatus.PRESENT)]  # fmt: skip
+    assert history_text(StudentHistory(student, records), "Daily (homeroom)") == (
+        "Ada Lovelace · Daily (homeroom)\n"
+        "1 present · 1 late · 1 absent · 0 excused · attendance 67%\n"
+        "Tue 3 Nov 2026: Absent (Flu)\n"
+        "Wed 4 Nov 2026: Late\n"
+    )

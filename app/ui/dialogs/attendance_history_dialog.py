@@ -3,6 +3,7 @@ from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
 from app.models import AttendanceStatus
 from app.services.attendance import StudentHistory
 from app.services.dashboard import attendance_rate
-from app.services.export import write_student_history_csv
+from app.services.export import history_text, write_student_history_csv
 from app.ui import style
 from app.ui.files import ask_save_path
 
@@ -87,6 +88,11 @@ class AttendanceHistoryDialog(QDialog):
         self.export_button.setAutoDefault(False)
         self.export_button.setEnabled(bool(marked))
         self.export_button.clicked.connect(self.export_csv)
+        self.copy_button = buttons.addButton("Copy", QDialogButtonBox.ButtonRole.ActionRole)
+        self.copy_button.setToolTip("Copy the totals and the days not present, e.g. for a message to parents")
+        self.copy_button.setAutoDefault(False)
+        self.copy_button.setEnabled(bool(marked))
+        self.copy_button.clicked.connect(self.copy_text)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -153,6 +159,9 @@ class AttendanceHistoryDialog(QDialog):
                 if col:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.months_table.setItem(i, col, item)
+
+    def copy_text(self) -> None:
+        QApplication.clipboard().setText(history_text(self._history, self._register_name))
 
     def export_csv(self) -> None:
         """Save every marked day of the student in this register as CSV."""

@@ -129,6 +129,24 @@ def write_student_history_csv(path: Path, history: StudentHistory) -> None:
     _write_csv(path, rows)
 
 
+def history_text(history: StudentHistory, register_name: str) -> str:
+    """The days a student wasn't present, oldest first, as text for a message, e.g.
+
+    Ada Lovelace · Daily (homeroom)
+    18 present · 1 late · 2 absent · 0 excused · attendance 90%
+    Tue 3 Nov 2026: Absent (Flu)
+    """
+    counts, rate = history.counts(), history.rate
+    totals = " · ".join(f"{counts[s]} {s}" for s in ("present", "late", "absent", "excused"))
+    totals += "" if rate is None else f" · attendance {rate:.0f}%"
+    lines = [f"{history.student.full_name} · {register_name}", totals]
+    for record in sorted(history.not_present, key=lambda r: r.date):
+        day = record.date
+        note = f" ({record.note})" if record.note else ""
+        lines.append(f"{day:%a} {day.day} {day:%b %Y}: {record.status.value.capitalize()}{note}")
+    return "\n".join(lines) + "\n"
+
+
 def absence_report(register: DayRegister, title: str) -> str:
     """The day's register as short text for the school office, e.g.
 
