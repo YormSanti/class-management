@@ -114,6 +114,7 @@ def attendance_month_html(register: MonthRegister, title: str) -> str:
     """A printable month register: students down the side, days across, totals on the right.
 
     Present is "/", late "L", absent "A", excused "E"; a blank cell is not marked.
+    The notes written that month follow the table, since a cell has no room for them.
     """
     days = register.days
     cell = 'style="border: 1px solid #999; padding: 2px 3px; text-align: center;"'
@@ -147,5 +148,23 @@ def attendance_month_html(register: MonthRegister, title: str) -> str:
         f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
         f'<p style="color: #555;">{summary}. Present /, late L, absent A, excused E; blank = not marked.</p>'
         '<table width="100%" style="border-collapse: collapse;" cellspacing="0">' + "".join(lines) + "</table>"
-        "</body></html>"
+        + _notes_html(register)
+        + "</body></html>"
     )
+
+
+def _notes_html(register: MonthRegister) -> str:
+    """The month's notes, by day and then in register order; "" when there are none."""
+    notes = sorted(
+        ((day, n, row, note) for n, row in enumerate(register.rows) for day, note in row.notes.items()),
+        key=lambda item: (item[0], item[1]),
+    )
+    if not notes:
+        return ""
+    items = []
+    for day, _n, row, note in notes:
+        status = row.statuses.get(day)
+        mark = f" ({STATUS_MARK[status.value]})" if status else ""
+        name = f"{row.student.last_name}, {row.student.first_name}"
+        items.append(f"<li>{day:%a} {day.day}: {html.escape(name)}{mark}: {html.escape(note)}</li>")
+    return '<h3 style="margin-bottom: 2px;">Notes</h3><ul style="margin-top: 2px;">' + "".join(items) + "</ul>"

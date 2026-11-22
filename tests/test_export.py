@@ -100,6 +100,26 @@ def test_attendance_month_html():
     assert "O&lt;Brien, Chloé" in page  # names are escaped
     assert "Thu<br>1" in page and "Fri<br>2" in page
     assert "1 student · 2 days recorded · attendance 50%" in page
+    assert "Notes" not in page
+
+
+def test_attendance_month_html_lists_the_notes_by_day():
+    from app.services.export import attendance_month_html
+
+    days = [date(2026, 10, 1), date(2026, 10, 2)]
+    register = MonthRegister(
+        class_id=1, year=2026, month=10, subject_id=None, days=days,
+        rows=[
+            MonthRow(Student(class_id=1, first_name="Chloé", last_name="Dubois"),
+                     {days[0]: AttendanceStatus.LATE, days[1]: AttendanceStatus.ABSENT},
+                     {days[1]: "Flu <fever>"}),
+            MonthRow(Student(class_id=1, first_name="Ada", last_name="Lovelace"),
+                     {days[0]: AttendanceStatus.EXCUSED}, {days[0]: "Dentist"}),
+        ],
+    )  # fmt: skip
+    page = attendance_month_html(register, "7B · October 2026")
+    notes = page[page.index("<h3"):]
+    assert notes.index("Thu 1: Lovelace, Ada (E): Dentist") < notes.index("Fri 2: Dubois, Chloé (A): Flu &lt;fever&gt;")
 
 
 def test_roster_tsv_has_a_heading_and_one_line_per_student():
