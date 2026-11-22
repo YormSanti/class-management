@@ -1639,6 +1639,7 @@ def test_attendance_copies_the_days_absences(
     view.copy_button.click()
     assert qapp.clipboard().text() == (
         "7B · Daily (homeroom) · Monday 2 November 2026\nAbsent (1): Ada Lovelace\nNot marked (1): Alan Turing\n"
+        "In class: 0 of 2.\n"
     )
     assert view.status_label.text().startswith("Copied")
 

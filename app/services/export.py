@@ -122,6 +122,7 @@ def absence_report(register: DayRegister, title: str) -> str:
     7B · Daily (homeroom) · Monday 2 November 2026
     Absent (2): Ada Lovelace (Flu, 3rd day), Alan Turing
     Late (1): Grace Hopper
+    In class: 22 of 24.
 
     An absence that runs on from earlier registers says which day of it this is.
     Students not marked yet are named last, since they don't count as present.
@@ -137,6 +138,9 @@ def absence_report(register: DayRegister, title: str) -> str:
             lines.append(f"{label} ({len(rows)}): " + ", ".join(names))
     if len(lines) == 1:
         lines.append(f"Everyone present ({len(register.rows)})." if register.rows else "No students.")
+    else:  # the office's headcount
+        here = sum(1 for r in register.rows if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE))
+        lines.append(f"In class: {here} of {len(register.rows)}.")  # late students are here too
     return "\n".join(lines) + "\n"
 
 

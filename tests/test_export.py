@@ -196,6 +196,7 @@ def test_absence_report_names_who_is_not_present():
         "Absent (2): Ada Doe (Flu), Kim Doe\n"
         "Late (1): Grace Doe\n"
         "Not marked (1): Lin Doe\n"
+        "In class: 2 of 5.\n"
     )
     rows[0].absent_streak, rows[3].absent_streak = 3, 2
     assert "Absent (2): Ada Doe (Flu, 3rd day), Kim Doe (2nd day)\n" in absence_report(register, "7B")
