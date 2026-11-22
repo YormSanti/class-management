@@ -967,11 +967,17 @@ class AttendanceView(QWidget):
     def clear_day(self) -> None:
         if self.class_id is None:
             return
+        rows = self.register.rows if self.register else []
+        marks = sum(1 for row in rows if row.status is not None)
+        notes = sum(1 for row in rows if row.note)
+        what = f"{marks} mark{'' if marks == 1 else 's'}"
+        if notes:
+            what += f" and {notes} note{'' if notes == 1 else 's'}"
         answer = QMessageBox.question(
             self,
             "Clear the day",
-            f"Remove every mark and note for {self.day:%A} {self.day.day} {self.day:%B} "
-            f"in the {self.register_combo.currentText()} register?",
+            f"Remove {what} for {self.day:%A} {self.day.day} {self.day:%B} "
+            f"in the {self.register_combo.currentText()} register? Undo can bring them back.",
         )
         if answer == QMessageBox.StandardButton.Yes:
             self._remember("clear the day")

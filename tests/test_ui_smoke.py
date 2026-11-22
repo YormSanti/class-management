@@ -1782,3 +1782,21 @@ def test_attendance_find_shows_matching_students(window: MainWindow, roster: Ros
     view.find_edit.setFocus()
     QTest.keyClick(view.find_edit, Qt.Key.Key_Escape)
     assert view.find_edit.text() == "" and len(view._visible_rows()) == 4
+
+
+def test_attendance_clear_the_day_says_what_goes(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    note = view._row_widgets[0][1]
+    note.setText("Flu")
+    note.editingFinished.emit()
+    view.mark_rest_button.click()
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda _p, _t, text: asked.append(text) or QMessageBox.StandardButton.No)
+    view.clear_day()
+    assert asked[0].startswith("Remove 2 marks and 1 note for Friday 6 November in the Daily (homeroom) register?")
+    assert _statuses(view) == ["absent", "present"]
