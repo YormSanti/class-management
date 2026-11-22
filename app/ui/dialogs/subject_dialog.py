@@ -1,7 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -15,7 +17,10 @@ from app.services.roster import RosterError
 
 
 class SubjectDialog(QDialog):
-    """Add a subject to `class_id`, or edit `subject`. `save` persists it and may raise RosterError."""
+    """Add a subject to `class_id`, or edit `subject`. `save` persists it and may raise RosterError.
+
+    `names` and `teachers` already used in other classes are offered while typing.
+    """
 
     def __init__(
         self,
@@ -23,6 +28,9 @@ class SubjectDialog(QDialog):
         class_id: int,
         subject: Subject | None = None,
         parent: QWidget | None = None,
+        *,
+        names: Sequence[str] = (),
+        teachers: Sequence[str] = (),
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit subject" if subject else "New subject")
@@ -36,6 +44,10 @@ class SubjectDialog(QDialog):
         self.name.setPlaceholderText("e.g. Science")
         self.teacher = QLineEdit(subject.teacher if subject else "")
         self.teacher.setPlaceholderText("Leave empty if you teach it")
+        for field, words in ((self.name, names), (self.teacher, teachers)):
+            completer = QCompleter(list(words), field)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            field.setCompleter(completer)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel

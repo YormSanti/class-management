@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from app.config import AppConfig  # noqa: E402
 from app.models import SchoolClass, Student, Subject  # noqa: E402
@@ -208,7 +208,7 @@ def test_roster_count_mentions_hidden_inactive_students(window: MainWindow, rost
     assert roster_view.count_label.text() == "1 student matches your search"
     roster_view.search.clear()
     roster_view.show_inactive.setChecked(True)
-    assert roster_view.count_label.text() == "2 students"
+    assert roster_view.count_label.text() == "2 students · 1 inactive"
 
 
 def test_ctrl_number_switches_page(window: MainWindow):
@@ -535,6 +535,11 @@ def test_attendance_history_dialog(window: MainWindow, roster: RosterService, mo
     assert dialog.totals_label.text() == "1 present · 1 absent · 0 late · 0 excused · attendance 50%"
     assert dialog.table.rowCount() == 1 and dialog.table.item(0, 1).text() == "Absent"
     assert view.day == date(2026, 11, 6)  # the day picked in the dialog opened
+    dialog.show_all.setChecked(True)
+    assert [dialog.table.item(i, 1).text() for i in range(2)] == ["Absent", "Present"]  # newest first
+    assert dialog.list_caption.text() == "EVERY MARKED DAY"
+    dialog.table.cellDoubleClicked.emit(1, 0)
+    assert dialog.chosen_day == date(2026, 11, 5)
 
 
 def test_attendance_warns_about_future_and_weekend_days(window: MainWindow, roster: RosterService):
@@ -749,6 +754,7 @@ def test_settings_page_restores_a_backup(
         assert [c.name for c in roster.list_classes()] == ["7B"]
         assert window.class_id == seventh  # 8C is gone, so the window falls back to 7B
         assert view.backup_table.rowCount() == 2  # the data from before the restore was kept
+        assert view.backup_table.item(0, 0).text().endswith(" · from just before a restore")
         assert infos and infos[0].startswith("Your data is back as it was")
     finally:
         window.close()
@@ -861,11 +867,524 @@ def test_dashboard_says_whether_todays_register_is_taken(window: MainWindow, ros
     view = _attendance_page(window, roster)  # on Friday 6 November 2026
     dashboard = window.dashboard_view
     dashboard.refresh()
-    assert dashboard.today_label.text() == "Today's register hasn't been taken yet."
+    link = ' <a href="take">Take attendance now</a>'
+    assert dashboard.today_label.text() == "Today's register hasn't been taken yet." + link
     view._row_widgets[0][0].buttons[AttendanceStatus.LATE].click()
     dashboard.refresh()
-    assert dashboard.today_label.text() == "Today's register: 1 of 2 students marked."
+    assert dashboard.today_label.text() == "Today's register: 1 of 2 students marked." + link
     view.mark_rest_button.click()
     dashboard.refresh()
     assert dashboard.today_label.text() == "Today's register is done: 1 present · 1 late."
     assert not dashboard.today_label.isHidden()
+
+
+def test_paste_dialog_points_out_names_listed_twice(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Ada Lovelace\nAlan Turing\nada lovelace\n")
+    assert "Listed twice: Ada Lovelace." in dialog.summary.text()
+
+
+def test_roster_deletes_a_student_without_records(
+    window: MainWindow, roster: RosterService, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    alan = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'absent')", (alan.id,))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view._select(alan.id)
+    assert not view.delete_button.isEnabled()
+    view._select(ada.id)
+    assert view.delete_button.isEnabled()
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    view.delete_selected()
+    assert [s.full_name for s in roster.list_students(class_id)] == ["Alan Turing"]
+    assert window.classes_view.tabs.tabText(0) == "Students (1)"
+
+
+def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view.search.setText("zzz")
+    assert view.model.rowCount() == 0
+    QTest.keyClick(view.search, Qt.Key.Key_Escape)
+    assert view.search.text() == ""
+    assert view.model.rowCount() == 1
+
+
+def test_roster_copies_the_students_shown(window: MainWindow, roster: RosterService, qapp: QApplication):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    view.search.setText("turing")
+    view.copy_list()
+    assert qapp.clipboard().text().splitlines()[1:] == ["\tTuring\tAlan\tActive\t"]
+
+
+def test_ask_save_path_suggests_a_safe_name_and_adds_the_suffix(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from app.ui.files import ask_save_path, safe_filename
+
+    assert safe_filename('7B (2026/27): "Maths"') == "7B (2026-27)- -Maths-"
+    asked: list[str] = []
+
+    def pick(_parent, _title, start, _filter):
+        asked.append(start)
+        return str(tmp_path / "chosen"), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
+    assert ask_save_path(None, "Export", "7B/7C list", "CSV files", ".csv", tmp_path) == tmp_path / "chosen.csv"
+    assert asked == [str(tmp_path / "7B-7C list.csv")]
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: ("", ""))
+    assert ask_save_path(None, "Export", "list", "CSV files", ".csv") is None
+
+
+def test_exports_open_in_the_folder_used_last(qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from app.ui import files
+
+    monkeypatch.setattr(files, "_last_folder", None)
+    asked: list[str] = []
+
+    def pick(_parent, _title, start, _filter):
+        asked.append(start)
+        return str(tmp_path / "reports" / "october.csv"), ""
+
+    (tmp_path / "reports").mkdir()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
+    files.ask_save_path(None, "Export", "october", "CSV files", ".csv")
+    files.ask_save_path(None, "Save PDF", "november", "PDF files", ".pdf")
+    assert asked == [str(Path.home() / "october.csv"), str(tmp_path / "reports" / "november.pdf")]
+
+
+def test_back_up_now_remembers_the_folder(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QFileDialog
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    asked: list[str] = []
+
+    def pick(_parent, _title, start, _filter):
+        asked.append(start)
+        return str(usb / "copy"), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.back_up_now()
+    first.close()
+    assert (usb / "copy.db").exists()
+    assert Path(asked[0]).parent == Path.home()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second.back_up_now()
+    second.close()
+    assert Path(asked[1]).parent == usb
+
+
+def test_attendance_month_tooltip_shows_the_note(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)  # Friday 6 November 2026
+    view._row_widgets[0][0].buttons[AttendanceStatus.EXCUSED].click()
+    view._row_widgets[0][1].setText("Dentist")
+    view._save_note(0)
+    view.refresh()
+    month = view.month_view
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    assert month.table.item(0, friday).toolTip() == "Grace Hopper, Fri 6 Nov: Excused\nNote: Dentist"
+    assert month.table.item(1, friday).toolTip() == "Ada Lovelace, Fri 6 Nov: Not marked"
+
+
+def test_attendance_note_fields_suggest_earlier_notes(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.EXCUSED].click()
+    view._row_widgets[0][1].setText("Dentist")
+    view._save_note(0)
+    view.refresh()
+    assert view.note_completer.model().stringList() == ["Dentist"]
+    assert view._row_widgets[1][1].completer() is view.note_completer
+
+
+def test_attendance_note_tooltip_shows_the_whole_note(window: MainWindow, roster: RosterService):
+    from app.models import AttendanceStatus
+
+    view = _attendance_page(window, roster)
+    long_note = "Left at 10:30 for a hospital appointment, mother phoned the office beforehand"
+    view._row_widgets[0][0].buttons[AttendanceStatus.EXCUSED].click()
+    view._row_widgets[0][1].setText(long_note)
+    view._save_note(0)
+    view.refresh()
+    assert view._row_widgets[0][1].toolTip() == long_note
+    assert view._row_widgets[1][1].toolTip() == ""
+
+
+def test_attendance_month_exports_are_off_without_students(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster, names=())
+    month = view.month_view
+    assert not month.export_button.isEnabled()
+    assert not month.pdf_button.isEnabled()
+    roster.save_student(Student(class_id=window.class_id, first_name="Ada", last_name="Lovelace"))
+    view.refresh()
+    assert month.export_button.isEnabled() and month.pdf_button.isEnabled()
+
+
+def test_attendance_month_highlights_today(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    month._today = lambda: date(2026, 11, 6)
+    month.refresh()
+    friday = 1 + month.register.days.index(date(2026, 11, 6))
+    header = month.table.horizontalHeaderItem(friday)
+    assert header.font().bold() and "(today)" in header.toolTip()
+    assert not month.table.horizontalHeaderItem(friday - 1).font().bold()
+
+
+def test_attendance_month_this_month_button(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    month._today = lambda: date(2026, 11, 6)
+    month.refresh()
+    assert not month.this_month_button.isEnabled()
+    month.prev_button.click()
+    month.prev_button.click()
+    assert month.month_label.text() == "September 2026" and month.this_month_button.isEnabled()
+    month.this_month_button.click()
+    assert month.month_label.text() == "November 2026"
+
+
+def test_attendance_month_enter_opens_the_day(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    monday = 1 + month.register.days.index(date(2026, 11, 2))
+    month.table.setCurrentCell(0, monday)
+    QTest.keyClick(month.table, Qt.Key.Key_Return)
+    assert view.tabs.currentIndex() == 0 and view.day == date(2026, 11, 2)
+
+
+def test_marking_the_rest_present_on_a_future_day_asks_first(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from datetime import date, timedelta
+
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _attendance_page(window, roster)
+    view.set_day(date.today() + timedelta(days=7))
+    answers = [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes]
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: answers.pop(0))
+    view.mark_rest_present()
+    assert _statuses(view) == [None, None]
+    view.mark_rest_present()
+    assert _statuses(view) == ["present", "present"]
+
+
+def test_period_dialog_presets(qapp: QApplication):
+    from datetime import date
+
+    from app.ui.dialogs.period_dialog import PeriodDialog, preset_periods
+
+    today = date(2026, 3, 10)
+    assert preset_periods(today) == {
+        "This month": (date(2026, 3, 1), date(2026, 3, 31)),
+        "Last month": (date(2026, 2, 1), date(2026, 2, 28)),
+        "Last 30 days": (date(2026, 2, 9), date(2026, 3, 10)),
+    }
+    dialog = PeriodDialog("Export", date(2026, 1, 1), date(2026, 1, 31), today=today)
+    dialog.preset_buttons["Last month"].click()
+    assert (dialog.start, dialog.end) == (date(2026, 2, 1), date(2026, 2, 28))
+
+
+def test_attendance_title_names_the_subject_register(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    assert view.title_label.text() == "Attendance · 7B"
+    view.register_combo.setCurrentIndex(view.register_combo.findText("Maths"))
+    assert view.title_label.text() == "Attendance · 7B · Maths"
+
+
+def test_alt_home_goes_to_today(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    view = _attendance_page(window, roster)
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    QTest.keyClick(view.table, Qt.Key.Key_Home, Qt.KeyboardModifier.AltModifier)
+    assert view.day == date.today()
+
+
+def test_window_lengths_in_labels_follow_the_settings(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.ui.views import attendance_view, dashboard_view
+
+    monkeypatch.setattr(attendance_view, "RECENT_DAYS", 14)
+    monkeypatch.setattr(dashboard_view, "CHART_DAYS", 5)
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
+    try:
+        assert window.attendance_view.table.horizontalHeaderItem(4).text() == "Last 14 days"
+        labels = [w.text() for w in window.dashboard_view.findChildren(QLabel)]
+        assert any(t.startswith("Last 5 days with attendance") for t in labels)
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_clicking_a_dashboard_chart_day_opens_its_register(window: MainWindow, roster: RosterService, conn):
+    from datetime import date, timedelta
+
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    days = [date.today() - timedelta(days=n) for n in (9, 8)]
+    for day in days:
+        conn.execute(
+            "INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'present')", (ada.id, day.isoformat())
+        )
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    chart = window.dashboard_view.chart
+    chart.resize(400, 200)
+    assert [d.day for d in chart.days] == days
+    QTest.mouseClick(chart, Qt.MouseButton.LeftButton, pos=QPoint(chart.width() - 10, 50))  # the second column
+    assert window.stack.currentWidget() is window.attendance_view
+    assert window.attendance_view.day == days[1]
+    assert window.attendance_view.subject_id is None
+
+
+def test_clicking_a_student_who_needs_attention_shows_their_history(
+    window: MainWindow, roster: RosterService, conn, monkeypatch: pytest.MonkeyPatch
+):
+    from datetime import date, timedelta
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+    from app.ui.views.dashboard_view import ClickableRow
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    for n in (1, 2, 3):
+        day = (date.today() - timedelta(days=n)).isoformat()
+        conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'absent')", (ada.id, day))
+    shown: list[AttendanceHistoryDialog] = []
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", lambda dialog: shown.append(dialog) or 0)
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    (row,) = window.dashboard_view.findChildren(ClickableRow)
+    QTest.mouseClick(row, Qt.MouseButton.LeftButton)
+    assert window.stack.currentWidget() is window.attendance_view
+    assert shown and shown[0].windowTitle() == "Attendance · Ada Lovelace"
+
+
+def test_dashboard_numbers_explain_themselves(window: MainWindow):
+    from app.ui.views.dashboard_view import KPI_HELP
+
+    for name, (value, sub) in window.dashboard_view.kpis.items():
+        assert value.toolTip() == sub.toolTip() == KPI_HELP[name]
+
+
+def test_dashboard_links_to_todays_register_until_it_is_taken(window: MainWindow, roster: RosterService, monkeypatch):
+    from datetime import date
+
+    from app.ui.views import dashboard_view
+
+    class Friday(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 6)
+
+    monkeypatch.setattr(dashboard_view, "date", Friday)
+    view = _attendance_page(window, roster)
+    view.set_day(date(2026, 11, 2))
+    window.show_page("Dashboard")
+    window.dashboard_view.refresh()
+    window.dashboard_view.today_label.linkActivated.emit("take")
+    assert window.stack.currentWidget() is window.attendance_view
+    assert view.day == date(2026, 11, 6)
+
+
+def test_settings_page_restores_a_backup_from_any_file(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, db_path: Path, tmp_path: Path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.services.backup import copy_database, restore_backup
+
+    roster.save_class(SchoolClass(name="7B"))
+    usb = tmp_path / "usb"
+    copy_database(db_path, usb / "Classroom backup.db")
+    roster.save_class(SchoolClass(name="8C"))
+    config = AppConfig(data_dir=tmp_path)
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    window = MainWindow(
+        roster, dashboard, _attendance(conn), config,
+        restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+    )  # fmt: skip
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    try:
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(db_path), ""))
+        window.settings_view.restore_from_file()  # the data file itself is refused
+        assert len(roster.list_classes()) == 2
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(usb / "Classroom backup.db"), ""))
+        window.settings_view.restore_from_file()
+        assert [c.name for c in roster.list_classes()] == ["7B"]
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_settings_page_checks_the_data_file(window: MainWindow, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.views import settings_view
+
+    said: list[str] = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: said.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: said.append(a[2]))
+    window.settings_view.check_button.click()
+    assert said[-1] == "No problems found. Your data file is fine."
+    monkeypatch.setattr(settings_view, "find_problems", lambda path: ["row 3 missing from index"])
+    window.settings_view.check_button.click()
+    assert "row 3 missing from index" in said[-1]
+
+
+def test_settings_page_shows_sizes(window: MainWindow, db_path: Path):
+    from datetime import datetime
+
+    from app.services.backup import auto_backup
+    from app.ui.views.settings_view import format_size
+
+    assert [format_size(n) for n in (0, 300, 320_000, 5 * 1024 * 1024)] == ["0 KB", "1 KB", "312 KB", "5.0 MB"]
+    auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, 6, 8, 30))
+    view = window.settings_view
+    view.refresh()
+    assert view.data_size_label.text() == format_size(db_path.stat().st_size)
+    assert view.backup_summary.toolTip().endswith(" in all")
+
+
+def test_help_menu_lists_the_keyboard_shortcuts(window: MainWindow, monkeypatch: pytest.MonkeyPatch):
+    from app.ui.dialogs.shortcuts_dialog import SHORTCUTS, ShortcutsDialog
+
+    shown: list[ShortcutsDialog] = []
+    monkeypatch.setattr(ShortcutsDialog, "exec", lambda dialog: shown.append(dialog) or 0)
+    (action,) = [a for a in window.menuBar().actions() if a.text() == "&Help"][0].menu().actions()[:1]
+    assert action.shortcut().toString() == "F1"
+    action.trigger()
+    table = shown[0].table
+    assert table.rowCount() == len(SHORTCUTS)
+    assert any(table.item(r, 1).text() == "Ctrl+Shift+B" for r in range(table.rowCount()))
+
+
+def test_f5_reloads_the_page_shown(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    window.show_page("Manage classes")
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))  # e.g. by another page
+    assert window.classes_view.roster_view.model.rowCount() == 0
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    QTest.keyClick(window, Qt.Key.Key_F5)
+    assert window.classes_view.roster_view.model.rowCount() == 1
+
+
+def test_file_menu_opens_the_log_file(window: MainWindow, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtGui import QDesktopServices
+
+    from app.ui import main_window
+
+    opened: list[str] = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toLocalFile()))
+    monkeypatch.setattr(main_window, "settings_dir", lambda: tmp_path)
+    window.open_log_file()  # no log yet: the folder opens
+    (tmp_path / "classroom.log").write_text("log")
+    window.open_log_file()
+    assert opened == [str(tmp_path), str(tmp_path / "classroom.log")]
+
+
+def test_paste_dialog_shows_problems_in_the_danger_colour(qapp: QApplication, roster: RosterService):
+    from PySide6.QtGui import QPalette
+
+    from app.ui import style
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Plato\n")
+    assert "needs a first and a last name" in dialog.problems.text()
+    shown = dialog.problems.palette().color(QPalette.ColorRole.WindowText)
+    assert shown == style.color(dialog, "danger")
+
+
+def test_new_year_dialog_ticks_or_unticks_every_class(qapp: QApplication, roster: RosterService):
+    from PySide6.QtCore import Qt
+
+    from app.ui.dialogs.new_year_dialog import NewYearDialog
+
+    for name in ("7A", "7B", "7C"):
+        roster.save_class(SchoolClass(name=name, term="2025-2026"))
+    dialog = NewYearDialog(roster, "2025-2026")
+    assert dialog.tick_all_button.text() == "Untick all"
+    dialog.tick_all_button.click()
+    assert dialog.plan() == [] and dialog.tick_all_button.text() == "Tick all"
+    dialog.table.item(1, 0).setCheckState(Qt.CheckState.Checked)
+    assert [name for _id, name in dialog.plan()] == ["7B"]
+    dialog.tick_all_button.click()
+    assert len(dialog.plan()) == 3 and dialog.tick_all_button.text() == "Untick all"
+
+
+def test_subject_dialog_offers_names_from_other_classes(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.subject_dialog import SubjectDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = SubjectDialog(roster.save_subject, class_id, names=["Maths", "Science"], teachers=["Mr Lee"])
+    assert dialog.name.completer().model().rowCount() == 2
+    assert dialog.teacher.completer().model().rowCount() == 1

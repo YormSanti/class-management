@@ -11,6 +11,15 @@ from app.models import Student
 from app.services.attendance import MonthRegister, PeriodSummary
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value: object) -> object:
+    """Text that a spreadsheet would run as a formula, e.g. a note "=1+1", gets a leading
+    apostrophe so it shows as typed. Numbers are left alone."""
+    if isinstance(value, str) and value.startswith(_FORMULA_START):
+        return "'" + value
+    return value
 
 
 def _write_csv(path: Path, rows: Sequence[Sequence[object]]) -> None:
@@ -21,7 +30,7 @@ def _write_csv(path: Path, rows: Sequence[Sequence[object]]) -> None:
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".export-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8-sig", newline="") as f:
-            csv.writer(f).writerows(rows)
+            csv.writer(f).writerows([_safe_cell(v) for v in row] for row in rows)
         os.replace(tmp_name, path)
     except BaseException:
         Path(tmp_name).unlink(missing_ok=True)
@@ -36,18 +45,28 @@ def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
     _write_csv(path, rows)
 
 
+def roster_tsv(students: Sequence[Student]) -> str:
+    """Students as tab-separated text with a heading row, to paste into a spreadsheet."""
+    rows = [ROSTER_COLUMNS]
+    for s in students:
+        rows.append((s.student_no or "", s.last_name, s.first_name, "Active" if s.active else "Inactive",
+                     " ".join(s.notes.split())))  # fmt: skip
+    return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in rows)
+
+
 def write_attendance_csv(path: Path, register: MonthRegister) -> None:
     """Save a month of attendance: one column per day with P, L, A or E (blank = not
     marked), then each student's totals and attendance rate."""
     header = ["Student #", "Last name", "First name"]
     header += [day.isoformat() for day in register.days]
-    header += ["Absent", "Late", "Excused", "Attendance %"]
+    header += ["Present", "Absent", "Late", "Excused", "Attendance %"]
     rows: list[Sequence[object]] = [header]
     for row in register.rows:
         s, counts, rate = row.student, row.counts(), row.rate
         line: list[object] = [s.student_no or "", s.last_name, s.first_name]
         line += [row.statuses[day].value[0].upper() if day in row.statuses else "" for day in register.days]
-        line += [counts["absent"], counts["late"], counts["excused"], "" if rate is None else round(rate)]
+        line += [counts["present"], counts["absent"], counts["late"], counts["excused"]]
+        line.append("" if rate is None else round(rate))
         rows.append(line)
     _write_csv(path, rows)
 

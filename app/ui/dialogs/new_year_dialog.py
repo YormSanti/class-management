@@ -1,3 +1,5 @@
+from datetime import date
+
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
@@ -20,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import SchoolClass
-from app.services.roster import RosterError, RosterService, move_up, next_term
+from app.services.roster import RosterError, RosterService, example_school_year, move_up, next_term
 
 _COPY, _CLASS, _STUDENTS, _NEW_NAME = range(4)
 
@@ -49,7 +51,7 @@ class NewYearDialog(QDialog):
         self.source.currentIndexChanged.connect(self._load_classes)
 
         self.new_term = QLineEdit()
-        self.new_term.setPlaceholderText("e.g. 2026-2027")
+        self.new_term.setPlaceholderText(f"e.g. {next_term(example_school_year(date.today()))}")
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(("Copy", "Class", "Students", "New name"))
@@ -69,7 +71,12 @@ class NewYearDialog(QDialog):
         move_up_button.clicked.connect(self._move_up)
         keep_names_button = QPushButton("Keep names")
         keep_names_button.clicked.connect(self._keep_names)
+        self.tick_all_button = QPushButton("Untick all")
+        self.tick_all_button.setToolTip("Tick or untick every class, e.g. to copy only one or two")
+        self.tick_all_button.clicked.connect(self._tick_all)
+        self.table.itemChanged.connect(self._update_tick_all)
         name_buttons = QHBoxLayout()
+        name_buttons.addWidget(self.tick_all_button)
         name_buttons.addWidget(QLabel("Double-click a new name to change it."))
         name_buttons.addStretch()
         name_buttons.addWidget(keep_names_button)
@@ -129,6 +136,26 @@ class NewYearDialog(QDialog):
                     item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table.setItem(row, col, item)
                 self.table.setItem(row, _NEW_NAME, QTableWidgetItem(school_class.name))
+        self._update_tick_all()
+
+    def _copy_items(self) -> list[QTableWidgetItem]:
+        return [self.table.item(row, _COPY) for row in range(self.table.rowCount())]
+
+    def _tick_all(self) -> None:
+        """Untick every class if all are ticked, otherwise tick them all."""
+        items = self._copy_items()
+        all_ticked = all(i.checkState() == Qt.CheckState.Checked for i in items)
+        state = Qt.CheckState.Unchecked if all_ticked else Qt.CheckState.Checked
+        with QSignalBlocker(self.table):
+            for item in items:
+                item.setCheckState(state)
+        self._update_tick_all()
+
+    def _update_tick_all(self) -> None:
+        items = self._copy_items()
+        all_ticked = bool(items) and all(i.checkState() == Qt.CheckState.Checked for i in items)
+        self.tick_all_button.setText("Untick all" if all_ticked else "Tick all")
+        self.tick_all_button.setEnabled(bool(items))
 
     def _move_up(self) -> None:
         for row in range(self.table.rowCount()):

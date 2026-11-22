@@ -28,6 +28,15 @@ def test_student_names_are_trimmed_and_blank_number_is_none(roster: RosterServic
     assert (student.first_name, student.last_name, student.student_no) == ("Ada", "Lovelace", None)
 
 
+def test_repeated_spaces_in_names_are_collapsed(roster: RosterService, class_id: int):
+    student = _add(roster, class_id, "Mary   Ann", "van  der Berg")
+    assert (student.first_name, student.last_name) == ("Mary Ann", "van der Berg")
+    school_class = roster.save_class(SchoolClass(name="Grade  7   Blue", term="2026 -  2027"))
+    assert (school_class.name, school_class.term) == ("Grade 7 Blue", "2026 - 2027")
+    subject = roster.save_subject(Subject(class_id=class_id, name="Social   Studies", teacher=" Mr  Lee "))
+    assert (subject.name, subject.teacher) == ("Social Studies", "Mr Lee")
+
+
 def test_student_requires_both_names(roster: RosterService, class_id: int):
     with pytest.raises(RosterError):
         _add(roster, class_id, "Ada", "")
@@ -61,7 +70,8 @@ def test_students_sorted_by_last_name(roster: RosterService, class_id: int):
 
 @pytest.mark.parametrize(
     "term, expected",
-    [("ada", ["Ada"]), ("LOVE", ["Ada"]), ("ada love", ["Ada"]), ("00", ["Ada", "Alan"]), ("x", [])],
+    [("ada", ["Ada"]), ("LOVE", ["Ada"]), ("ada love", ["Ada"]), ("00", ["Ada", "Alan"]), ("x", []),
+     ("lovelace ada", ["Ada"]), ("Turing, Al", ["Alan"]), ("ada  lovelace", ["Ada"])],
 )
 def test_search(roster: RosterService, class_id: int, term: str, expected: list[str]):
     _add(roster, class_id, "Ada", "Lovelace", no="001")
@@ -303,6 +313,26 @@ def test_parse_student_list_skips_spreadsheet_header():
     assert problems == []
 
 
+def test_parse_student_list_reads_semicolon_columns():
+    from app.services.roster import parse_student_list
+
+    text = "No;First name;Last name\n1;Ada;Lovelace\nGrace ; Hopper\n;;\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [
+        ("1", "Ada", "Lovelace"),
+        (None, "Grace", "Hopper"),
+    ]
+    assert problems == ["Line 4: expected first and last name columns: ;;"]
+
+
+def test_repeated_names_in_a_pasted_list():
+    from app.services.roster import parse_student_list, repeated_names
+
+    students, _ = parse_student_list("Ada Lovelace\nAlan Turing\nada lovelace\nAda Lovelace\n")
+    assert repeated_names(students) == ["Ada Lovelace"]
+    assert repeated_names(students[:2]) == []
+
+
 def test_add_students_is_all_or_nothing(roster: RosterService, class_id: int):
     from app.services.roster import parse_student_list
 
@@ -345,3 +375,40 @@ def test_transfer_student_to_same_class_is_rejected(roster: RosterService, class
     ada = _add(roster, class_id, "Ada", "Lovelace")
     with pytest.raises(RosterError, match="already in this class"):
         roster.transfer_student(ada.id, class_id)
+
+
+def test_student_without_records_can_be_deleted(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    assert roster.can_delete_student(ada.id)
+    roster.delete_student(ada.id)
+    assert roster.list_students(class_id, include_inactive=True) == []
+
+
+def test_student_with_attendance_cannot_be_deleted(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    conn.execute(
+        "INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'present')", (ada.id,)
+    )
+    assert not roster.can_delete_student(ada.id)
+    with pytest.raises(RosterError, match="Deactivate them instead"):
+        roster.delete_student(ada.id)
+    assert [s.id for s in roster.list_students(class_id)] == [ada.id]
+
+
+def test_example_school_year():
+    from datetime import date
+
+    from app.services.roster import example_school_year
+
+    assert example_school_year(date(2026, 11, 21)) == "2026-2027"
+    assert example_school_year(date(2027, 3, 1)) == "2026-2027"
+    assert example_school_year(date(2027, 7, 1)) == "2027-2028"
+
+
+def test_subject_and_teacher_names_in_use(roster: RosterService, class_id: int):
+    other = roster.save_class(SchoolClass(name="8A")).id
+    roster.save_subject(Subject(class_id=class_id, name="science", teacher="Mr Lee"))
+    roster.save_subject(Subject(class_id=other, name="Maths"))
+    roster.save_subject(Subject(class_id=other, name="Science", teacher="Mr Lee"))
+    assert roster.subject_names() == ["Maths", "science", "Science"]
+    assert roster.teacher_names() == ["Mr Lee"]

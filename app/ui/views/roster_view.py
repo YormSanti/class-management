@@ -1,10 +1,10 @@
-import re
-from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QEvent,
     QModelIndex,
+    QObject,
     QPersistentModelIndex,
     QSortFilterProxyModel,
     Qt,
@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
-    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -30,9 +29,10 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.export import write_roster_csv
+from app.services.export import roster_tsv, write_roster_csv
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+from app.ui.files import ask_save_path
 from app.ui.dialogs.student_dialog import StudentDialog
 
 _Index = QModelIndex | QPersistentModelIndex
@@ -110,9 +110,10 @@ class RosterView(QWidget):
 
         # --- toolbar ---
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search by name or student number  (Ctrl+F)")
+        self.search.setPlaceholderText("Search by name or student number  (Ctrl+F, Esc clears)")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
+        self.search.installEventFilter(self)  # Escape clears it
         self.show_inactive = QCheckBox("Show inactive")
         self.show_inactive.toggled.connect(self.refresh)
         self.add_button = QPushButton("Add student")
@@ -124,9 +125,15 @@ class RosterView(QWidget):
         self.edit_button.clicked.connect(self.edit_selected)
         self.toggle_active_button = QPushButton("Deactivate")
         self.toggle_active_button.clicked.connect(self.toggle_active_selected)
+        self.delete_button = QPushButton("Delete")
+        self.delete_button.setToolTip("Delete a student added by mistake; only while nothing is recorded for them")
+        self.delete_button.clicked.connect(self.delete_selected)
         self.transfer_button = QPushButton("Move to class…")
         self.transfer_button.setToolTip("Move the selected student to another class")
         self.transfer_button.clicked.connect(self.transfer_selected)
+        self.copy_button = QPushButton("Copy list")
+        self.copy_button.setToolTip("Copy the students shown, to paste into a spreadsheet (Ctrl+C)")
+        self.copy_button.clicked.connect(self.copy_list)
         self.export_button = QPushButton("Export…")
         self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
@@ -166,7 +173,9 @@ class RosterView(QWidget):
         footer.addWidget(self.edit_button)
         footer.addWidget(self.toggle_active_button)
         footer.addWidget(self.transfer_button)
+        footer.addWidget(self.delete_button)
         footer.addSpacing(12)
+        footer.addWidget(self.copy_button)
         footer.addWidget(self.export_button)
 
         table_page = QWidget()
@@ -197,6 +206,8 @@ class RosterView(QWidget):
         QShortcut(QKeySequence.StandardKey.Find, self, activated=self.search.setFocus)
         QShortcut(QKeySequence.StandardKey.New, self, activated=self.add_student)
         QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
+        copy.setContext(Qt.ShortcutContext.WidgetShortcut)
 
         self._update_buttons()
 
@@ -288,6 +299,23 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def delete_selected(self) -> None:
+        student = self._selected_student()
+        if student is None:
+            return
+        answer = QMessageBox.question(
+            self, "Delete student", f"Delete {student.full_name}?\n\nThis can't be undone."
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.roster.delete_student(student.id)
+        except RosterError as exc:
+            QMessageBox.information(self, "Delete student", str(exc))
+            return
+        self.refresh()
+        self.students_changed.emit()
+
     def transfer_selected(self) -> None:
         student = self._selected_student()
         if student is None:
@@ -332,18 +360,26 @@ class RosterView(QWidget):
         self.refresh()
         self.students_changed.emit()
 
+    def copy_list(self) -> None:
+        """Put the students shown, in the order shown, on the clipboard as a table."""
+        students = [
+            self.model.student_at(self.proxy.mapToSource(self.proxy.index(row, 0)).row())
+            for row in range(self.proxy.rowCount())
+        ]
+        if not students:
+            return
+        QApplication.clipboard().setText(roster_tsv(students))
+        noun = "student" if len(students) == 1 else "students"
+        self.count_label.setText(f"Copied {len(students)} {noun} · paste them into a spreadsheet")
+
     def export_csv(self) -> None:
         """Save every student of the class (inactive ones too if they are shown) as CSV."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", school_class.display_name)
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Export students", str(Path.home() / f"{safe_name} students.csv"), "CSV files (*.csv)"
-        )
-        if not path:
+        path = ask_save_path(self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
         students = self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
         try:
             write_roster_csv(path, students)
@@ -351,6 +387,19 @@ class RosterView(QWidget):
             QMessageBox.warning(self, "Export students", f"The file could not be saved:\n{exc}")
             return
         QMessageBox.information(self, "Export students", f"Saved {len(students)} students to\n{path}")
+
+    # --- keyboard ------------------------------------------------------------
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self.search
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+            and self.search.text()
+        ):
+            self.search.clear()
+            return True
+        return super().eventFilter(watched, event)
 
     # --- helpers -------------------------------------------------------------
 
@@ -374,9 +423,11 @@ class RosterView(QWidget):
         self.add_button.setEnabled(has_class)
         self.paste_button.setEnabled(has_class)
         self.export_button.setEnabled(has_class)
+        self.copy_button.setEnabled(has_class and self.model.rowCount() > 0)
         self.edit_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.transfer_button.setEnabled(student is not None)
+        self.delete_button.setEnabled(student is not None and self.roster.can_delete_student(student.id))
         self.toggle_active_button.setText(
             "Reactivate" if student is not None and not student.active else "Deactivate"
         )
@@ -391,4 +442,8 @@ class RosterView(QWidget):
             hidden = len(self.roster.list_students(self.class_id, self.search.text(), True)) - shown
             if hidden:
                 text += f" · {hidden} inactive hidden"
+        else:
+            inactive = sum(1 for row in range(shown) if not self.model.student_at(row).active)
+            if inactive:
+                text += f" · {inactive} inactive"
         self.count_label.setText(text)

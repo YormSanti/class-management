@@ -1,3 +1,4 @@
+import sqlite3
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -6,7 +7,6 @@ from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QFileDialog,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -18,14 +18,16 @@ from PySide6.QtWidgets import (
 )
 
 from app import __version__
-from app.config import AppConfig
+from app.config import LOG_FILENAME, AppConfig, settings_dir
 from app.services.attendance import AttendanceService
 from app.services.backup import copy_database
 from app.services.dashboard import DashboardService
 from app.services.roster import RosterError, RosterService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
+from app.ui.dialogs.shortcuts_dialog import ShortcutsDialog
 from app.ui.dialogs.subject_dialog import SubjectDialog
+from app.ui.files import ask_save_path
 from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
@@ -71,6 +73,8 @@ class MainWindow(QMainWindow):
         self.dashboard_view.create_class_requested.connect(lambda: self.new_class())
         self.dashboard_view.navigate_requested.connect(self.show_page)
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
+        self.dashboard_view.day_requested.connect(self.show_attendance_day)
+        self.dashboard_view.history_requested.connect(self.show_attendance_history)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
         self.settings_view = SettingsView(config, save_config, restore_backup)
@@ -156,35 +160,59 @@ class MainWindow(QMainWindow):
         backup = file_menu.addAction("&Back up now…", self.back_up_now)
         backup.setShortcut(QKeySequence("Ctrl+Shift+B"))
         file_menu.addAction("&Open data folder", self.open_data_folder)
+        file_menu.addAction("Open &log file", self.open_log_file)
         file_menu.addSeparator()
         quit_action = file_menu.addAction("&Quit", self.close)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
 
+        view_menu = self.menuBar().addMenu("&View")
+        reload_action = view_menu.addAction("&Reload page", self.reload_page)
+        reload_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Refresh))
+
         help_menu = self.menuBar().addMenu("&Help")
+        shortcuts = help_menu.addAction("&Keyboard shortcuts", self.show_shortcuts)
+        shortcuts.setShortcut(QKeySequence(Qt.Key.Key_F1))
+        help_menu.addSeparator()
         help_menu.addAction("&About Classroom Manager", self.show_about)
 
     def back_up_now(self) -> None:
         """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
+        saved = str(self.settings.value("backup/folder", "")) if self.settings is not None else ""
+        folder = Path(saved) if saved and Path(saved).is_dir() else Path.home()
         # Not "classroom_…": that prefix marks automatic backups, which get pruned.
-        start = Path.home() / f"Classroom backup {date.today().isoformat()}.db"
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Back up now", str(start), "Classroom Manager backups (*.db)"
-        )
-        if not path:
+        name = f"Classroom backup {date.today().isoformat()}"
+        dest = ask_save_path(self, "Back up now", name, "Classroom Manager backups", ".db", folder)
+        if dest is None:
             return
-        dest = Path(path) if path.lower().endswith(".db") else Path(path + ".db")
         if dest.resolve() == self.config.db_path.resolve():
             QMessageBox.warning(self, "Back up now", "Choose another file than the data file itself.")
             return
         try:
             copy_database(self.config.db_path, dest)
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             QMessageBox.warning(self, "Back up now", f"The backup could not be saved:\n{exc}")
             return
+        if self.settings is not None:
+            self.settings.setValue("backup/folder", str(dest.parent))  # e.g. the USB stick, next time
         self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
+
+    def reload_page(self) -> None:
+        """Read the page shown from the database again."""
+        if refresh := getattr(self.stack.currentWidget(), "refresh", None):
+            refresh()
+            self.statusBar().showMessage("Page reloaded", 3_000)
+
+    def show_shortcuts(self) -> None:
+        ShortcutsDialog(self).exec()
+
+    def open_log_file(self) -> None:
+        """Open the log (with the details of any error) in the system's text viewer."""
+        log_file = settings_dir() / LOG_FILENAME
+        target = log_file if log_file.exists() else settings_dir()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def show_about(self) -> None:
         QMessageBox.about(
@@ -247,6 +275,18 @@ class MainWindow(QMainWindow):
             if page_name == name:
                 self.go_to(index)
                 return
+
+    def show_attendance_day(self, day: date) -> None:
+        """Open the daily register of `day` for the current class."""
+        self.show_page("Attendance")
+        self.attendance_view.register_combo.setCurrentIndex(0)  # the dashboard shows the daily register
+        self.attendance_view.open_day(day)
+
+    def show_attendance_history(self, student_id: int) -> None:
+        """Show a student's daily attendance history over the Attendance page."""
+        self.show_page("Attendance")
+        self.attendance_view.register_combo.setCurrentIndex(0)  # the dashboard counts the daily register
+        self.attendance_view.show_student_history(student_id)
 
     def show_subjects(self) -> None:
         """Open Manage classes on the Subjects tab of the current class."""
@@ -352,7 +392,13 @@ class MainWindow(QMainWindow):
     def new_subject(self) -> None:
         if self.class_id is None:
             return
-        dialog = SubjectDialog(self.roster.save_subject, self.class_id, parent=self)
+        dialog = SubjectDialog(
+            self.roster.save_subject,
+            self.class_id,
+            parent=self,
+            names=self.roster.subject_names(),
+            teachers=self.roster.teacher_names(),
+        )
         if dialog.exec() and dialog.saved:
             self.select_subject(dialog.saved.id)
 
@@ -360,7 +406,9 @@ class MainWindow(QMainWindow):
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if subject is None:
             return
-        dialog = SubjectDialog(self.roster.save_subject, subject.class_id, subject, parent=self)
+        dialog = SubjectDialog(
+            self.roster.save_subject, subject.class_id, subject, parent=self, teachers=self.roster.teacher_names()
+        )
         if dialog.exec():
             self.select_subject(subject.id)
 

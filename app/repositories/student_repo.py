@@ -71,6 +71,11 @@ class StudentRepository:
         with transaction(self.conn):
             self.conn.execute("UPDATE students SET class_id = ? WHERE id = ?", (class_id, student_id))
 
+    def delete(self, student_id: int) -> None:
+        """Delete a student. Raises sqlite3.IntegrityError if anything refers to them."""
+        with transaction(self.conn):
+            self.conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
+
     def has_records(self, student_id: int) -> bool:
         """True if any attendance, score or seat refers to the student."""
         row = self.conn.execute(
@@ -111,7 +116,8 @@ class StudentRepository:
     ) -> list[Student]:
         """Students in a class sorted by name, optionally filtered by a search term.
 
-        The search matches student number, first name, last name, or "first last".
+        The search matches student number, first name, last name, "first last",
+        "last first" or "last, first".
         """
         sql = "SELECT * FROM students WHERE class_id = ?"
         params: list[object] = [class_id]
@@ -123,8 +129,10 @@ class StudentRepository:
                 AND (student_no LIKE ? ESCAPE '\\'
                      OR first_name LIKE ? ESCAPE '\\'
                      OR last_name LIKE ? ESCAPE '\\'
-                     OR first_name || ' ' || last_name LIKE ? ESCAPE '\\')
+                     OR first_name || ' ' || last_name LIKE ? ESCAPE '\\'
+                     OR last_name || ' ' || first_name LIKE ? ESCAPE '\\'
+                     OR last_name || ', ' || first_name LIKE ? ESCAPE '\\')
             """
-            params += [pattern] * 4
+            params += [pattern] * 6
         sql += " ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE, id"
         return [_from_row(r) for r in self.conn.execute(sql, params)]

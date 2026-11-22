@@ -1,15 +1,13 @@
 import calendar
-import re
 from datetime import date
-from pathlib import Path
 
-from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCompleter,
     QDateEdit,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -28,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.models import AttendanceRecord, AttendanceStatus
 from app.services.attendance import (
+    RECENT_DAYS,
     UNMARKED,
     AttendanceError,
     AttendanceService,
@@ -42,6 +41,7 @@ from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
 from app.ui.dialogs.period_dialog import PeriodDialog
+from app.ui.files import ask_save_path
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
@@ -104,7 +104,8 @@ class MonthView(QWidget):
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self.file_label = ""  # e.g. "7B (2026-27) Maths", for the export file name
-        today = date.today()
+        self._today = date.today  # replaceable in tests
+        today = self._today()
         self.year, self.month = today.year, today.month
         self.register: MonthRegister | None = None
 
@@ -119,6 +120,8 @@ class MonthView(QWidget):
         self.next_button.setToolTip("Next month")
         self.next_button.setFixedWidth(36)
         self.next_button.clicked.connect(lambda: self._step(1))
+        self.this_month_button = QPushButton("This month")
+        self.this_month_button.clicked.connect(lambda: self.set_month(self._today().year, self._today().month))
         self.export_button = QPushButton("Export CSV…")
         self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
         self.export_button.clicked.connect(self.export_csv)
@@ -134,6 +137,8 @@ class MonthView(QWidget):
         toolbar.addWidget(self.prev_button)
         toolbar.addWidget(self.month_label)
         toolbar.addWidget(self.next_button)
+        toolbar.addSpacing(8)
+        toolbar.addWidget(self.this_month_button)
         toolbar.addSpacing(16)
         self.legend: list[tuple[QLabel, str | None]] = []
         for text, letter, name in (
@@ -160,9 +165,11 @@ class MonthView(QWidget):
         self.table.setWordWrap(False)
         self.table.cellDoubleClicked.connect(self._open_cell)
         self.table.horizontalHeader().sectionDoubleClicked.connect(lambda col: self._open_cell(-1, col))
+        self.table.installEventFilter(self)  # Enter opens the selected day
 
         hint = style.label(
-            "Double-click a day to open its register. The rate counts present and late out of the "
+            "Hover over a mark to see its note; double-click a day (or press Enter) to open its register. "
+            "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
             muted=True,
@@ -194,6 +201,8 @@ class MonthView(QWidget):
             return
         first = date(self.year, self.month, 1)
         self.month_label.setText(f"{first:%B} {first.year}")
+        today = self._today()
+        self.this_month_button.setEnabled((self.year, self.month) != (today.year, today.month))
         self.register = self.attendance.month_register(self.class_id, self.year, self.month, self.subject_id)
         self._fill()
 
@@ -209,10 +218,16 @@ class MonthView(QWidget):
         muted = style.mix(palette.color(QPalette.ColorRole.Base), palette.color(QPalette.ColorRole.Text), 0.5)
 
         self.table.setHorizontalHeaderItem(0, QTableWidgetItem("Student"))
+        today = self._today()
         for col, day in enumerate(days, start=1):
             item = QTableWidgetItem(f"{day:%a}"[:2] + f"\n{day.day}")
-            item.setToolTip(f"{day:%A} {day.day} {day:%B} · double-click to open")
-            if day not in recorded:
+            item.setToolTip(f"{day:%A} {day.day} {day:%B}{' (today)' if day == today else ''} · double-click to open")
+            if day == today:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+                item.setForeground(_fill(self, "accent"))
+            elif day not in recorded:
                 item.setForeground(muted)
             self.table.setHorizontalHeaderItem(col, item)
         for col, text in enumerate(totals, start=first_total):
@@ -239,7 +254,10 @@ class MonthView(QWidget):
                         item.setText(status.value[0].upper())
                         item.setForeground(on_color)
                 word = status.value.capitalize() if status else "Not marked"
-                item.setToolTip(f"{row.student.full_name}, {day:%a} {day.day} {day:%b}: {word}")
+                note = row.notes.get(day)
+                item.setToolTip(
+                    f"{row.student.full_name}, {day:%a} {day.day} {day:%b}: {word}" + (f"\nNote: {note}" if note else "")
+                )
                 self.table.setItem(r, col, item)
             counts, rate = row.counts(), row.rate
             values = (counts["absent"], counts["late"], counts["excused"], "—" if rate is None else f"{rate:.0f}%")
@@ -283,22 +301,30 @@ class MonthView(QWidget):
         for col in range(first_total, first_total + len(totals)):
             head.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.export_button.setEnabled(bool(register.rows))
+        self.pdf_button.setEnabled(bool(register.rows))
 
     def _open_cell(self, _row: int, col: int) -> None:
         if self.register is not None and 1 <= col <= len(self.register.days):
             self.day_requested.emit(self.register.days[col - 1])
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self.table
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        ):
+            self._open_cell(self.table.currentRow(), self.table.currentColumn())
+            return True
+        return super().eventFilter(watched, event)
+
     def export_csv(self) -> None:
         if self.register is None:
             return
         first = date(self.year, self.month, 1)
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
-        )
-        if not path:
+        name = f"{self.file_label} attendance {first:%B} {first.year}"
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
         try:
             write_attendance_csv(path, self.register)
         except OSError as exc:
@@ -312,13 +338,10 @@ class MonthView(QWidget):
             return
         first = date(self.year, self.month, 1)
         title = f"{self.file_label} · attendance {first:%B} {first.year}"
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {first:%B} {first.year}")
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Save PDF", str(Path.home() / f"{safe_name}.pdf"), "PDF files (*.pdf)"
-        )
-        if not path:
+        name = f"{self.file_label} attendance {first:%B} {first.year}"
+        path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".pdf") else Path(path + ".pdf")
         writer = QPdfWriter(str(path))
         writer.setTitle(title)
         writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
@@ -347,13 +370,10 @@ class MonthView(QWidget):
         except AttendanceError as exc:
             QMessageBox.information(self, "Export attendance", str(exc))
             return
-        safe_name = re.sub(r'[\\/:*?"<>|]+', "-", f"{self.file_label} attendance {start} to {end}")
-        path, _filter = QFileDialog.getSaveFileName(
-            self, "Export attendance", str(Path.home() / f"{safe_name}.csv"), "CSV files (*.csv)"
-        )
-        if not path:
+        name = f"{self.file_label} attendance {start} to {end}"
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        if path is None:
             return
-        path = Path(path) if path.lower().endswith(".csv") else Path(path + ".csv")
         try:
             write_attendance_summary_csv(path, summary)
         except OSError as exc:
@@ -399,6 +419,10 @@ class AttendanceView(QWidget):
         self._subject_for_class: dict[int, int | None] = {}
         self._row_widgets: list[tuple[StatusButtons, QLineEdit]] = []
         self._month_follows: date | None = None
+        # Notes written before in this class, offered in every note field while typing.
+        self.note_completer = QCompleter(QStringListModel(self), self)
+        self.note_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.note_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         # (day, subject id, register before the change, what the change was), newest last
         self._undo: list[tuple[date, int | None, list[AttendanceRecord], str]] = []
 
@@ -446,6 +470,7 @@ class AttendanceView(QWidget):
         self.next_button.setFixedWidth(36)
         self.next_button.clicked.connect(lambda: self.set_day(school_day(self.day, 1)))
         self.today_button = QPushButton("Today")
+        self.today_button.setToolTip("Go to today (Alt+Home)")
         self.today_button.clicked.connect(lambda: self.set_day(date.today()))
 
         date_row = QHBoxLayout()
@@ -495,7 +520,7 @@ class AttendanceView(QWidget):
 
         # students
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["No.", "Student", "Status", "Note", "Last 30 days"])
+        self.table.setHorizontalHeaderLabels(["No.", "Student", "Status", "Note", f"Last {RECENT_DAYS} days"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -512,7 +537,8 @@ class AttendanceView(QWidget):
 
         keys_hint = style.label(
             "Keys: ↑ ↓ move · P L A E mark and go to the next student · Delete clears · "
-            "N writes a note · H or double-click shows a student's history · Alt+← → change day",
+            "N writes a note · H or double-click shows a student's history · Alt+← → change day · "
+            "Alt+Home goes to today",
             0.85,
             muted=True,
         )
@@ -558,6 +584,9 @@ class AttendanceView(QWidget):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(lambda step=step: self.set_day(school_day(self.day, step)))
+        today = QShortcut(QKeySequence("Alt+Home"), self)
+        today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        today.activated.connect(lambda: self.set_day(date.today()))
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
         undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         undo.activated.connect(self.undo)
@@ -659,7 +688,8 @@ class AttendanceView(QWidget):
         self.pages.setCurrentIndex(1)
         day = self.day
         self.date_label.setText(f"{day:%A}, {day.day} {day:%B} {day.year}".upper())
-        self.title_label.setText(f"Attendance · {school_class.name}")
+        register = f" · {self.register_combo.currentText()}" if self.subject_id is not None else ""
+        self.title_label.setText(f"Attendance · {school_class.name}{register}")
         self.today_button.setEnabled(day != date.today())
         warning = day_warning(day, date.today())
         self.day_notice.setText(warning or "")
@@ -672,6 +702,7 @@ class AttendanceView(QWidget):
         self.month_view.load(school_class.id, self.subject_id, file_label)
 
         self.register = self.attendance.day_register(school_class.id, day, self.subject_id)
+        self.note_completer.model().setStringList(self.attendance.note_suggestions(school_class.id))
         ids = [row.student.id for row in self.register.rows]
         if ids != self._shown_ids():
             self._build_rows(len(ids))
@@ -700,6 +731,7 @@ class AttendanceView(QWidget):
             note.setFrame(False)
             note.editingFinished.connect(lambda i=i: self._save_note(i))
             note.installEventFilter(self)
+            note.setCompleter(self.note_completer)
             self.table.setCellWidget(i, COL_STATUS, buttons)
             self.table.setCellWidget(i, COL_NOTE, note)
             self._row_widgets.append((buttons, note))
@@ -719,7 +751,7 @@ class AttendanceView(QWidget):
         name.setToolTip("Not marked yet" if unmarked else "")
         recent = self.table.item(i, COL_RECENT)
         recent.setText(row.recent_text or "—")
-        recent.setToolTip(f"Days in the last 30 up to {self.day.day} {self.day:%b}")
+        recent.setToolTip(f"Days in the last {RECENT_DAYS} up to {self.day.day} {self.day:%b}")
         font = recent.font()
         font.setBold(bool(row.recent_tone))
         recent.setFont(font)
@@ -739,6 +771,8 @@ class AttendanceView(QWidget):
         note.setPlaceholderText("Mark first to add a note" if unmarked else "Add a note")
         if not note.hasFocus():
             note.setText(row.note)
+            note.setCursorPosition(0)  # show the start of a long note
+        note.setToolTip(row.note)  # the whole note, when the column is too narrow for it
 
     def _show_totals(self) -> None:
         counts = self.register.counts()
@@ -807,6 +841,15 @@ class AttendanceView(QWidget):
     def mark_rest_present(self) -> None:
         if self.class_id is None:
             return
+        if self.day > date.today():
+            answer = QMessageBox.question(
+                self,
+                "Mark the rest present",
+                f"{self.day:%A} {self.day.day} {self.day:%B} hasn't happened yet. "
+                "Mark everyone who isn't marked as present anyway?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self._remember("mark the rest present")
         self.attendance.mark_unmarked(self.class_id, self.day, self.subject_id)
         self.refresh()
@@ -829,8 +872,12 @@ class AttendanceView(QWidget):
         """Show student `i`'s marks in this register; a day picked there opens on the Day tab."""
         if self.register is None or not 0 <= i < len(self.register.rows):
             return
+        self.show_student_history(self.register.rows[i].student.id)
+
+    def show_student_history(self, student_id: int) -> None:
+        """Show a student's marks in the register shown; a day picked there opens on the Day tab."""
         try:
-            history = self.attendance.student_history(self.register.rows[i].student.id, self.subject_id)
+            history = self.attendance.student_history(student_id, self.subject_id)
         except AttendanceError as exc:
             QMessageBox.information(self, "Attendance", str(exc))
             return

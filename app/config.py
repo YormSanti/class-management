@@ -17,6 +17,7 @@ APP_NAME = "ClassroomManager"
 CONFIG_FILENAME = "config.json"
 DB_FILENAME = "classroom.db"
 BACKUP_DIRNAME = "backups"
+LOG_FILENAME = "classroom.log"  # in the settings folder, next to config.json
 
 RANKING_METHODS = ("competition", "dense")
 THEMES = ("system", "light", "dark")
