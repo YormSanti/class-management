@@ -761,6 +761,8 @@ class AttendanceView(QWidget):
             self._build_rows(len(ids))
         for i, row in enumerate(self.register.rows):
             self._fill_row(i, row)
+        # an empty column is only in the way when the school doesn't number its students
+        self.table.setColumnHidden(COL_NO, not any(row.student.student_no for row in self.register.rows))
         self._show_totals()
         self._apply_filter()
 

@@ -1866,3 +1866,14 @@ def test_attendance_row_menu(window: MainWindow, roster: RosterService):
     assert actions["Absent"].isChecked() and actions["Clear the mark"].isEnabled()
     actions["Clear the mark"].trigger()
     assert _statuses(view) == [None, None]
+
+
+def test_attendance_hides_the_number_column_without_numbers(window: MainWindow, roster: RosterService):
+    view = _attendance_page(window, roster)
+    assert view.table.isColumnHidden(0)
+    student = view.register.rows[0].student
+    student.student_no = "S01"
+    roster.save_student(student)
+    view.refresh()
+    assert not view.table.isColumnHidden(0)
+    assert view.table.item(0, 0).text() == "S01"
