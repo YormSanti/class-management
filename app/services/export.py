@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.models import Student
 from app.services.attendance import MonthRegister, PeriodSummary
+from app.services.dashboard import attendance_rate
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
@@ -54,9 +55,17 @@ def roster_tsv(students: Sequence[Student]) -> str:
     return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in rows)
 
 
+WHOLE_CLASS = "Whole class"  # the last name of the totals row in attendance CSVs
+
+
+def _rate_cell(rate: float | None) -> object:
+    return "" if rate is None else round(rate)
+
+
 def write_attendance_csv(path: Path, register: MonthRegister) -> None:
     """Save a month of attendance: one column per day with P, L, A or E (blank = not
-    marked), then each student's totals and attendance rate."""
+    marked), then each student's totals and attendance rate. A last "Whole class" row
+    gives how many were absent each recorded day and the class's totals, as on screen."""
     header = ["Student #", "Last name", "First name"]
     header += [day.isoformat() for day in register.days]
     header += ["Present", "Absent", "Late", "Excused", "Attendance %"]
@@ -66,13 +75,20 @@ def write_attendance_csv(path: Path, register: MonthRegister) -> None:
         line: list[object] = [s.student_no or "", s.last_name, s.first_name]
         line += [row.statuses[day].value[0].upper() if day in row.statuses else "" for day in register.days]
         line += [counts["present"], counts["absent"], counts["late"], counts["excused"]]
-        line.append("" if rate is None else round(rate))
+        line.append(_rate_cell(rate))
+        rows.append(line)
+    if register.rows:
+        recorded, totals = set(register.recorded_days), register.counts()
+        line = ["", WHOLE_CLASS, ""]
+        line += [register.absent_on(day) if day in recorded else "" for day in register.days]
+        line += [totals["present"], totals["absent"], totals["late"], totals["excused"], _rate_cell(register.rate)]
         rows.append(line)
     _write_csv(path, rows)
 
 
 def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
-    """Save each student's totals for a period, e.g. a term, with their attendance rate."""
+    """Save each student's totals for a period, e.g. a term, with their attendance rate,
+    and a last "Whole class" row with the class's totals and rate."""
     rows: list[Sequence[object]] = [
         ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"]
     ]
@@ -80,7 +96,13 @@ def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
         s, c, rate = row.student, row.counts, row.rate
         rows.append(
             [s.student_no or "", s.last_name, s.first_name, c["present"], c["late"], c["absent"], c["excused"],
-             row.unmarked, "" if rate is None else round(rate)]
+             row.unmarked, _rate_cell(rate)]
+        )  # fmt: skip
+    if summary.rows:
+        totals = {key: sum(row.counts[key] for row in summary.rows) for key in ("present", "late", "absent", "excused")}
+        rows.append(
+            ["", WHOLE_CLASS, "", totals["present"], totals["late"], totals["absent"], totals["excused"],
+             sum(row.unmarked for row in summary.rows), _rate_cell(attendance_rate(totals))]
         )  # fmt: skip
     _write_csv(path, rows)
 

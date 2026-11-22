@@ -55,6 +55,7 @@ def test_attendance_csv(tmp_path: Path):
          "Attendance %"],
         ["03", "Dubois", "Chloé", "P", "A", "1", "1", "0", "0", "50"],
         ["", "Lovelace", "Ada", "", "", "0", "0", "0", "0", ""],
+        ["", "Whole class", "", "0", "1", "1", "1", "0", "0", "50"],
     ]
 
 
@@ -79,6 +80,7 @@ def test_attendance_summary_csv(tmp_path: Path):
         ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"],
         ["03", "Dubois", "Chloé", "8", "1", "1", "0", "0", "90"],
         ["", "Lovelace", "Ada", "0", "0", "0", "0", "10", ""],
+        ["", "Whole class", "", "8", "1", "1", "0", "10", "90"],
     ]
 
 
@@ -124,3 +126,15 @@ def test_text_that_looks_like_a_formula_is_written_as_text(tmp_path: Path):
         rows = list(csv.reader(f))
     assert rows[1] == ["", "'+Lee", "'=HYPERLINK(1)", "Active", "'@home"]
     assert "'=HYPERLINK(1)" in roster_tsv([student])
+
+
+def test_attendance_csvs_have_no_totals_row_without_students(tmp_path: Path):
+    from app.services.attendance import PeriodSummary
+    from app.services.export import write_attendance_summary_csv
+
+    register = MonthRegister(class_id=1, year=2026, month=10, subject_id=None, days=[date(2026, 10, 1)], rows=[])
+    write_attendance_csv(tmp_path / "month.csv", register)
+    summary = PeriodSummary(1, date(2026, 10, 1), date(2026, 10, 31), None, 0, [])
+    write_attendance_summary_csv(tmp_path / "term.csv", summary)
+    for name in ("month.csv", "term.csv"):
+        assert len((tmp_path / name).read_text(encoding="utf-8-sig").splitlines()) == 1
