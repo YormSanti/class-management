@@ -1643,6 +1643,16 @@ def test_attendance_copies_the_days_absences(
     )
     assert view.status_label.text().startswith("Copied")
 
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    qapp.clipboard().clear()
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    QTest.keyClick(view.table, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+    assert qapp.clipboard().text().startswith("7B · Daily (homeroom)")
+
 
 def test_status_bar_reminds_to_back_up_elsewhere(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path,

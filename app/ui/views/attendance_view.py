@@ -541,7 +541,9 @@ class AttendanceView(QWidget):
         self.clear_button = QPushButton("Clear the day…")
         self.clear_button.clicked.connect(self.clear_day)
         self.copy_button = QPushButton("Copy absences")
-        self.copy_button.setToolTip("Copy who is absent, late or excused today, e.g. to send to the school office")
+        self.copy_button.setToolTip(
+            "Copy who is absent, late or excused this day, e.g. to send to the school office (Ctrl+Shift+C)"
+        )
         self.copy_button.clicked.connect(self.copy_absences)
         self.days_button = QPushButton("Several days…")
         self.days_button.setToolTip("Mark the selected student for several days, e.g. a sick note or a trip (D)")
@@ -638,6 +640,9 @@ class AttendanceView(QWidget):
         today = QShortcut(QKeySequence("Alt+Home"), self)
         today.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         today.activated.connect(lambda: self.set_day(date.today()))
+        copy = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
+        copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy.activated.connect(self.copy_absences)
         find = QShortcut(QKeySequence.StandardKey.Find, self)  # like the class list: whole window, page shown
         find.activated.connect(self._start_find)
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo

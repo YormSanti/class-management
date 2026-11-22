@@ -23,6 +23,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Attendance, Day tab", "D", "Mark the student for several days, e.g. a sick note"),
     ("Attendance, Day tab", "Alt+Left  Alt+Right", "Previous or next school day"),
     ("Attendance, Day tab", "Alt+Home", "Today"),
+    ("Attendance, Day tab", "Ctrl+Shift+C", "Copy the day's absences, e.g. for the school office"),
     ("Attendance, Day tab", "Ctrl+Z", "Undo the last change"),
     ("Attendance, Day tab", "Ctrl+Y", "Redo what was undone"),
     ("Attendance, Day tab", "Ctrl+F", "Find a student by name or number; Enter goes back to the list"),
