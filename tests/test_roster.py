@@ -56,6 +56,15 @@ def test_student_numbers_have_a_length_limit(roster: RosterService, class_id: in
         _add(roster, class_id, "Alan", "Turing", no="1" * 21)
 
 
+def test_student_notes_have_a_length_limit(roster: RosterService, class_id: int):
+    student = _add(roster, class_id, "Ada", "Lovelace")
+    student.notes = "x" * 1000
+    roster.save_student(student)
+    student.notes = "x" * 1001
+    with pytest.raises(RosterError, match="The notes can be at most 1000 characters; this one has 1001"):
+        roster.save_student(student)
+
+
 def test_duplicate_student_number_in_same_class_is_rejected(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace", no="001")
     with pytest.raises(RosterError, match="already used by Ada Lovelace"):
