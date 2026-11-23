@@ -17,10 +17,6 @@ def _from_row(row: sqlite3.Row) -> Student:
     )
 
 
-def _escape_like(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
 class StudentRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -112,29 +108,10 @@ class StudentRepository:
         )
         return [_from_row(r) for r in rows]
 
-    def list_for_class(
-        self, class_id: int, search: str = "", include_inactive: bool = False
-    ) -> list[Student]:
-        """Students in a class sorted by name, optionally filtered by a search term.
-
-        The search matches student number, first name, last name, "first last",
-        "last first", "last, first" or a word in the notes (e.g. "allergy").
-        """
+    def list_for_class(self, class_id: int, include_inactive: bool = False) -> list[Student]:
+        """Students in a class sorted by name (the roster service does the searching)."""
         sql = "SELECT * FROM students WHERE class_id = ?"
-        params: list[object] = [class_id]
         if not include_inactive:
             sql += " AND active = 1"
-        if search:
-            pattern = f"%{_escape_like(search)}%"
-            sql += """
-                AND (student_no LIKE ? ESCAPE '\\'
-                     OR first_name LIKE ? ESCAPE '\\'
-                     OR last_name LIKE ? ESCAPE '\\'
-                     OR first_name || ' ' || last_name LIKE ? ESCAPE '\\'
-                     OR last_name || ' ' || first_name LIKE ? ESCAPE '\\'
-                     OR last_name || ', ' || first_name LIKE ? ESCAPE '\\'
-                     OR notes LIKE ? ESCAPE '\\')
-            """
-            params += [pattern] * 7
         sql += " ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE, id"
-        return [_from_row(r) for r in self.conn.execute(sql, params)]
+        return [_from_row(r) for r in self.conn.execute(sql, (class_id,))]

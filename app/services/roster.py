@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import date
@@ -34,6 +35,22 @@ def _check_length(text: str, limit: int, what: str) -> None:
 def _clean(text: str | None) -> str:
     """Trimmed, with runs of spaces (e.g. from copying) collapsed: "Ada  Lovelace" -> "Ada Lovelace"."""
     return " ".join((text or "").split())
+
+
+def fold(text: str) -> str:
+    """`text` without accents and case, for searching: "José Ñúñez" -> "jose nunez"."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+def matches(student: Student, search: str) -> bool:
+    """True if `search` is part of the student's number, first name, last name, "first
+    last", "last first", "last, first" or notes, ignoring case and accents."""
+    wanted = fold(_clean(search))
+    s = student
+    fields = (s.student_no or "", s.first_name, s.last_name, f"{s.first_name} {s.last_name}",
+              f"{s.last_name} {s.first_name}", f"{s.last_name}, {s.first_name}", s.notes)  # fmt: skip
+    return any(wanted in fold(field) for field in fields)
 
 
 def natural_key(text: str) -> tuple:
@@ -418,7 +435,9 @@ class RosterService:
     def list_students(
         self, class_id: int, search: str = "", include_inactive: bool = False
     ) -> list[Student]:
-        return self.students.list_for_class(class_id, _clean(search), include_inactive)
+        """The class's students in name order; with `search`, only those matching()."""
+        students = self.students.list_for_class(class_id, include_inactive)
+        return [s for s in students if matches(s, search)] if _clean(search) else students
 
     def save_student(self, student: Student) -> Student:
         """Validate and create (id is None) or update a student."""

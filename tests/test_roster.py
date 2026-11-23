@@ -125,6 +125,14 @@ def test_editing_student_keeps_own_number(roster: RosterService, class_id: int):
     assert roster.list_students(class_id)[0].notes == "Allergic to peanuts"
 
 
+def test_search_ignores_accents(roster: RosterService, class_id: int):
+    _add(roster, class_id, "José", "Núñez")
+    _add(roster, class_id, "Zoe", "Muller")
+    assert [s.first_name for s in roster.list_students(class_id, "jose nunez")] == ["José"]
+    assert [s.first_name for s in roster.list_students(class_id, "Zoë Müller")] == ["Zoe"]
+    assert [s.first_name for s in roster.list_students(class_id, "50%")] == []
+
+
 def test_students_sorted_by_last_name(roster: RosterService, class_id: int):
     _add(roster, class_id, "Alan", "Turing")
     _add(roster, class_id, "Ada", "Lovelace")
