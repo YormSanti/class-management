@@ -485,6 +485,13 @@ def test_number_problems_name_numbers_already_used(roster: RosterService, class_
     ]
 
 
+def test_number_problems_name_numbers_listed_twice(roster: RosterService, class_id: int):
+    from app.services.roster import parse_student_list
+
+    pasted, _ = parse_student_list("S01 Ada Lovelace\nS02 Alan Turing\ns01 Grace Hopper\n")
+    assert roster.number_problems(class_id, pasted) == ["Line 3: student number s01 is also on line 1."]
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 

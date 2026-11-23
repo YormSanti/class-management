@@ -526,11 +526,19 @@ class RosterService:
 
     def number_problems(self, class_id: int, pasted: list[PastedStudent]) -> list[str]:
         """Why add_students() would refuse the pasted numbers, one line each, so the list
-        can be fixed before adding: a number another student of the class has."""
+        can be fixed before adding: a number another student of the class has, or one
+        the list gives twice (ignoring case)."""
         problems = []
+        first_line: dict[str, int] = {}
         for p in pasted:
-            if p.student_no and (owner := self.students.find_by_student_no(class_id, p.student_no)):
+            if not p.student_no:
+                continue
+            if p.student_no.casefold() in first_line:
+                earlier = first_line[p.student_no.casefold()]
+                problems.append(f"Line {p.line}: student number {p.student_no} is also on line {earlier}.")
+            elif owner := self.students.find_by_student_no(class_id, p.student_no):
                 problems.append(f"Line {p.line}: student number {p.student_no} is already used by {owner.full_name}.")
+            first_line.setdefault(p.student_no.casefold(), p.line)
         return problems
 
     def transfer_student(self, student_id: int, class_id: int) -> Student:
