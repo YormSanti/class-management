@@ -1477,6 +1477,18 @@ def test_right_click_menu_of_a_class(window: MainWindow, roster: RosterService, 
     assert deleted == [True] and view.tabs.currentWidget() is view.subject_box
 
 
+def test_right_click_menu_of_a_subject(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    view = window.classes_view
+    actions = {a.text().split("\t")[0]: a for a in view.subject_menu().actions() if a.text()}
+    assert list(actions) == ["Add subject…", "Copy from class…", "Edit…", "Delete…"]
+    assert not actions["Edit…"].isEnabled() and not actions["Delete…"].isEnabled()  # no subjects yet
+    window.select_subject(roster.save_subject(Subject(class_id=class_id, name="Maths")).id)
+    actions = {a.text().split("\t")[0]: a for a in view.subject_menu().actions() if a.text()}
+    assert actions["Edit…"].isEnabled() and actions["Delete…"].isEnabled()
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

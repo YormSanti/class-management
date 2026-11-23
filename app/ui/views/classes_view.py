@@ -123,6 +123,8 @@ class ClassesView(QWidget):
         self.subject_table = _table(("Subject", "Teacher"))
         self.subject_table.itemSelectionChanged.connect(self._on_subject_clicked)
         self.subject_table.doubleClicked.connect(lambda _index: self.edit_subject_requested.emit())
+        self.subject_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.subject_table.customContextMenuRequested.connect(self._show_subject_menu)
         self.new_subject_button = QPushButton("Add subject…")
         self.new_subject_button.clicked.connect(self.new_subject_requested)
         self.copy_subjects_button = QPushButton("Copy from class…")
@@ -293,6 +295,26 @@ class ClassesView(QWidget):
         menu.addSeparator()
         menu.addAction("Subjects", lambda: self.tabs.setCurrentWidget(self.subject_box))
         menu.addAction("Students", lambda: self.tabs.setCurrentWidget(self.roster_view))
+        return menu
+
+    def _show_subject_menu(self, pos) -> None:
+        row = self.subject_table.rowAt(pos.y())
+        if row >= 0:
+            self.subject_table.selectRow(row)  # makes it the current subject
+        menu = self.subject_menu()
+        menu.exec(self.subject_table.viewport().mapToGlobal(pos))
+        menu.deleteLater()
+
+    def subject_menu(self) -> QMenu:
+        """What can be done with the current subject, or in the empty list, for a right-click."""
+        menu = QMenu(self)
+        menu.addAction("Add subject…", self.new_subject_requested.emit)
+        menu.addAction("Copy from class…", self.copy_subjects_requested.emit)
+        menu.addSeparator()
+        edit = menu.addAction("Edit…\tF2", self.edit_subject_requested.emit)
+        edit.setEnabled(self.edit_subject_button.isEnabled())
+        delete = menu.addAction("Delete…\tDelete", self.delete_subject_requested.emit)
+        delete.setEnabled(self.delete_subject_button.isEnabled())
         return menu
 
     def _edit_class_by_key(self) -> None:
