@@ -143,6 +143,27 @@ def test_student_dialog_save_and_add_another(qapp: QApplication, roster: RosterS
     assert [s.student_no for s in roster.list_students(class_id)] == ["03", "01", "02"]
 
 
+def test_ctrl_enter_saves_and_adds_another(qapp: QApplication, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.dialogs.student_dialog import StudentDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = StudentDialog(roster.save_student, class_id)
+    dialog.show()
+    dialog.activateWindow()
+    assert QTest.qWaitForWindowActive(dialog)
+    QTest.keyClick(dialog.last_name, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert dialog.added == []  # nothing typed yet
+    dialog.first_name.setText("Ada")
+    dialog.last_name.setText("Lovelace")
+    QTest.keyClick(dialog.last_name, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert [s.full_name for s in dialog.added] == ["Ada Lovelace"]
+    assert dialog.isVisible() and dialog.first_name.text() == ""
+    dialog.close()
+
+
 def test_student_dialog_hints_the_next_free_number_for_a_student_without_one(
     qapp: QApplication, roster: RosterService
 ):

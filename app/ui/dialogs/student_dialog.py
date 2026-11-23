@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import replace
 
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -79,6 +79,9 @@ class StudentDialog(QDialog):
                 "Save && add another", QDialogButtonBox.ButtonRole.ActionRole
             )
             self._another_button.clicked.connect(self.save_and_add_another)
+            self._another_button.setToolTip("Save this student and start on the next one (Ctrl+Enter)")
+            for keys in ("Ctrl+Return", "Ctrl+Enter"):  # the main and the number pad Enter
+                QShortcut(QKeySequence(keys), self, activated=self._another_by_key)
         self.first_name.textChanged.connect(self._update_ok)
         self.last_name.textChanged.connect(self._update_ok)
         self._update_ok()
@@ -122,6 +125,10 @@ class StudentDialog(QDialog):
             field.clear()
         self.notes.clear()
         self.first_name.setFocus()
+
+    def _another_by_key(self) -> None:
+        if self._another_button is not None and self._another_button.isEnabled():
+            self.save_and_add_another()
 
     def _save_form(self) -> bool:
         """Validate and save the form. False (with a message shown) if it wasn't saved."""
