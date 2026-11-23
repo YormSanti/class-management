@@ -120,6 +120,7 @@ class PasteStudentsDialog(QDialog):
         self.number_missing.setVisible(bool(given))  # only when the class or the list uses numbers
         if self.number_missing.isChecked():
             self._students = numbered
+        problems += self.roster.number_problems(self.class_id, self._students)
         self.preview.setRowCount(len(self._students))
         for row, s in enumerate(self._students):
             for col, text in enumerate((s.student_no or "", s.first_name, s.last_name, s.notes)):

@@ -184,6 +184,17 @@ def test_paste_dialog_shows_notes_only_when_pasted(qapp: QApplication, roster: R
     assert dialog.preview.item(0, 3).text() == "Allergic to nuts"
 
 
+def test_paste_dialog_points_out_numbers_already_used(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", student_no="7"))
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("7 Alan Turing")
+    assert "number 7 is already used by Ada Lovelace" in dialog.problems.text()
+    assert not dialog._ok.isEnabled()
+
+
 def test_roster_export_writes_csv(
     window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

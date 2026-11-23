@@ -475,6 +475,16 @@ def test_parse_student_list_reads_the_surname_first_in_capitals():
     assert problems == []
 
 
+def test_number_problems_name_numbers_already_used(roster: RosterService, class_id: int):
+    from app.services.roster import parse_student_list
+
+    _add(roster, class_id, "Ada", "Lovelace", no="S01")
+    pasted, _ = parse_student_list("s01 Alan Turing\nS02 Grace Hopper\nMary Evans\n")
+    assert roster.number_problems(class_id, pasted) == [
+        "Line 1: student number s01 is already used by Ada Lovelace."
+    ]
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 

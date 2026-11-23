@@ -524,6 +524,15 @@ class RosterService:
             if self.students.find_by_name(class_id, _clean(p.first_name), _clean(p.last_name))
         ]
 
+    def number_problems(self, class_id: int, pasted: list[PastedStudent]) -> list[str]:
+        """Why add_students() would refuse the pasted numbers, one line each, so the list
+        can be fixed before adding: a number another student of the class has."""
+        problems = []
+        for p in pasted:
+            if p.student_no and (owner := self.students.find_by_student_no(class_id, p.student_no)):
+                problems.append(f"Line {p.line}: student number {p.student_no} is already used by {owner.full_name}.")
+        return problems
+
     def transfer_student(self, student_id: int, class_id: int) -> Student:
         """Move a student to another class, e.g. after a change of homeroom.
 
