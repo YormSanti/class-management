@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import SchoolClass
-from app.services.roster import RosterError, example_school_year
+from app.services.roster import RosterError, example_school_year, term_warning
 
 
 class ClassDialog(QDialog):
@@ -70,6 +70,13 @@ class ClassDialog(QDialog):
 
     def accept(self) -> None:
         values = {"name": self.name.text(), "term": self.term.text()}
+        changed = self._original is None or " ".join(values["term"].split()) != self._original.term
+        warning = term_warning(" ".join(values["term"].split()), date.today()) if changed else None
+        if warning and QMessageBox.question(
+            self, self.windowTitle(), f"{warning}\n\nSave the class with this school year anyway?"
+        ) != QMessageBox.StandardButton.Yes:
+            self.term.setFocus()
+            return
         school_class = replace(self._original, **values) if self._original else SchoolClass(**values)
         try:
             self.saved = self._save(school_class, self.first_subject.text())

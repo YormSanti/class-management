@@ -122,6 +122,20 @@ def example_school_year(today: date) -> str:
     return f"{first}-{first + 1}"
 
 
+TERM_YEARS_AWAY = 5  # a school year further from today than this was probably mistyped
+
+
+def term_warning(term: str, today: date) -> str | None:
+    """Why `term` looks mistyped, to ask before saving it: a year far from today
+    ("2062-2063") or a cut-off second year ("2026-207"). None when it looks fine."""
+    if m := re.search(r"\b\d{4}\s*[-/–]\s*(\d{3})\b", term):
+        return f"The second year in {term} has only three digits ({m.group(1)})."
+    for year in map(int, re.findall(r"\b\d{4}\b", term)):
+        if abs(year - today.year) > TERM_YEARS_AWAY:
+            return f"{term} is more than {TERM_YEARS_AWAY} years away from {today.year}."
+    return None
+
+
 def move_up(name: str) -> str:
     """The class name one grade up: "7B" -> "8B", "Grade 7 Blue" -> "Grade 8 Blue".
 

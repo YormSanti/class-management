@@ -70,6 +70,19 @@ def test_sister_class_name(name: str, expected: str):
     assert sister_class_name(name) == expected
 
 
+@pytest.mark.parametrize(
+    "term, warned",
+    [("2026-2027", False), ("2026-27", False), ("Term 1", False), ("2026-207", True), ("2062-2063", True),
+     ("2016", True), ("2021/2022", False)],
+)
+def test_term_warning(term: str, warned: bool):
+    from datetime import date
+
+    from app.services.roster import term_warning
+
+    assert (term_warning(term, date(2026, 11, 23)) is not None) == warned
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

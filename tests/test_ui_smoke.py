@@ -1559,6 +1559,32 @@ def test_manage_classes_exports_the_school_year(
     assert told[0].startswith("Saved 2 students of 2 classes to")
 
 
+def test_class_dialog_asks_before_a_mistyped_school_year(
+    qapp: QApplication, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.dialogs.class_dialog import ClassDialog
+
+    asked = []
+    answer = QMessageBox.StandardButton.No
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: asked.append(a[2]) or answer)
+    dialog = ClassDialog(roster.save_class)
+    dialog.name.setText("7B")
+    dialog.term.setText("2026-207")
+    dialog.accept()
+    assert dialog.saved is None and "only three digits" in asked[0]
+    answer = QMessageBox.StandardButton.Yes
+    dialog.accept()
+    assert dialog.saved.term == "2026-207"
+
+    asked.clear()  # editing the name only doesn't ask again
+    edit = ClassDialog(roster.save_class, dialog.saved)
+    edit.name.setText("7C")
+    edit.accept()
+    assert asked == [] and edit.saved.name == "7C"
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
