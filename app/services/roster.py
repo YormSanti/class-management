@@ -20,6 +20,8 @@ class RosterError(ValueError):
 NAME_MAX = 60  # characters in a first or last name: room for long double names, not a paragraph
 STUDENT_NO_MAX = 20  # characters: a school's ID, not a sentence
 STUDENT_NOTES_MAX = 1000  # characters: allergies, who collects them, a few lines more
+CLASS_NAME_MAX = 40  # characters: "Grade 7 Blue (afternoon group)" fits
+TERM_MAX = 30  # characters in a school year: "2026-2027 second semester" fits
 
 
 def _check_length(text: str, limit: int, what: str) -> None:
@@ -257,6 +259,8 @@ class RosterService:
         )
         if not school_class.name:
             raise RosterError("Class name is required.")
+        _check_length(school_class.name, CLASS_NAME_MAX, "A class name")
+        _check_length(school_class.term, TERM_MAX, "A school year")
         self._check_name_free(school_class.name, school_class.term, school_class.id)
         if school_class.id is not None:
             self.classes.update(school_class)
@@ -315,6 +319,7 @@ class RosterService:
         new = _clean(new)
         if not new:
             raise RosterError("Enter the school year, e.g. 2026-2027.")
+        _check_length(new, TERM_MAX, "A school year")
         if new == old:
             return 0
         classes = self.list_classes(old)

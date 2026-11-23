@@ -18,6 +18,18 @@ def test_class_requires_name(roster: RosterService):
         roster.save_class(SchoolClass(name="   "))
 
 
+def test_class_names_and_school_years_have_a_length_limit(roster: RosterService):
+    roster.save_class(SchoolClass(name="C" * 40, term="Y" * 30))
+    with pytest.raises(RosterError, match="A class name can be at most 40 characters"):
+        roster.save_class(SchoolClass(name="C" * 41))
+    with pytest.raises(RosterError, match="A school year can be at most 30 characters"):
+        roster.save_class(SchoolClass(name="7B", term="Y" * 31))
+    with pytest.raises(RosterError, match="A school year can be at most 30 characters"):
+        roster.rename_term("Y" * 30, "Z" * 31)
+    with pytest.raises(RosterError, match="A school year"):
+        roster.start_new_year("Z" * 31, [(roster.list_classes()[0].id, "8B")])
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"
