@@ -46,6 +46,29 @@ On the Attendance page's Day tab:
 On the Month tab the same letters mark the selected cell, and Alt+← / Alt+→ (or Page Up /
 Page Down) change the month. Right-clicking a student on the Day tab lists what can be done.
 
+On the Manage classes page:
+
+- In the class list, Ctrl+N adds a student, Enter or F2 edits one and Delete deletes a
+  student added by mistake (one with anything recorded is deactivated instead).
+- Ctrl+V adds the students copied from a spreadsheet, a CSV file or a typed list, after a
+  preview; Ctrl+C copies the students shown. In the Add student dialog, Ctrl+Enter saves
+  and starts on the next student.
+- F2 edits the selected class or subject and Delete deletes it, while nothing is recorded
+  in it. Right-clicking a student, class or subject lists what can be done.
+
+## Classes and students
+
+A pasted list can have one student per line (`Ada Lovelace`, `Lovelace, Ada` or
+`LOVELACE Ada`, optionally after a number or a bullet) or columns separated by tabs,
+semicolons or commas: first and last name; number, first and last name; or number, first
+and last name and notes. The preview points out lines it can't read, names listed twice and
+numbers already used before anything is added.
+
+**Copy…** under Classes sets up another class of the same school year with the same
+subjects, and **Export year…** saves the students of every class of a school year in one
+CSV file, e.g. for the school office. The class list's search ignores accents, so "Jose"
+finds "José".
+
 ## Test
 
 ```bash
