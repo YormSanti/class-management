@@ -42,7 +42,9 @@ class PasteStudentsDialog(QDialog):
         self, roster: RosterService, class_id: int, parent: QWidget | None = None, text: str = ""
     ):
         super().__init__(parent)
-        self.setWindowTitle("Paste a list of students")
+        school_class = roster.get_class(class_id)
+        self.setWindowTitle(f"Paste a list of students into {school_class.display_name}" if school_class
+                            else "Paste a list of students")  # fmt: skip
         self.setMinimumSize(720, 440)
         self.roster = roster
         self.class_id = class_id

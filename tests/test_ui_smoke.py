@@ -206,6 +206,17 @@ def test_paste_dialog_counts_the_problems_not_shown(qapp: QApplication, roster: 
     assert "&lt;Socrates&gt;" in dialog.problems.text()
 
 
+def test_student_and_paste_dialogs_name_the_class_and_student(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+    from app.ui.dialogs.student_dialog import StudentDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    assert StudentDialog(roster.save_student, class_id, class_name="7B").windowTitle() == "Add student to 7B"
+    assert StudentDialog(roster.save_student, class_id, ada).windowTitle() == "Edit student · Ada Lovelace"
+    assert PasteStudentsDialog(roster, class_id).windowTitle() == "Paste a list of students into 7B (2026-2027)"
+
+
 def test_roster_export_writes_csv(
     window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

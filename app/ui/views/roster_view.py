@@ -278,6 +278,7 @@ class RosterView(QWidget):
             parent=self,
             same_name=self.roster.same_name_students,
             suggest_no=lambda: self.roster.suggest_student_no(class_id),
+            class_name=school_class.display_name if (school_class := self.roster.get_class(class_id)) else "",
         )
         dialog.exec()
         if dialog.added:  # also when cancelled after "Save and add another"

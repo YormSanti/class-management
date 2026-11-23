@@ -24,7 +24,8 @@ class StudentDialog(QDialog):
     `same_name`, if given, returns other students with the entered name; the
     teacher is asked before a second student with that name is saved.
     `suggest_no`, if given, pre-fills the student number of each new student, and
-    is offered as a hint when editing a student without one.
+    is offered as a hint when editing a student without one. `class_name` names the
+    class students are added to in the title.
 
     When adding, "Save and add another" keeps the dialog open for the next
     student. `added` lists every student saved, even if the dialog is then cancelled.
@@ -39,9 +40,13 @@ class StudentDialog(QDialog):
         *,
         same_name: Callable[[Student], list[Student]] | None = None,
         suggest_no: Callable[[], str] | None = None,
+        class_name: str = "",
     ):
         super().__init__(parent)
-        self.setWindowTitle("Edit student" if student else "Add student")
+        if student is not None:
+            self.setWindowTitle(f"Edit student · {student.full_name}")
+        else:
+            self.setWindowTitle(f"Add student to {class_name}" if class_name else "Add student")
         self.setMinimumWidth(400)
         self._save = save
         self._same_name = same_name
