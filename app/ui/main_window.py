@@ -530,7 +530,10 @@ class MainWindow(QMainWindow):
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if subject is None:
             return
-        answer = QMessageBox.question(self, "Delete subject", f"Delete the subject {subject.name}?")
+        taught = f" (taught by {subject.teacher})" if subject.teacher else ""
+        answer = QMessageBox.question(
+            self, "Delete subject", f"Delete the subject {subject.name}{taught}?\n\nThis can't be undone."
+        )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:

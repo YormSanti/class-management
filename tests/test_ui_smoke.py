@@ -1585,6 +1585,19 @@ def test_class_dialog_asks_before_a_mistyped_school_year(
     assert asked == [] and edit.saved.name == "7C"
 
 
+def test_delete_subject_names_the_teacher(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    window.select_subject(roster.save_subject(Subject(class_id=class_id, name="Art", teacher="Ms Kahlo")).id)
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: asked.append(a[2]) or QMessageBox.StandardButton.No)
+    window.delete_subject()
+    assert asked == ["Delete the subject Art (taught by Ms Kahlo)?\n\nThis can't be undone."]
+    assert len(roster.list_subjects(class_id)) == 1
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
