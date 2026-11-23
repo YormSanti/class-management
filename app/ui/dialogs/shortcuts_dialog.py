@@ -37,6 +37,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Students", "Enter", "Edit the selected student"),
     ("Students", "Delete", "Delete the selected student, or deactivate them if anything is recorded"),
     ("Students", "Ctrl+C", "Copy the students shown, for a spreadsheet"),
+    ("Students", "Ctrl+V", "Add the students copied, e.g. from a spreadsheet, after a preview"),
 )
 
 

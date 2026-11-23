@@ -140,8 +140,8 @@ class RosterView(QWidget):
         self.add_button = QPushButton("Add student")
         self.add_button.clicked.connect(self.add_student)
         self.paste_button = QPushButton("Paste list…")
-        self.paste_button.setToolTip("Add many students at once, e.g. copied from a spreadsheet")
-        self.paste_button.clicked.connect(self.paste_students)
+        self.paste_button.setToolTip("Add many students at once, e.g. copied from a spreadsheet (Ctrl+V)")
+        self.paste_button.clicked.connect(lambda: self.paste_students())
         self.edit_button = QPushButton("Edit…")
         self.edit_button.clicked.connect(self.edit_selected)
         self.toggle_active_button = QPushButton("Deactivate")
@@ -237,6 +237,8 @@ class RosterView(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
         copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
         copy.setContext(Qt.ShortcutContext.WidgetShortcut)
+        paste = QShortcut(QKeySequence.StandardKey.Paste, self.table, activated=self.paste_clipboard)
+        paste.setContext(Qt.ShortcutContext.WidgetShortcut)
         remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.table, activated=self.remove_selected)
         remove.setContext(Qt.ShortcutContext.WidgetShortcut)
 
@@ -284,15 +286,19 @@ class RosterView(QWidget):
             self._select(dialog.added[-1].id)
             self.students_changed.emit()
 
-    def paste_students(self) -> None:
+    def paste_students(self, text: str = "") -> None:
         if self.class_id is None:
             return
-        dialog = PasteStudentsDialog(self.roster, self.class_id, parent=self)
+        dialog = PasteStudentsDialog(self.roster, self.class_id, parent=self, text=text)
         if dialog.exec() and dialog.added:
             self.search.clear()
             self.refresh()
             self._select(dialog.added[0].id)
             self.students_changed.emit()
+
+    def paste_clipboard(self) -> None:
+        """Ctrl+V on the list: add the students copied, e.g. from a spreadsheet, after a preview."""
+        self.paste_students(QApplication.clipboard().text())
 
     def edit_selected(self) -> None:
         student = self._selected_student()

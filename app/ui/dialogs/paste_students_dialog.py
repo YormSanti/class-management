@@ -34,10 +34,13 @@ PROBLEMS_SHOWN = 5  # lines that can't be read, named under the list; more would
 class PasteStudentsDialog(QDialog):
     """Add many students by pasting a list, with a live preview of how it was read.
 
-    `added` holds the new students after OK.
+    `text` starts the list, e.g. with what is on the clipboard. `added` holds the new
+    students after OK.
     """
 
-    def __init__(self, roster: RosterService, class_id: int, parent: QWidget | None = None):
+    def __init__(
+        self, roster: RosterService, class_id: int, parent: QWidget | None = None, text: str = ""
+    ):
         super().__init__(parent)
         self.setWindowTitle("Paste a list of students")
         self.setMinimumSize(720, 440)
@@ -102,6 +105,7 @@ class PasteStudentsDialog(QDialog):
         layout.addWidget(self.number_missing)
         layout.addWidget(self.summary)
         layout.addWidget(self.buttons)
+        self.text.setPlainText(text)  # e.g. the clipboard, when opened with Ctrl+V
         self._update_preview()
 
     def _update_preview(self) -> None:

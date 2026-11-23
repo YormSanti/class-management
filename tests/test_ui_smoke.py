@@ -1158,6 +1158,37 @@ def test_delete_key_deletes_or_deactivates_the_selected_student(
     assert [s.full_name for s in roster.list_students(class_id, include_inactive=True)] == ["Alan Turing"]
 
 
+def test_ctrl_v_pastes_the_clipboard_into_the_class_list(
+    window: MainWindow, roster: RosterService, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.views import roster_view
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.show_page("Manage classes")
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    opened: list[str] = []
+
+    class FakeDialog:
+        def __init__(self, _roster, _class_id, parent=None, text=""):
+            opened.append(text)
+            self.added = []
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(roster_view, "PasteStudentsDialog", FakeDialog)
+    qapp.clipboard().setText("Ada Lovelace\nAlan Turing")
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    QTest.keyClick(view.table, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    assert opened == ["Ada Lovelace\nAlan Turing"]
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
