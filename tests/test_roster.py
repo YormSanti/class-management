@@ -435,6 +435,18 @@ def test_parse_student_list_reads_comma_separated_columns():
     assert problems == []
 
 
+def test_pasted_students_can_have_notes(roster: RosterService, class_id: int):
+    from app.services.roster import parse_student_list
+
+    students, problems = parse_student_list("1\tAda\tLovelace\tAllergic to nuts\n2\tAlan\tTuring\n")
+    assert problems == [] and students[0].notes == "Allergic to nuts"
+    roster.add_students(class_id, students)
+    assert [(s.first_name, s.notes) for s in roster.list_students(class_id)] == [
+        ("Ada", "Allergic to nuts"),
+        ("Alan", ""),
+    ]
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 

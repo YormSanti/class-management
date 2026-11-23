@@ -172,6 +172,18 @@ def test_paste_students_dialog_previews_and_adds(qapp: QApplication, roster: Ros
     assert len(roster.list_students(class_id)) == 2
 
 
+def test_paste_dialog_shows_notes_only_when_pasted(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("Ada Lovelace")
+    assert dialog.preview.isColumnHidden(3)
+    dialog.text.setPlainText("1\tAda\tLovelace\tAllergic to nuts")
+    assert not dialog.preview.isColumnHidden(3)
+    assert dialog.preview.item(0, 3).text() == "Allergic to nuts"
+
+
 def test_roster_export_writes_csv(
     window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

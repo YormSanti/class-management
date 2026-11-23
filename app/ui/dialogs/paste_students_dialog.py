@@ -45,7 +45,7 @@ class PasteStudentsDialog(QDialog):
         intro = QLabel(
             "One student per line, as <i>First Last</i> or <i>Last, First</i>, optionally after "
             "a student number. Columns copied from a spreadsheet or a CSV file work too: "
-            "first and last name, or number, first and last name."
+            "first and last name; number, first and last name; or number, first and last name and notes."
         )
         intro.setWordWrap(True)
 
@@ -53,8 +53,8 @@ class PasteStudentsDialog(QDialog):
         self.text.setPlaceholderText("Ada Lovelace\nHopper, Grace\n007 Alan Turing")
         self.text.textChanged.connect(self._update_preview)
 
-        self.preview = QTableWidget(0, 3)
-        self.preview.setHorizontalHeaderLabels(("Student #", "First name", "Last name"))
+        self.preview = QTableWidget(0, 4)
+        self.preview.setHorizontalHeaderLabels(("Student #", "First name", "Last name", "Notes"))
         self.preview.verticalHeader().setVisible(False)
         self.preview.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.preview.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -122,8 +122,9 @@ class PasteStudentsDialog(QDialog):
             self._students = numbered
         self.preview.setRowCount(len(self._students))
         for row, s in enumerate(self._students):
-            for col, text in enumerate((s.student_no or "", s.first_name, s.last_name)):
+            for col, text in enumerate((s.student_no or "", s.first_name, s.last_name, s.notes)):
                 self.preview.setItem(row, col, QTableWidgetItem(text))
+        self.preview.setColumnHidden(3, not any(s.notes for s in self._students))
 
         self.problems.setText("<br>".join(problems[:5]) + ("<br>…" if len(problems) > 5 else ""))
         style.set_color(self.problems, style.color(self, "danger"))

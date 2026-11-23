@@ -138,6 +138,7 @@ class PastedStudent:
     first_name: str
     last_name: str
     student_no: str | None = None
+    notes: str = ""
 
 
 _STUDENT_NO = re.compile(r"[A-Za-z]{0,3}[-_]?\d+")  # 7, 007, S007, S-007
@@ -165,8 +166,8 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
 
     A line can be "First Last", "Last, First", either one after a student number
     ("007 Ada Lovelace"), or columns copied from a spreadsheet or a CSV file
-    separated by tabs, semicolons or (two or more) commas: first and last name, or
-    number, first and last name. Blank lines and a heading row (containing "name") are skipped.
+    separated by tabs, semicolons or (two or more) commas: first and last name;
+    number, first and last name; or number, first and last name and notes. Blank lines and a heading row (containing "name") are skipped.
     """
     students: list[PastedStudent] = []
     problems: list[str] = []
@@ -188,6 +189,8 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
                 students.append(PastedStudent(line_no, cells[0], cells[1]))
             elif len(cells) == 3:
                 students.append(PastedStudent(line_no, cells[1], cells[2], cells[0]))
+            elif len(cells) == 4:
+                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0], cells[3]))
             else:
                 problems.append(f"Line {line_no}: expected first and last name columns: {line}")
             continue
@@ -489,7 +492,11 @@ class RosterService:
         with transaction(self.students.conn):
             for p in pasted:
                 student = Student(
-                    class_id=class_id, first_name=p.first_name, last_name=p.last_name, student_no=p.student_no
+                    class_id=class_id,
+                    first_name=p.first_name,
+                    last_name=p.last_name,
+                    student_no=p.student_no,
+                    notes=p.notes,
                 )
                 try:
                     added.append(self.save_student(student))
