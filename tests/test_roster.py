@@ -44,6 +44,14 @@ def test_classes_are_sorted_as_people_read_them(roster: RosterService):
     assert [c.name for c in roster.list_classes()] == ["7A", "7B", "9a", "10A", "Grade 9", "Grade 11"]
 
 
+def test_inactive_counts(roster: RosterService, class_id: int):
+    gone = _add(roster, class_id, "Ada", "Lovelace")
+    _add(roster, class_id, "Alan", "Turing")
+    assert roster.inactive_counts() == {}
+    roster.deactivate_student(gone.id)
+    assert roster.inactive_counts() == {class_id: 1}
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

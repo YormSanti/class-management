@@ -97,3 +97,8 @@ class ClassRepository:
             """
         )
         return {r["id"]: (r["students"], r["subjects"]) for r in rows}
+
+    def inactive_counts(self) -> dict[int, int]:
+        """{class id: inactive students}, for the classes that have any."""
+        rows = self.conn.execute("SELECT class_id, count(*) AS n FROM students WHERE active = 0 GROUP BY class_id")
+        return {r["class_id"]: r["n"] for r in rows}

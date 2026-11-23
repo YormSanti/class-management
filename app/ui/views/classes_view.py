@@ -226,6 +226,7 @@ class ClassesView(QWidget):
         shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
         self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
         counts = self.roster.class_counts()
+        inactive = self.roster.inactive_counts()
         with QSignalBlocker(self.class_table):
             self.class_table.setRowCount(0)
             for school_class in shown:
@@ -234,7 +235,12 @@ class ClassesView(QWidget):
                 students, subjects = counts.get(school_class.id, (0, 0))
                 self.class_table.setItem(row, 0, _item(school_class.name, school_class.id))
                 self.class_table.setItem(row, 1, _item(school_class.term))
-                self.class_table.setItem(row, 2, _item(str(students), align_right=True))
+                students_item = _item(str(students), align_right=True)
+                tip = f"{students} active student{'' if students == 1 else 's'}"
+                if n := inactive.get(school_class.id, 0):
+                    tip += f" · {n} inactive, kept for their records"
+                students_item.setToolTip(tip)
+                self.class_table.setItem(row, 2, students_item)
                 self.class_table.setItem(row, 3, _item(str(subjects), align_right=True))
                 if school_class.id == self.class_id:
                     self.class_table.selectRow(row)

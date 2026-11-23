@@ -1489,6 +1489,17 @@ def test_right_click_menu_of_a_subject(window: MainWindow, roster: RosterService
     assert actions["Edit…"].isEnabled() and actions["Delete…"].isEnabled()
 
 
+def test_class_table_names_inactive_students_in_a_tooltip(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    gone = roster.save_student(Student(class_id=class_id, first_name="Alan", last_name="Turing"))
+    roster.deactivate_student(gone.id)
+    window.select_class(class_id)
+    item = window.classes_view.class_table.item(0, 2)
+    assert item.text() == "1"
+    assert item.toolTip() == "1 active student · 1 inactive, kept for their records"
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

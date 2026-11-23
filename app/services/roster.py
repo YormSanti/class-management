@@ -296,6 +296,10 @@ class RosterService:
         """{class id: (active students, subjects)}."""
         return self.classes.counts()
 
+    def inactive_counts(self) -> dict[int, int]:
+        """{class id: inactive students}; classes without any are left out."""
+        return self.classes.inactive_counts()
+
     def get_class(self, class_id: int) -> SchoolClass | None:
         return self.classes.get(class_id)
 
