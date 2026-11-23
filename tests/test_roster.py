@@ -30,6 +30,14 @@ def test_class_names_and_school_years_have_a_length_limit(roster: RosterService)
         roster.start_new_year("Z" * 31, [(roster.list_classes()[0].id, "8B")])
 
 
+def test_subject_and_teacher_names_have_a_length_limit(roster: RosterService, class_id: int):
+    roster.save_subject(Subject(class_id=class_id, name="S" * 60, teacher="T" * 60))
+    with pytest.raises(RosterError, match="A subject name can be at most 60 characters"):
+        roster.save_subject(Subject(class_id=class_id, name="S" * 61))
+    with pytest.raises(RosterError, match="A teacher's name can be at most 60 characters"):
+        roster.save_subject(Subject(class_id=class_id, name="Maths", teacher="T" * 61))
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

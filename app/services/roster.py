@@ -22,6 +22,7 @@ STUDENT_NO_MAX = 20  # characters: a school's ID, not a sentence
 STUDENT_NOTES_MAX = 1000  # characters: allergies, who collects them, a few lines more
 CLASS_NAME_MAX = 40  # characters: "Grade 7 Blue (afternoon group)" fits
 TERM_MAX = 30  # characters in a school year: "2026-2027 second semester" fits
+SUBJECT_NAME_MAX = 60  # characters in a subject or teacher name
 
 
 def _check_length(text: str, limit: int, what: str) -> None:
@@ -364,6 +365,8 @@ class RosterService:
         subject = replace(subject, name=_clean(subject.name), teacher=_clean(subject.teacher))
         if not subject.name:
             raise RosterError("Subject name is required.")
+        _check_length(subject.name, SUBJECT_NAME_MAX, "A subject name")
+        _check_length(subject.teacher, SUBJECT_NAME_MAX, "A teacher's name")
         if self.classes.get(subject.class_id) is None:
             raise RosterError("The selected class no longer exists.")
         existing = self.subjects.find_by_name(subject.class_id, subject.name)
