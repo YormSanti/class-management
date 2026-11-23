@@ -1500,6 +1500,16 @@ def test_class_table_names_inactive_students_in_a_tooltip(window: MainWindow, ro
     assert item.toolTip() == "1 active student · 1 inactive, kept for their records"
 
 
+def test_class_table_lists_the_subjects_in_a_tooltip(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B"), "Science").id
+    roster.save_subject(Subject(class_id=class_id, name="Maths"))
+    roster.save_class(SchoolClass(name="7C"))
+    window.select_class(class_id)
+    table = window.classes_view.class_table
+    assert table.item(0, 3).toolTip() == "Maths, Science"
+    assert table.item(1, 3).toolTip() == ""
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

@@ -241,7 +241,11 @@ class ClassesView(QWidget):
                     tip += f" · {n} inactive, kept for their records"
                 students_item.setToolTip(tip)
                 self.class_table.setItem(row, 2, students_item)
-                self.class_table.setItem(row, 3, _item(str(subjects), align_right=True))
+                subjects_item = _item(str(subjects), align_right=True)
+                if subjects:
+                    names = [s.name for s in self.roster.list_subjects(school_class.id)]
+                    subjects_item.setToolTip(", ".join(names))
+                self.class_table.setItem(row, 3, subjects_item)
                 if school_class.id == self.class_id:
                     self.class_table.selectRow(row)
         has_class = self.class_id is not None
