@@ -1228,8 +1228,10 @@ def test_roster_deletes_a_student_without_records(
     view = window.classes_view.roster_view
     view._select(alan.id)
     assert not view.delete_button.isEnabled()
+    assert view.delete_button.toolTip() == "Alan Turing has 1 attendance mark recorded, so they can only be deactivated"
     view._select(ada.id)
     assert view.delete_button.isEnabled()
+    assert view.delete_button.toolTip().startswith("Delete a student added by mistake")
     monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
     view.delete_selected()
     assert [s.full_name for s in roster.list_students(class_id)] == ["Alan Turing"]

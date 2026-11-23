@@ -596,7 +596,13 @@ class RosterView(QWidget):
         self.history_button.setEnabled(student is not None)
         self.toggle_active_button.setEnabled(student is not None)
         self.transfer_button.setEnabled(student is not None)
-        self.delete_button.setEnabled(student is not None and self.roster.can_delete_student(student.id))
+        recorded = self.roster.recorded_for_student(student.id) if student is not None else ""
+        self.delete_button.setEnabled(student is not None and not recorded)
+        self.delete_button.setToolTip(
+            f"{student.full_name} has {recorded} recorded, so they can only be deactivated"
+            if student is not None and recorded
+            else "Delete a student added by mistake; only while nothing is recorded for them"
+        )
         self.toggle_active_button.setText(
             "Reactivate" if student is not None and not student.active else "Deactivate"
         )
