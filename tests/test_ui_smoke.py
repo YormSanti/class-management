@@ -1339,6 +1339,28 @@ def test_class_list_hides_the_number_column_when_nobody_has_a_number(window: Mai
     assert not view.table.isColumnHidden(0)
 
 
+def test_class_list_says_how_many_students_were_pasted(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from app.services.roster import parse_student_list
+    from app.ui.views import roster_view
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+
+    class FakeDialog:
+        def __init__(self, roster, class_id, parent=None, text=""):
+            self.added = roster.add_students(class_id, parse_student_list("Ada Lovelace\nAlan Turing")[0])
+
+        def exec(self):
+            return 1
+
+    monkeypatch.setattr(roster_view, "PasteStudentsDialog", FakeDialog)
+    view.paste_students()
+    assert view.count_label.text() == "Added 2 students · 2 students"
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

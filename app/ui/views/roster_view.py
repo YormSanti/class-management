@@ -294,6 +294,7 @@ class RosterView(QWidget):
             self.refresh()
             self._select(dialog.added[-1].id)
             self.students_changed.emit()
+            self._say_added(len(dialog.added))
 
     def paste_students(self, text: str = "") -> None:
         if self.class_id is None:
@@ -304,6 +305,7 @@ class RosterView(QWidget):
             self.refresh()
             self._select(dialog.added[0].id)
             self.students_changed.emit()
+            self._say_added(len(dialog.added))
 
     def paste_clipboard(self) -> None:
         """Ctrl+V on the list: add the students copied, e.g. from a spreadsheet, after a preview."""
@@ -547,6 +549,10 @@ class RosterView(QWidget):
             key=lambda s: sort_key(s, column),
             reverse=order == Qt.SortOrder.DescendingOrder,
         )
+
+    def _say_added(self, n: int) -> None:
+        """Put how many students were just added before the class count."""
+        self.count_label.setText(f"Added {n} student{'' if n == 1 else 's'} · {self.count_label.text()}")
 
     def _selected_row(self) -> int | None:
         rows = self.table.selectionModel().selectedRows()
