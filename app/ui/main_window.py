@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
         self.attendance_view.navigate_requested.connect(self.show_page)
-        self.settings_view = SettingsView(config, save_config, restore_backup)
+        self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
         self.settings_view.back_up_requested.connect(self.back_up_now)

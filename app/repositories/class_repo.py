@@ -102,3 +102,14 @@ class ClassRepository:
         """{class id: inactive students}, for the classes that have any."""
         rows = self.conn.execute("SELECT class_id, count(*) AS n FROM students WHERE active = 0 GROUP BY class_id")
         return {r["class_id"]: r["n"] for r in rows}
+
+    def totals(self) -> dict[str, int]:
+        """How much the whole data file holds: {"classes", "students", "attendance": count}."""
+        row = self.conn.execute(
+            """
+            SELECT (SELECT count(*) FROM classes) AS classes,
+                   (SELECT count(*) FROM students) AS students,
+                   (SELECT count(*) FROM attendance) AS attendance
+            """
+        ).fetchone()
+        return dict(row)

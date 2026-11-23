@@ -322,6 +322,15 @@ class RosterService:
         """{class id: inactive students}; classes without any are left out."""
         return self.classes.inactive_counts()
 
+    def describe_data(self) -> str:
+        """What the data file holds, e.g. "4 classes · 98 students · 1,203 attendance marks"."""
+        t = self.classes.totals()
+        return " · ".join(
+            f"{t[key]:,} {one if t[key] == 1 else many}"
+            for key, one, many in (("classes", "class", "classes"), ("students", "student", "students"),
+                                   ("attendance", "attendance mark", "attendance marks"))
+        )  # fmt: skip
+
     def get_class(self, class_id: int) -> SchoolClass | None:
         return self.classes.get(class_id)
 

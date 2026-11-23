@@ -1598,6 +1598,13 @@ def test_delete_subject_names_the_teacher(window: MainWindow, roster: RosterServ
     assert len(roster.list_subjects(class_id)) == 1
 
 
+def test_settings_page_says_what_the_data_holds(window: MainWindow, roster: RosterService):
+    roster.save_class(SchoolClass(name="7B"))
+    window.show_page("Settings")
+    window.settings_view.refresh()
+    assert window.settings_view.data_size_label.text().endswith("1 class · 0 students · 0 attendance marks")
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
@@ -2003,7 +2010,7 @@ def test_settings_page_shows_sizes(window: MainWindow, db_path: Path):
     auto_backup(db_path, window.config.backup_dir, now=datetime(2026, 11, 6, 8, 30))
     view = window.settings_view
     view.refresh()
-    assert view.data_size_label.text() == format_size(db_path.stat().st_size)
+    assert view.data_size_label.text().startswith(format_size(db_path.stat().st_size) + " · ")
     assert view.backup_summary.toolTip().endswith(" in all")
 
 

@@ -83,6 +83,13 @@ def test_term_warning(term: str, warned: bool):
     assert (term_warning(term, date(2026, 11, 23)) is not None) == warned
 
 
+def test_describe_data(roster: RosterService, class_id: int):
+    assert roster.describe_data() == "1 class · 0 students · 0 attendance marks"
+    _add(roster, class_id, "Ada", "Lovelace")
+    _add(roster, class_id, "Alan", "Turing")
+    assert roster.describe_data() == "1 class · 2 students · 0 attendance marks"
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

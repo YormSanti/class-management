@@ -89,9 +89,11 @@ class SettingsView(QWidget):
         save: Callable[[AppConfig], None] | None = None,
         restore: Callable[[Path], Path] | None = None,
         parent: QWidget | None = None,
+        describe_data: Callable[[], str] | None = None,
     ):
         super().__init__(parent)
         self.config = config
+        self.describe_data = describe_data  # e.g. "4 classes · 98 students", shown with the file size
         self.save = save
         self.restore = restore
         self._shown_backups: list[Path] = []
@@ -265,7 +267,10 @@ class SettingsView(QWidget):
 
     def refresh(self) -> None:
         size = _file_size(self.config.db_path)
-        self.data_size_label.setText("" if size is None else format_size(size))
+        about = [format_size(size)] if size is not None else []
+        if self.describe_data is not None:
+            about.append(self.describe_data())
+        self.data_size_label.setText(" · ".join(about))
         found = list_auto_backups(self.config.backup_dir)
         if found:
             newest = backup_time(found[0])
