@@ -96,6 +96,13 @@ def test_a_subject_taught_by_me_is_taught_by_the_user(roster: RosterService, cla
     assert subject.teacher == "" and roster.teacher_names() == []
 
 
+def test_new_year_must_differ_from_the_year_copied(roster: RosterService):
+    source = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    with pytest.raises(RosterError, match="7B is already in 2026-2027. Enter the new school year, e.g. 2027-2028"):
+        roster.start_new_year("2026-2027", [(source, "8B")])
+    assert len(roster.list_classes()) == 1
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

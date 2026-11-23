@@ -386,8 +386,15 @@ class RosterService:
         created = []
         with transaction(self.classes.conn):
             for (source_id, _), name in zip(plan, names):
-                if self.classes.get(source_id) is None:
+                source = self.classes.get(source_id)
+                if source is None:
                     raise RosterError("One of the classes to copy no longer exists.")
+                if source.term.casefold() == new_term.casefold():
+                    example = f", e.g. {next_term(new_term)}" if next_term(new_term) else ""
+                    raise RosterError(
+                        f"{source.name} is already in {source.term}. Enter the new school year{example}; "
+                        "to set up another class in this year, use Copy… under Classes."
+                    )
                 new_class = self.save_class(SchoolClass(name=name, term=new_term))
                 for subject in self.subjects.list_for_class(source_id):
                     self.subjects.add(
