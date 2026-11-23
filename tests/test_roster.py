@@ -447,6 +447,19 @@ def test_pasted_students_can_have_notes(roster: RosterService, class_id: int):
     ]
 
 
+def test_parse_student_list_leaves_out_bullets():
+    from app.services.roster import parse_student_list
+
+    students, problems = parse_student_list("- Ada Lovelace\n• Hopper, Grace\n* 007 Alan Turing\n–Mary Evans\n")
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [
+        (None, "Ada", "Lovelace"),
+        (None, "Grace", "Hopper"),
+        ("007", "Alan", "Turing"),
+        (None, "Mary", "Evans"),
+    ]
+    assert problems == []
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 

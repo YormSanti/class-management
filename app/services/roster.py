@@ -143,6 +143,7 @@ class PastedStudent:
 
 _STUDENT_NO = re.compile(r"[A-Za-z]{0,3}[-_]?\d+")  # 7, 007, S007, S-007
 _LIST_NUMBER = re.compile(r"\d+[.)]")  # "1." or "1)" from a numbered list
+_BULLET = re.compile(r"[-*•·◦▪–]\s*")  # "- " or "• " from a bulleted list
 
 
 def _unquote(text: str) -> str:
@@ -196,7 +197,7 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
             continue
 
         student_no = None
-        line = _unquote(line)
+        line = _unquote(_BULLET.sub("", line, count=1) if _BULLET.match(line) else line)
         first_word, _, rest = line.partition(" ")
         if _LIST_NUMBER.fullmatch(first_word):
             line = rest.strip()
