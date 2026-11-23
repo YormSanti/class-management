@@ -235,6 +235,8 @@ class RosterView(QWidget):
         QShortcut(QKeySequence.StandardKey.Find, self, activated=self.search.setFocus)
         QShortcut(QKeySequence.StandardKey.New, self, activated=self.add_student)
         QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
+        rename = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table, activated=self.edit_selected)
+        rename.setContext(Qt.ShortcutContext.WidgetShortcut)  # F2 edits, as in a file manager
         copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
         copy.setContext(Qt.ShortcutContext.WidgetShortcut)
         paste = QShortcut(QKeySequence.StandardKey.Paste, self.table, activated=self.paste_clipboard)

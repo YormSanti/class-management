@@ -1225,6 +1225,35 @@ def test_ctrl_v_pastes_the_clipboard_into_the_class_list(
     assert opened == ["Ada Lovelace\nAlan Turing"]
 
 
+def test_f2_edits_the_selected_student(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.views import roster_view
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.show_page("Manage classes")
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    edited: list[Student] = []
+
+    class FakeDialog:
+        def __init__(self, _save, _class_id, student=None, **kwargs):
+            edited.append(student)
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(roster_view, "StudentDialog", FakeDialog)
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    view.table.setFocus()
+    view._select(ada.id)
+    QTest.keyClick(view.table, Qt.Key.Key_F2)
+    assert [s.full_name for s in edited] == ["Ada Lovelace"]
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
