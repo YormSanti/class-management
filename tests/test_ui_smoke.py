@@ -1270,6 +1270,28 @@ def test_right_click_menu_of_a_student_in_the_class_list(
     assert not actions["Delete…"].isEnabled()  # attendance is recorded
 
 
+def test_the_next_student_is_selected_after_one_leaves_the_list(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada, alan, grace = (
+        roster.save_student(Student(class_id=class_id, first_name=f, last_name=l))
+        for f, l in (("Ada", "Adams"), ("Alan", "Brown"), ("Grace", "Clark"))
+    )
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    view._select(ada.id)
+    view.delete_selected()
+    assert view._selected_student().id == alan.id
+    view.toggle_active_selected()  # deactivates Alan, who is hidden now
+    assert view._selected_student().id == grace.id
+    view.delete_selected()
+    assert view._selected_student() is None  # nobody left
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

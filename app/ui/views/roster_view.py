@@ -337,10 +337,14 @@ class RosterView(QWidget):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
+            row = self._selected_row()
             self.roster.deactivate_student(student.id)
         else:
+            row = None
             self.roster.reactivate_student(student.id)
         self.refresh()
+        if row is not None and self._selected_student() is None:  # hidden now
+            self._select_row_near(row)
         self.students_changed.emit()
 
     def delete_selected(self) -> None:
@@ -352,12 +356,14 @@ class RosterView(QWidget):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        row = self._selected_row()
         try:
             self.roster.delete_student(student.id)
         except RosterError as exc:
             QMessageBox.information(self, "Delete student", str(exc))
             return
         self.refresh()
+        self._select_row_near(row)
         self.students_changed.emit()
 
     def remove_selected(self) -> None:
@@ -538,6 +544,20 @@ class RosterView(QWidget):
             key=lambda s: sort_key(s, column),
             reverse=order == Qt.SortOrder.DescendingOrder,
         )
+
+    def _selected_row(self) -> int | None:
+        rows = self.table.selectionModel().selectedRows()
+        return rows[0].row() if rows else None
+
+    def _select_row_near(self, row: int | None) -> None:
+        """Select the student now at table row `row`, or the last one: after a student
+        left the list, the next one is ready for the Delete key."""
+        if row is None or self.proxy.rowCount() == 0:
+            return
+        row = min(row, self.proxy.rowCount() - 1)
+        self.table.selectRow(row)
+        self.table.scrollTo(self.proxy.index(row, 0))
+        self._update_buttons()
 
     def _select(self, student_id: int | None) -> None:
         row = self.model.row_of(student_id) if student_id is not None else None
