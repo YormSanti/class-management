@@ -421,7 +421,8 @@ class MainWindow(QMainWindow):
         except RosterError as exc:
             QMessageBox.information(self, "Delete class", str(exc))
             return
-        self.select_class()
+        same_year = self.roster.list_classes(school_class.term)  # stay in the year being tidied up
+        self.select_class(same_year[0].id if same_year else None)
 
     # --- subjects ------------------------------------------------------------
 

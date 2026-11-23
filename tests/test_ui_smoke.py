@@ -1510,6 +1510,20 @@ def test_class_table_lists_the_subjects_in_a_tooltip(window: MainWindow, roster:
     assert table.item(1, 3).toolTip() == ""
 
 
+def test_deleting_a_class_stays_in_its_school_year(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    roster.save_class(SchoolClass(name="8A", term="2027-2028"))
+    old_7b = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    old_7c = roster.save_class(SchoolClass(name="7C", term="2026-2027")).id
+    window.select_class(old_7b)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    window.delete_class()
+    assert window.class_id == old_7c  # not 8A, the first class of the newest year
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
