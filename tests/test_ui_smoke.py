@@ -88,11 +88,13 @@ def test_dashboard_subject_hint_opens_subjects_tab(window: MainWindow, roster: R
 def test_new_year_dialog_lists_classes_with_student_counts(qapp: QApplication, roster: RosterService):
     from app.ui.dialogs.new_year_dialog import NewYearDialog
 
-    class_id = roster.save_class(SchoolClass(name="7B", term="2025-2026")).id
+    class_id = roster.save_class(SchoolClass(name="7B", term="2025-2026"), "Maths").id
+    roster.save_subject(Subject(class_id=class_id, name="Art"))
     roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
     dialog = NewYearDialog(roster, "2025-2026")
     assert dialog.table.rowCount() == 1
     assert dialog.table.item(0, 2).text() == "1"
+    assert dialog.table.item(0, 3).text() == "2" and dialog.table.item(0, 3).toolTip() == "Art, Maths"
     assert dialog.new_term.text() == "2026-2027"
 
 
