@@ -408,6 +408,19 @@ def test_parse_student_list_reads_semicolon_columns():
     assert problems == ["Line 4: expected first and last name columns: ;;"]
 
 
+def test_parse_student_list_leaves_out_quotes_around_cells():
+    from app.services.roster import parse_student_list
+
+    text = '"No";"First name";"Last name"\n"1";"Ada";"Lovelace"\n"Hopper, Grace"\n2\t"Dwayne ""The Rock"""\tJohnson\n'
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [
+        ("1", "Ada", "Lovelace"),
+        (None, "Grace", "Hopper"),
+        ("2", 'Dwayne "The Rock"', "Johnson"),
+    ]
+    assert problems == []
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 

@@ -143,6 +143,12 @@ _STUDENT_NO = re.compile(r"[A-Za-z]{0,3}[-_]?\d+")  # 7, 007, S007, S-007
 _LIST_NUMBER = re.compile(r"\d+[.)]")  # "1." or "1)" from a numbered list
 
 
+def _unquote(text: str) -> str:
+    """`text` without the double quotes a CSV file puts around a cell: '"Ada"' -> "Ada"."""
+    text = text.strip()
+    return text[1:-1].replace('""', '"').strip() if len(text) >= 2 and text[0] == text[-1] == '"' else text
+
+
 def _parse_name(text: str) -> tuple[str, str] | None:
     """(first, last) from "Last, First" or "First [Middle] Last"; None if there is one word."""
     if "," in text:
@@ -169,7 +175,7 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
             continue
         separator = "\t" if "\t" in line else ";" if ";" in line else None
         if separator:
-            cells = [c.strip() for c in line.split(separator)]
+            cells = [_unquote(c) for c in line.split(separator)]
             cells = [c for c in cells if c]
             if "name" in line.casefold() and not students and not problems:
                 continue  # header row
@@ -182,6 +188,7 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
             continue
 
         student_no = None
+        line = _unquote(line)
         first_word, _, rest = line.partition(" ")
         if _LIST_NUMBER.fullmatch(first_word):
             line = rest.strip()
