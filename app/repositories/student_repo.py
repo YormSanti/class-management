@@ -84,6 +84,19 @@ class StudentRepository:
         ).fetchone()
         return bool(row[0])
 
+    def recorded(self, student_id: int) -> dict[str, int]:
+        """What has_records() looks at, counted: {"attendance", "scores", "seating": count};
+        seating counts the plans the student has a seat in."""
+        row = self.conn.execute(
+            """
+            SELECT (SELECT count(*) FROM attendance WHERE student_id = :id) AS attendance,
+                   (SELECT count(*) FROM scores WHERE student_id = :id) AS scores,
+                   (SELECT count(*) FROM seats WHERE student_id = :id) AS seating
+            """,
+            {"id": student_id},
+        ).fetchone()
+        return dict(row)
+
     def get(self, student_id: int) -> Student | None:
         row = self.conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
         return _from_row(row) if row else None

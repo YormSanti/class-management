@@ -103,6 +103,16 @@ def test_new_year_must_differ_from_the_year_copied(roster: RosterService):
     assert len(roster.list_classes()) == 1
 
 
+def test_a_student_who_cant_be_deleted_says_what_is_recorded(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    assert roster.recorded_for_student(ada.id) == ""
+    for day in ("2026-09-01", "2026-09-02"):
+        conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, ?, 'present')", (ada.id, day))
+    assert roster.recorded_for_student(ada.id) == "2 attendance marks"
+    with pytest.raises(RosterError, match="This student has 2 attendance marks recorded and can't be deleted"):
+        roster.delete_student(ada.id)
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

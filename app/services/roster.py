@@ -682,14 +682,18 @@ class RosterService:
         """True while no attendance, score or seat refers to the student."""
         return not self.students.has_records(student_id)
 
+    def recorded_for_student(self, student_id: int) -> str:
+        """What is recorded for the student, e.g. "12 attendance marks and 3 scores"; "" if nothing."""
+        return describe_records(self.students.recorded(student_id))
+
     def delete_student(self, student_id: int) -> None:
         """Delete a student added by mistake, but only while nothing is recorded for
         them; otherwise they can only be deactivated, so their history is kept."""
         with transaction(self.students.conn):
             if self.students.has_records(student_id):
+                what = self.recorded_for_student(student_id) or "attendance, grades or a seat"
                 raise RosterError(
-                    "This student has attendance, grades or a seat recorded and can't be "
-                    "deleted. Deactivate them instead."
+                    f"This student has {what} recorded and can't be deleted. Deactivate them instead."
                 )
             try:
                 self.students.delete(student_id)
