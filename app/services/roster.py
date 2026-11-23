@@ -18,6 +18,7 @@ class RosterError(ValueError):
 
 
 NAME_MAX = 60  # characters in a first or last name: room for long double names, not a paragraph
+STUDENT_NO_MAX = 20  # characters: a school's ID, not a sentence
 
 
 def _check_length(text: str, limit: int, what: str) -> None:
@@ -417,6 +418,8 @@ class RosterService:
             raise RosterError("First and last name are required.")
         _check_length(student.first_name, NAME_MAX, "A first name")
         _check_length(student.last_name, NAME_MAX, "A last name")
+        if student.student_no:
+            _check_length(student.student_no, STUDENT_NO_MAX, "A student number")
         if self.classes.get(student.class_id) is None:
             raise RosterError("The selected class no longer exists.")
         if student.student_no:

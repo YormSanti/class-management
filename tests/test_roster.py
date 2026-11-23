@@ -50,6 +50,12 @@ def test_student_names_have_a_length_limit(roster: RosterService, class_id: int)
         _add(roster, class_id, "A" * 61, "Lovelace")
 
 
+def test_student_numbers_have_a_length_limit(roster: RosterService, class_id: int):
+    _add(roster, class_id, "Ada", "Lovelace", no="S" + "0" * 19)
+    with pytest.raises(RosterError, match="A student number can be at most 20 characters"):
+        _add(roster, class_id, "Alan", "Turing", no="1" * 21)
+
+
 def test_duplicate_student_number_in_same_class_is_rejected(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace", no="001")
     with pytest.raises(RosterError, match="already used by Ada Lovelace"):
