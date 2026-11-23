@@ -491,6 +491,26 @@ def test_show_inactive_is_remembered(qapp: QApplication, conn: sqlite3.Connectio
     second.close()
 
 
+def test_class_list_sort_is_remembered(qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path):
+    from PySide6.QtCore import QSettings, Qt
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.classes_view.roster_view.table.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+    first.close()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    proxy = second.classes_view.roster_view.proxy
+    assert (proxy.sortColumn(), proxy.sortOrder()) == (0, Qt.SortOrder.DescendingOrder)
+    second.close()
+
+    settings.setValue("session/roster_sort", "99 asc")
+    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert third.classes_view.roster_view.proxy.sortColumn() == 1  # last name, as usual
+    third.close()
+
+
 def test_class_and_subject_are_remembered(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ):

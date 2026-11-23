@@ -164,6 +164,11 @@ class MainWindow(QMainWindow):
                 self.attendance_view.set_order(by_number=True)
             if self.settings.value("session/roster_show_inactive", False, type=bool):
                 self.classes_view.roster_view.show_inactive.setChecked(True)
+            sort = str(self.settings.value("session/roster_sort", ""))  # e.g. "0 asc"
+            column, _, order = sort.partition(" ")
+            if column.isdigit() and int(column) < self.classes_view.roster_view.model.columnCount():
+                direction = Qt.SortOrder.DescendingOrder if order == "desc" else Qt.SortOrder.AscendingOrder
+                self.classes_view.roster_view.table.sortByColumn(int(column), direction)
         self._remind_to_back_up()
 
     # --- menus ---------------------------------------------------------------
@@ -282,9 +287,10 @@ class MainWindow(QMainWindow):
             self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
             self.settings.setValue("session/attendance_tab", self.attendance_view.tabs.currentIndex())
             self.settings.setValue("session/attendance_by_number", self.attendance_view.by_number)
-            self.settings.setValue(
-                "session/roster_show_inactive", self.classes_view.roster_view.show_inactive.isChecked()
-            )
+            roster_view = self.classes_view.roster_view
+            self.settings.setValue("session/roster_show_inactive", roster_view.show_inactive.isChecked())
+            order = "desc" if roster_view.proxy.sortOrder() == Qt.SortOrder.DescendingOrder else "asc"
+            self.settings.setValue("session/roster_sort", f"{roster_view.proxy.sortColumn()} {order}")
             self.settings.sync()
         super().closeEvent(event)
 
