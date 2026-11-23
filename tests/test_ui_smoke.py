@@ -514,6 +514,22 @@ def test_show_inactive_is_remembered(qapp: QApplication, conn: sqlite3.Connectio
     second.close()
 
 
+def test_manage_classes_tab_is_remembered(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+):
+    from PySide6.QtCore import QSettings
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first.show_subjects()
+    first.close()
+
+    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.classes_view.tabs.currentWidget() is second.classes_view.subject_box
+    second.close()
+
+
 def test_class_list_sort_is_remembered(qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path):
     from PySide6.QtCore import QSettings, Qt
 
