@@ -64,6 +64,7 @@ class StudentDialog(QDialog):
         self.last_name = QLineEdit(student.last_name if student else "")
         self.notes = QPlainTextEdit(student.notes if student else "")
         self.notes.setFixedHeight(80)
+        self.notes.setPlaceholderText("e.g. allergies, glasses, who collects them; the class list can search these")
         self.active = QCheckBox("Active")
         self.active.setChecked(student.active if student else True)
 

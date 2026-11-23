@@ -237,6 +237,7 @@ def test_student_and_paste_dialogs_name_the_class_and_student(qapp: QApplication
     class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
     ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
     assert StudentDialog(roster.save_student, class_id, class_name="7B").windowTitle() == "Add student to 7B"
+    assert "allergies" in StudentDialog(roster.save_student, class_id).notes.placeholderText()
     assert StudentDialog(roster.save_student, class_id, ada).windowTitle() == "Edit student · Ada Lovelace"
     assert PasteStudentsDialog(roster, class_id).windowTitle() == "Paste a list of students into 7B (2026-2027)"
 
