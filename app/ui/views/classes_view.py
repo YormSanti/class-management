@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMenu,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QTableWidget,
@@ -16,7 +17,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.export import write_year_roster_csv
 from app.services.roster import RosterService
+from app.ui.files import ask_save_path
 from app.ui.views.roster_view import RosterView
 
 ALL_YEARS = "\0all"  # year-filter value meaning "show every school year"
@@ -90,6 +93,10 @@ class ClassesView(QWidget):
         self.rename_year_button = QPushButton("Rename year…")
         self.rename_year_button.setToolTip("Change the school year of every class in it, e.g. to fix a typo")
         self.rename_year_button.clicked.connect(self._rename_year)
+        self.export_year_button = QPushButton("Export year…")
+        self.export_year_button.setToolTip("Save the students of every class shown in one CSV file, e.g. for the office")
+        self.export_year_button.clicked.connect(self.export_year)
+        year_row.addWidget(self.export_year_button)
         year_row.addWidget(self.rename_year_button)
         year_row.addWidget(self.new_year_button)
 
@@ -227,6 +234,7 @@ class ClassesView(QWidget):
             self.year_combo.setCurrentIndex(max(0, self.year_combo.findData(self.year)))
 
         self.new_year_button.setEnabled(bool(classes))
+        self.export_year_button.setEnabled(bool(classes))
         self.rename_year_button.setEnabled(self._year_to_rename() is not None)
         shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
         self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
@@ -345,6 +353,28 @@ class ClassesView(QWidget):
     def _delete_subject_by_key(self) -> None:
         if self.delete_subject_button.isEnabled():
             self.delete_subject_requested.emit()  # the main window asks first
+
+    def export_year(self) -> None:
+        """Save the active students of every class shown, class by class, in one CSV."""
+        classes = self.roster.list_classes(None if self.year == ALL_YEARS else self.year or "")
+        if not classes:
+            return
+        name = {ALL_YEARS: "All years", "": "No school year"}.get(self.year, self.year)
+        path = ask_save_path(self, "Export year", f"{name} students", "CSV files", ".csv")
+        if path is None:
+            return
+        rows = [(c.display_name if self.year == ALL_YEARS else c.name, self.roster.list_students(c.id))
+                for c in classes]  # fmt: skip
+        try:
+            write_year_roster_csv(path, rows)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export year", f"The file could not be saved:\n{exc}")
+            return
+        n = sum(len(students) for _name, students in rows)
+        QMessageBox.information(
+            self, "Export year",
+            f"Saved {n} student{'' if n == 1 else 's'} of {len(classes)} class{'' if len(classes) == 1 else 'es'} to\n{path}",
+        )  # fmt: skip
 
     def _year_to_rename(self) -> str | None:
         """The school year shown, or the current class's while all years are shown."""

@@ -258,3 +258,18 @@ def test_attendance_period_html():
     assert "O&lt;Brien, Ada" in page
     assert "1 September 2026 to 30 September 2026 · 22 days recorded · printed 1 October 2026" in page
     assert page.count("90%") == 2  # the student and the whole class
+
+
+def test_year_roster_csv_has_a_class_column(tmp_path):
+    from app.services.export import write_year_roster_csv
+
+    path = tmp_path / "year.csv"
+    ada = Student(class_id=1, first_name="Ada", last_name="Lovelace", student_no="1")
+    alan = Student(class_id=2, first_name="Alan", last_name="Turing")
+    write_year_roster_csv(path, [("7B", [ada]), ("7C", [alan])])
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    assert lines == [
+        "Class,Student #,Last name,First name,Status,Notes",
+        "7B,1,Lovelace,Ada,Active,",
+        "7C,,Turing,Alan,Active,",
+    ]

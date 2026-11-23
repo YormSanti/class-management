@@ -1538,6 +1538,27 @@ def test_manage_classes_copies_a_class(window: MainWindow, roster: RosterService
     assert window.classes_view.class_table.rowCount() == 2
 
 
+def test_manage_classes_exports_the_school_year(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    b = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    c = roster.save_class(SchoolClass(name="7C", term="2026-2027")).id
+    roster.save_class(SchoolClass(name="6A", term="2025-2026"))
+    roster.save_student(Student(class_id=b, first_name="Ada", last_name="Lovelace"))
+    roster.save_student(Student(class_id=c, first_name="Alan", last_name="Turing"))
+    window.select_class(b)
+    saved = tmp_path / "year.csv"
+    told = []
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda _p, _t, text: told.append(text))
+    window.classes_view.year = "2026-2027"  # the year picked, not All years
+    window.classes_view.export_year()
+    assert saved.read_text(encoding="utf-8-sig").splitlines()[1:] == ["7B,,Lovelace,Ada,Active,", "7C,,Turing,Alan,Active,"]
+    assert told[0].startswith("Saved 2 students of 2 classes to")
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

@@ -47,6 +47,18 @@ def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
     _write_csv(path, rows)
 
 
+def write_year_roster_csv(path: Path, classes: Sequence[tuple[str, Sequence[Student]]]) -> None:
+    """Save the students of several classes in one CSV, e.g. a whole school year for the
+    office: a Class column, then the class list's columns. `classes` is (class name,
+    students) in the order to write them."""
+    rows: list[Sequence[object]] = [("Class",) + ROSTER_COLUMNS]
+    for name, students in classes:
+        for s in students:
+            rows.append((name, s.student_no or "", s.last_name, s.first_name,
+                         "Active" if s.active else "Inactive", s.notes))  # fmt: skip
+    _write_csv(path, rows)
+
+
 def roster_tsv(students: Sequence[Student]) -> str:
     """Students as tab-separated text with a heading row, to paste into a spreadsheet."""
     rows = [ROSTER_COLUMNS]
