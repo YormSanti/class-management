@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -192,6 +193,8 @@ class RosterView(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)
         self.table.doubleClicked.connect(lambda _index: self.edit_selected())
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_menu)
         self.table.selectionModel().selectionChanged.connect(self._update_buttons)
 
         self.count_label = QLabel()
@@ -471,6 +474,33 @@ class RosterView(QWidget):
             QMessageBox.warning(self, "Export students", f"The file could not be saved:\n{exc}")
             return
         QMessageBox.information(self, "Export students", f"Saved {len(students)} students to\n{path}")
+
+    def _show_menu(self, pos) -> None:
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        self.table.selectRow(index.row())
+        menu = self.student_menu()
+        if menu is not None:
+            menu.exec(self.table.viewport().mapToGlobal(pos))
+            menu.deleteLater()  # a new one is made for each right-click
+
+    def student_menu(self) -> QMenu | None:
+        """What can be done for the selected student, for a right-click on their row."""
+        student = self._selected_student()
+        if student is None:
+            return None
+        menu = QMenu(self)
+        menu.addAction("Edit…\tF2", self.edit_selected)
+        menu.addAction("Attendance history…", self._show_history)
+        menu.addSeparator()
+        menu.addAction("Reactivate" if not student.active else "Deactivate…", self.toggle_active_selected)
+        menu.addAction("Move to class…", self.transfer_selected)
+        delete = menu.addAction("Delete…\tDelete", self.delete_selected)
+        delete.setEnabled(self.delete_button.isEnabled())
+        menu.addSeparator()
+        menu.addAction("Copy the list\tCtrl+C", self.copy_list)
+        return menu
 
     # --- keyboard ------------------------------------------------------------
 

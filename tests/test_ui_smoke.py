@@ -1254,6 +1254,22 @@ def test_f2_edits_the_selected_student(window: MainWindow, roster: RosterService
     assert [s.full_name for s in edited] == ["Ada Lovelace"]
 
 
+def test_right_click_menu_of_a_student_in_the_class_list(
+    window: MainWindow, roster: RosterService, conn: sqlite3.Connection
+):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    conn.execute("INSERT INTO attendance (student_id, date, status) VALUES (?, '2026-09-01', 'absent')", (ada.id,))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    assert view.student_menu() is None  # nobody selected
+    view._select(ada.id)
+    menu = view.student_menu()
+    actions = {a.text().split("\t")[0]: a for a in menu.actions() if a.text()}
+    assert list(actions) == ["Edit…", "Attendance history…", "Deactivate…", "Move to class…", "Delete…", "Copy the list"]
+    assert not actions["Delete…"].isEnabled()  # attendance is recorded
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
