@@ -1425,6 +1425,41 @@ def test_delete_key_deletes_the_selected_subject(
     assert [s.name for s in roster.list_subjects(class_id)] == ["Maths"]
 
 
+def test_f2_edits_the_selected_class_or_subject(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui import main_window
+
+    class FakeDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(main_window, "ClassDialog", FakeDialog)
+    monkeypatch.setattr(main_window, "SubjectDialog", FakeDialog)
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    window.show_page("Manage classes")
+    window.select_class(class_id)
+    view = window.classes_view
+    asked = []
+    view.edit_class_requested.connect(lambda: asked.append("class"))
+    view.edit_subject_requested.connect(lambda: asked.append("subject"))
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    view.class_table.setFocus()
+    QTest.keyClick(view.class_table, Qt.Key.Key_F2)
+    view.tabs.setCurrentWidget(view.subject_box)
+    view.subject_table.setFocus()
+    QTest.keyClick(view.subject_table, Qt.Key.Key_F2)
+    assert asked == ["class", "subject"]
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

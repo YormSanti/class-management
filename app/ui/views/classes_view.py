@@ -172,6 +172,11 @@ class ClassesView(QWidget):
         remove.setContext(Qt.ShortcutContext.WidgetShortcut)
         remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.subject_table, activated=self._delete_subject_by_key)
         remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+        # F2 edits, as in a file manager (Enter is taken by the class list beside them).
+        edit = QShortcut(QKeySequence(Qt.Key.Key_F2), self.class_table, activated=self._edit_class_by_key)
+        edit.setContext(Qt.ShortcutContext.WidgetShortcut)
+        edit = QShortcut(QKeySequence(Qt.Key.Key_F2), self.subject_table, activated=self._edit_subject_by_key)
+        edit.setContext(Qt.ShortcutContext.WidgetShortcut)
 
         self.refresh()
 
@@ -265,6 +270,14 @@ class ClassesView(QWidget):
     def _delete_class_by_key(self) -> None:
         if self.delete_class_button.isEnabled():
             self.delete_class_requested.emit()  # the main window asks first
+
+    def _edit_class_by_key(self) -> None:
+        if self.edit_class_button.isEnabled():
+            self.edit_class_requested.emit()
+
+    def _edit_subject_by_key(self) -> None:
+        if self.edit_subject_button.isEnabled():
+            self.edit_subject_requested.emit()
 
     def _delete_subject_by_key(self) -> None:
         if self.delete_subject_button.isEnabled():
