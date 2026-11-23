@@ -266,6 +266,9 @@ class RosterView(QWidget):
                 self.class_id, self.search.text(), self.show_inactive.isChecked()
             )
             self.model.set_students(students)
+            # Some schools don't number students: no empty column then.
+            everyone = self.roster.list_students(self.class_id, include_inactive=True)
+            self.table.setColumnHidden(0, not any(s.student_no for s in everyone))
             if selected:
                 self._select(selected.id)
             self._update_count()

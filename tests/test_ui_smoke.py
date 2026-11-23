@@ -1292,6 +1292,18 @@ def test_the_next_student_is_selected_after_one_leaves_the_list(
     assert view._selected_student() is None  # nobody left
 
 
+def test_class_list_hides_the_number_column_when_nobody_has_a_number(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    view = window.classes_view.roster_view
+    assert view.table.isColumnHidden(0)
+    ada.student_no = "7"
+    roster.save_student(ada)
+    view.refresh()
+    assert not view.table.isColumnHidden(0)
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
