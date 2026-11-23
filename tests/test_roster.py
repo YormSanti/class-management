@@ -91,6 +91,13 @@ def test_duplicate_student_number_in_same_class_is_rejected(roster: RosterServic
         _add(roster, class_id, "Alan", "Turing", no="001")
 
 
+def test_a_number_taken_by_an_inactive_student_says_so(roster: RosterService, class_id: int):
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="001")
+    roster.deactivate_student(ada.id)
+    with pytest.raises(RosterError, match="already used by Ada Lovelace, who is inactive but keeps it"):
+        _add(roster, class_id, "Alan", "Turing", no="001")
+
+
 def test_student_numbers_differing_only_in_case_are_the_same(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace", no="S007")
     with pytest.raises(RosterError, match="already used by Ada Lovelace"):

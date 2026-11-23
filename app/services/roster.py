@@ -435,9 +435,10 @@ class RosterService:
         if student.student_no:
             existing = self.students.find_by_student_no(student.class_id, student.student_no)
             if existing and existing.id != student.id:
-                raise RosterError(
-                    f"Student number {student.student_no} is already used by {existing.full_name}."
-                )
+                who = existing.full_name
+                if not existing.active:  # hidden from the list, so say why the number is taken
+                    who += ", who is inactive but keeps it"
+                raise RosterError(f"Student number {student.student_no} is already used by {who}.")
 
         if student.id is None:
             return self.students.add(student)
