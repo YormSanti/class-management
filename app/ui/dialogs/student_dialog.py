@@ -114,7 +114,8 @@ class StudentDialog(QDialog):
         """Save this student, then clear the form for the next one."""
         if not self._save_form():
             return
-        self.status.setText(f"Added {self.saved.full_name}.")
+        so_far = f" · {len(self.added)} added so far" if len(self.added) > 1 else ""
+        self.status.setText(f"Added {self.saved.full_name}{so_far}.")
         self.status.show()
         self.student_no.setText(self._next_no())
         for field in (self.first_name, self.last_name):

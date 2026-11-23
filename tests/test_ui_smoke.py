@@ -130,13 +130,16 @@ def test_student_dialog_save_and_add_another(qapp: QApplication, roster: RosterS
         roster.save_student, class_id, suggest_no=lambda: roster.suggest_student_no(class_id)
     )
     assert dialog.student_no.text() == "02"
+    said = []
     for first, last in (("Alan", "Turing"), ("Grace", "Hopper")):
         dialog.first_name.setText(first)
         dialog.last_name.setText(last)
         dialog.save_and_add_another()
+        said.append(dialog.status.text())
     assert [s.full_name for s in dialog.added] == ["Alan Turing", "Grace Hopper"]
     assert dialog.student_no.text() == "04"
-    assert dialog.first_name.text() == "" and dialog.status.text() == "Added Grace Hopper."
+    assert dialog.first_name.text() == ""
+    assert said == ["Added Alan Turing.", "Added Grace Hopper · 2 added so far."]
     assert [s.student_no for s in roster.list_students(class_id)] == ["03", "01", "02"]
 
 
