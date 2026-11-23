@@ -1,5 +1,6 @@
 """Class, subject and student management: validation and rules on top of the repositories."""
 
+import csv
 import re
 import sqlite3
 import unicodedata
@@ -164,8 +165,8 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
 
     A line can be "First Last", "Last, First", either one after a student number
     ("007 Ada Lovelace"), or columns copied from a spreadsheet or a CSV file
-    separated by tabs or semicolons: first and last name, or number, first and
-    last name. Blank lines and a heading row (containing "name") are skipped.
+    separated by tabs, semicolons or (two or more) commas: first and last name, or
+    number, first and last name. Blank lines and a heading row (containing "name") are skipped.
     """
     students: list[PastedStudent] = []
     problems: list[str] = []
@@ -173,9 +174,13 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
         line = raw.strip()
         if not line:
             continue
-        separator = "\t" if "\t" in line else ";" if ";" in line else None
+        # Two commas or more are CSV columns; one is "Last, First".
+        separator = "\t" if "\t" in line else ";" if ";" in line else "," if line.count(",") >= 2 else None
         if separator:
-            cells = [_unquote(c) for c in line.split(separator)]
+            if separator == ",":  # a quoted cell may hold a comma: "Lovelace, Ada" in a CSV line
+                cells = [c.strip() for c in next(csv.reader([line], skipinitialspace=True))]
+            else:
+                cells = [_unquote(c) for c in line.split(separator)]
             cells = [c for c in cells if c]
             if "name" in line.casefold() and not students and not problems:
                 continue  # header row

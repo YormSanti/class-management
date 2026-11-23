@@ -421,6 +421,20 @@ def test_parse_student_list_leaves_out_quotes_around_cells():
     assert problems == []
 
 
+def test_parse_student_list_reads_comma_separated_columns():
+    from app.services.roster import parse_student_list
+
+    text = 'No,First name,Last name\n1,Ada,Lovelace\n2, Grace , Hopper\nTuring, Alan\n3,"Mary, Ann",Evans\n'
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [
+        ("1", "Ada", "Lovelace"),
+        ("2", "Grace", "Hopper"),
+        (None, "Alan", "Turing"),
+        ("3", "Mary, Ann", "Evans"),
+    ]
+    assert problems == []
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 
