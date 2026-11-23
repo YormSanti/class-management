@@ -42,6 +42,14 @@ def test_student_requires_both_names(roster: RosterService, class_id: int):
         _add(roster, class_id, "Ada", "")
 
 
+def test_student_names_have_a_length_limit(roster: RosterService, class_id: int):
+    _add(roster, class_id, "A" * 60, "Lovelace")
+    with pytest.raises(RosterError, match="A last name can be at most 60 characters; this one has 61"):
+        _add(roster, class_id, "Ada", "L" * 61)
+    with pytest.raises(RosterError, match="A first name"):
+        _add(roster, class_id, "A" * 61, "Lovelace")
+
+
 def test_duplicate_student_number_in_same_class_is_rejected(roster: RosterService, class_id: int):
     _add(roster, class_id, "Ada", "Lovelace", no="001")
     with pytest.raises(RosterError, match="already used by Ada Lovelace"):

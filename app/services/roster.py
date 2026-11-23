@@ -17,6 +17,15 @@ class RosterError(ValueError):
     """A user-facing validation error; the message is safe to show in the UI."""
 
 
+NAME_MAX = 60  # characters in a first or last name: room for long double names, not a paragraph
+
+
+def _check_length(text: str, limit: int, what: str) -> None:
+    """Refuse `text` longer than `limit` characters, e.g. a whole list pasted into one field."""
+    if len(text) > limit:
+        raise RosterError(f"{what} can be at most {limit} characters; this one has {len(text)}.")
+
+
 def _clean(text: str | None) -> str:
     """Trimmed, with runs of spaces (e.g. from copying) collapsed: "Ada  Lovelace" -> "Ada Lovelace"."""
     return " ".join((text or "").split())
@@ -406,6 +415,8 @@ class RosterService:
         )
         if not student.first_name or not student.last_name:
             raise RosterError("First and last name are required.")
+        _check_length(student.first_name, NAME_MAX, "A first name")
+        _check_length(student.last_name, NAME_MAX, "A last name")
         if self.classes.get(student.class_id) is None:
             raise RosterError("The selected class no longer exists.")
         if student.student_no:
