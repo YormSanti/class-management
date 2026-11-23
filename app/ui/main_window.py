@@ -23,7 +23,7 @@ from app.config import LOG_FILENAME, AppConfig, settings_dir
 from app.services.attendance import AttendanceService
 from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
-from app.services.roster import RosterError, RosterService
+from app.services.roster import RosterError, RosterService, sister_class_name
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.shortcuts_dialog import ShortcutsDialog
@@ -95,6 +95,7 @@ class MainWindow(QMainWindow):
         self.classes_view.rename_year_requested.connect(self.rename_year)
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
+        self.classes_view.copy_class_requested.connect(self.copy_class)
         self.classes_view.new_subject_requested.connect(self.new_subject)
         self.classes_view.copy_subjects_requested.connect(self.copy_subjects)
         self.classes_view.edit_subject_requested.connect(self.edit_subject)
@@ -399,6 +400,28 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec():
             self.select_class(school_class.id)
+
+    def copy_class(self) -> None:
+        """Ask for a name, then set up a class like the current one in the same school year."""
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if school_class is None:
+            return
+        n = len(self.roster.list_subjects(school_class.id))
+        name, ok = QInputDialog.getText(
+            self,
+            "Copy class",
+            f"Name of the new class, which gets the {n} subject{'' if n == 1 else 's'} of "
+            f"{school_class.display_name} but no students:",
+            text=sister_class_name(school_class.name),
+        )
+        if not ok:
+            return
+        try:
+            new_class = self.roster.copy_class(school_class.id, name)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Copy class", str(exc))
+            return
+        self.select_class(new_class.id)
 
     def delete_class(self) -> None:
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None

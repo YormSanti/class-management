@@ -60,6 +60,7 @@ class ClassesView(QWidget):
     new_year_requested = Signal(str)  # school year to copy classes from
     rename_year_requested = Signal(str)  # school year to rename ("" = classes without one)
     edit_class_requested = Signal()
+    copy_class_requested = Signal()
     delete_class_requested = Signal()
     new_subject_requested = Signal()
     copy_subjects_requested = Signal()
@@ -108,9 +109,13 @@ class ClassesView(QWidget):
         self.edit_class_button.clicked.connect(self.edit_class_requested)
         self.delete_class_button = QPushButton("Delete")
         self.delete_class_button.clicked.connect(self.delete_class_requested)
+        self.copy_class_button = QPushButton("Copy…")
+        self.copy_class_button.setToolTip("A new class in the same school year with this class's subjects, e.g. 7C like 7B")
+        self.copy_class_button.clicked.connect(self.copy_class_requested)
 
         class_buttons = QHBoxLayout()
         class_buttons.addWidget(new_class)
+        class_buttons.addWidget(self.copy_class_button)
         class_buttons.addStretch()
         class_buttons.addWidget(self.edit_class_button)
         class_buttons.addWidget(self.delete_class_button)
@@ -250,6 +255,7 @@ class ClassesView(QWidget):
                     self.class_table.selectRow(row)
         has_class = self.class_id is not None
         self.edit_class_button.setEnabled(has_class)
+        self.copy_class_button.setEnabled(has_class)
         self.delete_class_button.setEnabled(has_class)
         self._refresh_subjects()
         if self.roster_view.class_id == self.class_id:  # set_class() hands a new class over itself
@@ -300,6 +306,7 @@ class ClassesView(QWidget):
         menu = QMenu(self)
         edit = menu.addAction("Edit…\tF2", self.edit_class_requested.emit)
         edit.setEnabled(self.edit_class_button.isEnabled())
+        menu.addAction("Copy…", self.copy_class_requested.emit)
         delete = menu.addAction("Delete…\tDelete", self.delete_class_requested.emit)
         delete.setEnabled(self.delete_class_button.isEnabled())
         menu.addSeparator()

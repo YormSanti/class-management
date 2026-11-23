@@ -130,6 +130,14 @@ def move_up(name: str) -> str:
     return re.sub(r"\d+", lambda m: str(int(m.group()) + 1), name, count=1)
 
 
+def sister_class_name(name: str) -> str:
+    """A name for another class like `name` in the same year: "7B" -> "7C"; "" when
+    there is no letter to move on ("Year 7", "7Z")."""
+    if len(name) >= 2 and name[-1].isalpha() and name[-1].lower() != "z" and name[-1].isascii():
+        return name[:-1] + chr(ord(name[-1]) + 1)
+    return ""
+
+
 @dataclass
 class PastedStudent:
     """One student read from a pasted list; `line` is 1-based, for error messages."""
@@ -364,6 +372,17 @@ class RosterService:
                         self.students.add(replace(student, id=None, class_id=new_class.id))
                 created.append(new_class)
         return created
+
+    def copy_class(self, source_id: int, name: str) -> SchoolClass:
+        """A new class in the same school year as `source_id`, with its subjects and
+        teachers but no students, e.g. 7C set up like 7B."""
+        source = self.classes.get(source_id)
+        if source is None:
+            raise RosterError("The class to copy no longer exists.")
+        with transaction(self.classes.conn):
+            new_class = self.save_class(SchoolClass(name=name, term=source.term))
+            self.copy_subjects(source_id, new_class.id)
+        return new_class
 
     def rename_term(self, old: str, new: str) -> int:
         """Change the school year of every class in `old` to `new`, e.g. to fix a typo

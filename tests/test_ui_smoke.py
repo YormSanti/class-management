@@ -1469,7 +1469,7 @@ def test_right_click_menu_of_a_class(window: MainWindow, roster: RosterService, 
     view = window.classes_view
     menu = view.class_menu()
     actions = {a.text().split("\t")[0]: a for a in menu.actions() if a.text()}
-    assert list(actions) == ["Edit…", "Delete…", "Subjects", "Students"]
+    assert list(actions) == ["Edit…", "Copy…", "Delete…", "Subjects", "Students"]
     deleted = []
     view.delete_class_requested.connect(lambda: deleted.append(True))
     actions["Delete…"].trigger()
@@ -1522,6 +1522,20 @@ def test_deleting_a_class_stays_in_its_school_year(
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
     window.delete_class()
     assert window.class_id == old_7c  # not 8A, the first class of the newest year
+
+
+def test_manage_classes_copies_a_class(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027"), "Maths").id
+    window.select_class(class_id)
+    asked = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda _p, _t, label, text="": asked.append((label, text)) or ("7C", True))
+    window.classes_view.copy_class_button.click()
+    assert asked == [("Name of the new class, which gets the 1 subject of 7B (2026-2027) but no students:", "7C")]
+    copy = roster.get_class(window.class_id)
+    assert (copy.name, copy.term) == ("7C", "2026-2027")
+    assert window.classes_view.class_table.rowCount() == 2
 
 
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):

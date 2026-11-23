@@ -52,6 +52,24 @@ def test_inactive_counts(roster: RosterService, class_id: int):
     assert roster.inactive_counts() == {class_id: 1}
 
 
+def test_copy_class_takes_the_subjects_but_not_the_students(roster: RosterService, class_id: int):
+    roster.save_subject(Subject(class_id=class_id, name="Maths", teacher="Mr Lee"))
+    _add(roster, class_id, "Ada", "Lovelace")
+    copy = roster.copy_class(class_id, "7C")
+    assert (copy.name, copy.term) == ("7C", "2026 T1")
+    assert [(s.name, s.teacher) for s in roster.list_subjects(copy.id)] == [("Maths", "Mr Lee")]
+    assert roster.list_students(copy.id) == []
+    with pytest.raises(RosterError, match="already a class called 7C"):
+        roster.copy_class(class_id, "7c")
+
+
+@pytest.mark.parametrize("name, expected", [("7B", "7C"), ("Grade 7a", "Grade 7b"), ("7Z", ""), ("Year 7", "")])
+def test_sister_class_name(name: str, expected: str):
+    from app.services.roster import sister_class_name
+
+    assert sister_class_name(name) == expected
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"
