@@ -1,5 +1,5 @@
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -168,6 +168,9 @@ class ClassesView(QWidget):
         layout.addLayout(year_row)
         layout.addLayout(columns, stretch=1)
 
+        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.class_table, activated=self._delete_class_by_key)
+        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+
         self.refresh()
 
     # --- page protocol -----------------------------------------------------
@@ -256,6 +259,10 @@ class ClassesView(QWidget):
         has_subject = self.subject_id is not None and bool(subjects)
         self.edit_subject_button.setEnabled(has_subject)
         self.delete_subject_button.setEnabled(has_subject)
+
+    def _delete_class_by_key(self) -> None:
+        if self.delete_class_button.isEnabled():
+            self.delete_class_requested.emit()  # the main window asks first
 
     def _year_to_rename(self) -> str | None:
         """The school year shown, or the current class's while all years are shown."""

@@ -1384,6 +1384,27 @@ def test_class_list_says_how_many_students_were_pasted(
     assert view.count_label.text() == "Added 2 students · 2 students"
 
 
+def test_delete_key_deletes_the_selected_class(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    roster.save_class(SchoolClass(name="7C"))
+    window.show_page("Manage classes")
+    window.select_class(class_id)
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: asked.append(a[2]) or QMessageBox.StandardButton.Yes)
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    window.classes_view.class_table.setFocus()
+    QTest.keyClick(window.classes_view.class_table, Qt.Key.Key_Delete)
+    assert asked[0].startswith("Delete the class 7B?")
+    assert [c.name for c in roster.list_classes()] == ["7C"]
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
