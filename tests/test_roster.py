@@ -38,6 +38,12 @@ def test_subject_and_teacher_names_have_a_length_limit(roster: RosterService, cl
         roster.save_subject(Subject(class_id=class_id, name="Maths", teacher="T" * 61))
 
 
+def test_classes_are_sorted_as_people_read_them(roster: RosterService):
+    for name in ("10A", "7B", "9a", "7A", "Grade 11", "Grade 9"):
+        roster.save_class(SchoolClass(name=name))
+    assert [c.name for c in roster.list_classes()] == ["7A", "7B", "9a", "10A", "Grade 9", "Grade 11"]
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

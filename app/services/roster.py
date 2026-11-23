@@ -36,13 +36,18 @@ def _clean(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
+def natural_key(text: str) -> tuple:
+    """Sorts text as people read it, numbers by value: "7B" before "10A", "S2" before "S10"."""
+    parts = re.split(r"(\d+)", text.casefold())
+    return tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p)
+
+
 def number_key(student: Student) -> tuple:
     """Sorts students by number as people read them ("S2" before "S10"); those
     without a number come last, in the usual name order."""
     if not student.student_no:
         return (1, ())
-    parts = re.split(r"(\d+)", student.student_no.casefold())
-    return (0, tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts if p))
+    return (0, natural_key(student.student_no))
 
 
 def _numbers_after(numbers: list[str]) -> Iterator[str]:
@@ -236,8 +241,9 @@ class RosterService:
     # --- classes ---------------------------------------------------------
 
     def list_classes(self, term: str | None = None) -> list[SchoolClass]:
-        """All classes, or only those of one school year when `term` is given."""
-        classes = self.classes.list_all()
+        """All classes, or only those of one school year when `term` is given, sorted
+        as people read the names ("7B" before "10A")."""
+        classes = sorted(self.classes.list_all(), key=lambda c: (natural_key(c.name), c.term, c.id))
         return classes if term is None else [c for c in classes if c.term == term]
 
     def list_terms(self) -> list[str]:
