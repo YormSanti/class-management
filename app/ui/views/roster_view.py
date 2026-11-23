@@ -124,6 +124,7 @@ class RosterView(QWidget):
     create_class_requested = Signal()
     students_changed = Signal()  # a student was added, edited, deactivated or reactivated
     history_requested = Signal(int)  # a student whose attendance history to show
+    class_requested = Signal(int)  # a class to switch to, e.g. the one a student moved to
 
     def __init__(self, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -418,13 +419,17 @@ class RosterView(QWidget):
                 f"Student number {student.student_no} is already used in {target.name}, "
                 + (f"so they are {moved.student_no} there." if moved.student_no else "so they have no number there yet.")
             )
-        QMessageBox.information(
+        answer = QMessageBox.question(
             self,
             "Move to class",
-            f"{student.full_name} is now in {target.display_name}." + "".join(f"\n\n{d}" for d in details),
+            f"{student.full_name} is now in {target.display_name}."
+            + "".join(f"\n\n{d}" for d in details)
+            + f"\n\nGo to {target.display_name} now?",
         )
         self.refresh()
         self.students_changed.emit()
+        if answer == QMessageBox.StandardButton.Yes:
+            self.class_requested.emit(target.id)
 
     def number_students(self) -> None:
         """Give every active student without a number one, counting up from a number

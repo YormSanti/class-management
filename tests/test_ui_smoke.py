@@ -333,10 +333,31 @@ def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeyp
     roster_view = window.classes_view.roster_view
     roster_view.table.selectRow(0)
     monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
-    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
     roster_view.transfer_selected()
     assert roster_view.model.rowCount() == 0
     assert [s.full_name for s in roster.list_students(other)] == ["Ada Lovelace"]
+    assert window.class_id == class_id
+
+
+def test_roster_move_to_class_offers_to_go_there(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    other = roster.save_class(SchoolClass(name="7C")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    window.select_class(class_id)
+    roster_view = window.classes_view.roster_view
+    roster_view.table.selectRow(0)
+    asked = []
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: asked.append(a[2]) or QMessageBox.StandardButton.Yes)
+    roster_view.transfer_selected()
+    assert asked[0].endswith("Go to 7C now?")
+    assert window.class_id == other
+    assert roster_view.model.rowCount() == 1
 
 
 def test_roster_move_to_class_says_the_new_number(
@@ -353,9 +374,11 @@ def test_roster_move_to_class_says_the_new_number(
     roster_view.table.selectRow(0)
     told = []
     monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
-    monkeypatch.setattr(QMessageBox, "information", lambda _parent, _title, text: told.append(text))
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda _parent, _title, text: told.append(text) or QMessageBox.StandardButton.No
+    )
     roster_view.transfer_selected()
-    assert told[0].endswith("Student number S05 is already used in 7C, so they are S06 there.")
+    assert "Student number S05 is already used in 7C, so they are S06 there." in told[0]
 
 
 def test_roster_count_mentions_hidden_inactive_students(window: MainWindow, roster: RosterService):
