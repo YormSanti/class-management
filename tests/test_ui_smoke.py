@@ -1460,6 +1460,23 @@ def test_f2_edits_the_selected_class_or_subject(
     assert asked == ["class", "subject"]
 
 
+def test_right_click_menu_of_a_class(window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    window.select_class(class_id)
+    view = window.classes_view
+    menu = view.class_menu()
+    actions = {a.text().split("\t")[0]: a for a in menu.actions() if a.text()}
+    assert list(actions) == ["Edit…", "Delete…", "Subjects", "Students"]
+    deleted = []
+    view.delete_class_requested.connect(lambda: deleted.append(True))
+    actions["Delete…"].trigger()
+    actions["Subjects"].trigger()
+    assert deleted == [True] and view.tabs.currentWidget() is view.subject_box
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

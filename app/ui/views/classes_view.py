@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QTabWidget,
     QTableWidget,
@@ -97,6 +98,8 @@ class ClassesView(QWidget):
         self.class_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.class_table.itemSelectionChanged.connect(self._on_class_clicked)
         self.class_table.doubleClicked.connect(lambda _index: self.edit_class_requested.emit())
+        self.class_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.class_table.customContextMenuRequested.connect(self._show_class_menu)
         new_class = QPushButton("New class…")
         new_class.clicked.connect(
             lambda: self.new_class_requested.emit("" if self.year == ALL_YEARS else self.year or "")
@@ -270,6 +273,27 @@ class ClassesView(QWidget):
     def _delete_class_by_key(self) -> None:
         if self.delete_class_button.isEnabled():
             self.delete_class_requested.emit()  # the main window asks first
+
+    def _show_class_menu(self, pos) -> None:
+        row = self.class_table.rowAt(pos.y())
+        if row < 0:
+            return
+        self.class_table.selectRow(row)  # makes it the current class
+        menu = self.class_menu()
+        menu.exec(self.class_table.viewport().mapToGlobal(pos))
+        menu.deleteLater()  # a new one is made for each right-click
+
+    def class_menu(self) -> QMenu:
+        """What can be done with the current class, for a right-click on its row."""
+        menu = QMenu(self)
+        edit = menu.addAction("Edit…\tF2", self.edit_class_requested.emit)
+        edit.setEnabled(self.edit_class_button.isEnabled())
+        delete = menu.addAction("Delete…\tDelete", self.delete_class_requested.emit)
+        delete.setEnabled(self.delete_class_button.isEnabled())
+        menu.addSeparator()
+        menu.addAction("Subjects", lambda: self.tabs.setCurrentWidget(self.subject_box))
+        menu.addAction("Students", lambda: self.tabs.setCurrentWidget(self.roster_view))
+        return menu
 
     def _edit_class_by_key(self) -> None:
         if self.edit_class_button.isEnabled():
