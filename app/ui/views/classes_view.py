@@ -170,6 +170,8 @@ class ClassesView(QWidget):
 
         remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.class_table, activated=self._delete_class_by_key)
         remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.subject_table, activated=self._delete_subject_by_key)
+        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
 
         self.refresh()
 
@@ -263,6 +265,10 @@ class ClassesView(QWidget):
     def _delete_class_by_key(self) -> None:
         if self.delete_class_button.isEnabled():
             self.delete_class_requested.emit()  # the main window asks first
+
+    def _delete_subject_by_key(self) -> None:
+        if self.delete_subject_button.isEnabled():
+            self.delete_subject_requested.emit()  # the main window asks first
 
     def _year_to_rename(self) -> str | None:
         """The school year shown, or the current class's while all years are shown."""

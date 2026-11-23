@@ -1405,6 +1405,26 @@ def test_delete_key_deletes_the_selected_class(
     assert [c.name for c in roster.list_classes()] == ["7C"]
 
 
+def test_delete_key_deletes_the_selected_subject(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+    window.show_subjects()
+    window.select_class(class_id)
+    window.select_subject(science)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    window.classes_view.subject_table.setFocus()
+    QTest.keyClick(window.classes_view.subject_table, Qt.Key.Key_Delete)
+    assert [s.name for s in roster.list_subjects(class_id)] == ["Maths"]
+
+
 def test_escape_clears_the_roster_search(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

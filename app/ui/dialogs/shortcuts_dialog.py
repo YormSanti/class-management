@@ -33,6 +33,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Attendance, Month tab", "Alt+Left  Alt+Right, Page Up  Page Down", "Previous or next month"),
     ("Attendance, Month tab", "Alt+Home", "This month"),
     ("Manage classes", "Delete", "Delete the selected class, while nothing is recorded in it"),
+    ("Subjects", "Delete", "Delete the selected subject, while nothing is recorded in it"),
     ("Students", "Ctrl+F", "Search; Esc clears the search"),
     ("Students", "Ctrl+N", "Add a student"),
     ("Add student", "Ctrl+Enter", "Save and add another"),
