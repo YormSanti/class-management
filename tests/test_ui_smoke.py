@@ -195,6 +195,17 @@ def test_paste_dialog_points_out_numbers_already_used(qapp: QApplication, roster
     assert not dialog._ok.isEnabled()
 
 
+def test_paste_dialog_counts_the_problems_not_shown(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id)
+    dialog.text.setPlainText("\n".join(["Plato", "<Socrates>"] * 4))
+    assert dialog.problems.text().count("<br>") == 5
+    assert dialog.problems.text().endswith("and 3 more lines to fix")
+    assert "&lt;Socrates&gt;" in dialog.problems.text()
+
+
 def test_roster_export_writes_csv(
     window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

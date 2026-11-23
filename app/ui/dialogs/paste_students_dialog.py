@@ -1,3 +1,5 @@
+import html
+
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -25,6 +27,8 @@ from app.services.roster import (
     repeated_names,
 )
 from app.ui import style
+
+PROBLEMS_SHOWN = 5  # lines that can't be read, named under the list; more would push it away
 
 
 class PasteStudentsDialog(QDialog):
@@ -127,7 +131,11 @@ class PasteStudentsDialog(QDialog):
                 self.preview.setItem(row, col, QTableWidgetItem(text))
         self.preview.setColumnHidden(3, not any(s.notes for s in self._students))
 
-        self.problems.setText("<br>".join(problems[:5]) + ("<br>…" if len(problems) > 5 else ""))
+        shown = [html.escape(p) for p in problems[:PROBLEMS_SHOWN]]
+        if len(problems) > PROBLEMS_SHOWN:
+            more = len(problems) - PROBLEMS_SHOWN
+            shown.append(f"and {more} more line{'' if more == 1 else 's'} to fix")
+        self.problems.setText("<br>".join(shown))
         style.set_color(self.problems, style.color(self, "danger"))
         self.problems.setVisible(bool(problems))
         self.skip_existing.setVisible(bool(existing))
