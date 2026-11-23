@@ -153,13 +153,23 @@ def _unquote(text: str) -> str:
 
 
 def _parse_name(text: str) -> tuple[str, str] | None:
-    """(first, last) from "Last, First" or "First [Middle] Last"; None if there is one word."""
+    """(first, last) from "Last, First", "LAST First" or "First [Middle] Last"; None if
+    there is one word."""
     if "," in text:
         last, _, first = text.partition(",")
         first, last = first.strip(), last.strip()
         return (first, last) if first and last else None
     words = text.split()
-    return (" ".join(words[:-1]), words[-1]) if len(words) >= 2 else None
+    if len(words) < 2:
+        return None
+    # "LOVELACE Ada" or "VAN DER BERG Anna": the surname first, in capitals, as some
+    # school systems print it. Only when the rest isn't in capitals too.
+    capitals = 0
+    while capitals < len(words) and words[capitals].isupper() and len(words[capitals]) > 1:
+        capitals += 1
+    if 0 < capitals < len(words):
+        return " ".join(words[capitals:]), " ".join(words[:capitals])
+    return " ".join(words[:-1]), words[-1]
 
 
 def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:

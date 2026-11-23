@@ -460,6 +460,21 @@ def test_parse_student_list_leaves_out_bullets():
     assert problems == []
 
 
+def test_parse_student_list_reads_the_surname_first_in_capitals():
+    from app.services.roster import parse_student_list
+
+    text = "LOVELACE Ada\nVAN DER BERG Anna Maria\n007 TURING Alan\nGRACE HOPPER\nJ Smith\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name) for s in students] == [
+        (None, "Ada", "LOVELACE"),
+        (None, "Anna Maria", "VAN DER BERG"),
+        ("007", "Alan", "TURING"),
+        (None, "GRACE", "HOPPER"),  # all in capitals: the usual order
+        (None, "J", "Smith"),  # an initial isn't a surname
+    ]
+    assert problems == []
+
+
 def test_repeated_names_in_a_pasted_list():
     from app.services.roster import parse_student_list, repeated_names
 

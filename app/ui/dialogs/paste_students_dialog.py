@@ -43,7 +43,7 @@ class PasteStudentsDialog(QDialog):
         self._students: list[PastedStudent] = []
 
         intro = QLabel(
-            "One student per line, as <i>First Last</i> or <i>Last, First</i>, optionally after "
+            "One student per line, as <i>First Last</i>, <i>Last, First</i> or <i>LAST First</i>, optionally after "
             "a student number. Columns copied from a spreadsheet or a CSV file work too: "
             "first and last name; number, first and last name; or number, first and last name and notes."
         )
