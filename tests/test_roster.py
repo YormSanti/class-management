@@ -90,6 +90,12 @@ def test_describe_data(roster: RosterService, class_id: int):
     assert roster.describe_data() == "1 class · 2 students · 0 attendance marks"
 
 
+@pytest.mark.parametrize("typed", ["me", "Me", " myself ", "You"])
+def test_a_subject_taught_by_me_is_taught_by_the_user(roster: RosterService, class_id: int, typed: str):
+    subject = roster.save_subject(Subject(class_id=class_id, name="Maths", teacher=typed))
+    assert subject.teacher == "" and roster.teacher_names() == []
+
+
 def test_class_update(roster: RosterService, class_id: int):
     roster.save_class(SchoolClass(id=class_id, name="7C"))
     assert roster.get_class(class_id).name == "7C"

@@ -295,6 +295,9 @@ def describe_records(counts: dict[str, int]) -> str:
     return ", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else "".join(parts)
 
 
+_YOURSELF = {"me", "myself", "you", "i"}  # typed as a subject's teacher: the app's user
+
+
 class RosterService:
     def __init__(
         self, classes: ClassRepository, students: StudentRepository, subjects: SubjectRepository
@@ -457,7 +460,10 @@ class RosterService:
 
     def save_subject(self, subject: Subject) -> Subject:
         """Validate and create (id is None) or update a subject."""
-        subject = replace(subject, name=_clean(subject.name), teacher=_clean(subject.teacher))
+        teacher = _clean(subject.teacher)
+        if teacher.casefold() in _YOURSELF:
+            teacher = ""  # the app's own user, shown as "You"
+        subject = replace(subject, name=_clean(subject.name), teacher=teacher)
         if not subject.name:
             raise RosterError("Subject name is required.")
         _check_length(subject.name, SUBJECT_NAME_MAX, "A subject name")
