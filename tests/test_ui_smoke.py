@@ -332,7 +332,7 @@ def test_roster_move_to_class(window: MainWindow, roster: RosterService, monkeyp
     window.select_class(class_id)
     roster_view = window.classes_view.roster_view
     roster_view.table.selectRow(0)
-    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C · 0 students", True))
     monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
     roster_view.transfer_selected()
     assert roster_view.model.rowCount() == 0
@@ -352,7 +352,7 @@ def test_roster_move_to_class_offers_to_go_there(
     roster_view = window.classes_view.roster_view
     roster_view.table.selectRow(0)
     asked = []
-    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C · 0 students", True))
     monkeypatch.setattr(QMessageBox, "question", lambda *a: asked.append(a[2]) or QMessageBox.StandardButton.Yes)
     roster_view.transfer_selected()
     assert asked[0].endswith("Go to 7C now?")
@@ -373,7 +373,7 @@ def test_roster_move_to_class_says_the_new_number(
     roster_view = window.classes_view.roster_view
     roster_view.table.selectRow(0)
     told = []
-    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C", True))
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *args: ("7C · 1 student", True))
     monkeypatch.setattr(
         QMessageBox, "question", lambda _parent, _title, text: told.append(text) or QMessageBox.StandardButton.No
     )

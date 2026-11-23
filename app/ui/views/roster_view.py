@@ -396,7 +396,11 @@ class RosterView(QWidget):
         if not targets:
             QMessageBox.information(self, "Move to class", "There is no other class to move to yet.")
             return
-        names = [c.display_name for c in targets]
+        counts = self.roster.class_counts()
+        names = []
+        for c in targets:
+            n = counts.get(c.id, (0, 0))[0]
+            names.append(f"{c.display_name} · {n} student{'' if n == 1 else 's'}")
         name, ok = QInputDialog.getItem(
             self, "Move to class", f"Move {student.full_name} to:", names, 0, False
         )
