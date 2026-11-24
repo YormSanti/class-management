@@ -51,6 +51,8 @@ Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to and from a spr
 Ctrl+Z undoes, Ctrl+F finds a student and Ctrl+N adds an assignment. Double-click a column
 header to edit the assignment; right-click it to fill its empty cells or delete it.
 
+On the Rankings page, Alt+R chooses what to rank by: all subjects or one of them.
+
 On the Manage classes page:
 
 - In the class list, Ctrl+N adds a student, Enter or F2 edits one and Delete deletes a
@@ -92,6 +94,18 @@ An empty cell of a dated assignment counts as missing work on the dashboard once
 has passed; an exempt one doesn't.
 
 New school year, **Copy…** and Copy subjects bring each subject's categories along.
+
+## Rankings
+
+The Rankings page lists the students of the current class best average first, in one
+subject or, under **Rank by**, in all subjects: then each student's average is the mean
+of their subject averages, leaving out subjects they have nothing scored in yet, as on
+the dashboard. Students with nothing scored are listed last, without a place.
+
+Averages are shown to one decimal, and students whose averages look the same share a
+place, marked `2=`. Whether the next place is then 4th or 3rd is set under
+**Settings → Rankings**. Averages under the pass mark are shown in red, and **Export…**
+saves the ranking as CSV.
 
 ## Test
 

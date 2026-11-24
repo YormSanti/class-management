@@ -40,6 +40,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Gradebook", "Ctrl+Y", "Redo what was undone"),
     ("Gradebook", "Ctrl+F", "Find a student by name or number"),
     ("Gradebook", "Ctrl+N", "Add an assignment"),
+    ("Rankings", "Alt+R", "Choose what to rank by: all subjects or one of them"),
     ("Manage classes", "F2", "Edit the selected class"),
     ("Manage classes", "Delete", "Delete the selected class, while nothing is recorded in it"),
     ("Subjects", "F2", "Edit the selected subject"),
