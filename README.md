@@ -51,11 +51,12 @@ Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to and from a spr
 Ctrl+Z undoes, Ctrl+F finds a student and Ctrl+N adds an assignment. Double-click a column
 header to edit the assignment; right-click it to fill its empty cells or delete it.
 
-On the Rankings page, Alt+R chooses what to rank by: all subjects or one of them.
+On the Rankings page, Alt+R chooses what to rank by: all subjects or one of them, and
+Ctrl+C copies the ranking for a spreadsheet.
 
 On the Seating page, click a student, then a seat (or select them and press Enter or
-Space). Esc puts the student down again, Delete takes a student out of their seat, and
-Ctrl+Z / Ctrl+Y undo and redo any change to the plan.
+Space). Esc puts the student down again, Delete takes a student out of their seat, Ctrl+F
+finds a student's seat, and Ctrl+Z / Ctrl+Y undo and redo any change to the plan.
 
 On the Manage classes page:
 
@@ -121,8 +122,14 @@ Click a student under **Not seated**, then a seat. Click a seated student, then 
 seat to move them; if that seat is taken, the two swap. **Seat the rest** puts everyone
 not seated yet in the free seats by name, front row first, and **Shuffle** seats the
 whole class at random; Ctrl+Z undoes either. **Edit…** renames the plan or changes the
-room, asking first if a smaller room would leave someone without a seat, and **Save
-PDF…** saves the plan to print, e.g. for a substitute teacher.
+room, asking first if a smaller room would leave someone without a seat, **Copy…** starts
+a new plan from the one shown with everyone in the same seat, and **Save PDF…** saves the
+plan to print, e.g. for a substitute teacher. The plan last shown in each class is shown
+again next time.
+
+Rooms aren't always full rows: right-click a free seat and choose **No desk here** for an
+aisle or a gap. Nobody is seated there, not even by Seat the rest or Shuffle, and the
+printed plan leaves it blank.
 
 A student who is deactivated leaves their seat free. Deleting a class deletes its seating
 plans while nobody is seated in them; clear a plan first to delete a class set up by mistake.
