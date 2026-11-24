@@ -273,3 +273,30 @@ def test_year_roster_csv_has_a_class_column(tmp_path):
         "7B,1,Lovelace,Ada,Active,",
         "7C,,Turing,Alan,Active,",
     ]
+
+
+def test_gradebook_csv_has_scores_category_percents_and_averages(conn, roster, tmp_path):
+    from app.models import Assignment, Category, SchoolClass, Student, Subject
+    from app.repositories.gradebook_repo import GradebookRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.export import write_gradebook_csv
+    from app.services.gradebook import GradebookService
+
+    grades = GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace", student_no="S1")).id
+    roster.save_student(Student(class_id, "Bob", "Smith"))
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    tests = grades.save_category(Category(maths, "Tests", 100)).id
+    t1 = grades.save_assignment(Assignment(maths, tests, "Test 1", 10)).id
+    t2 = grades.save_assignment(Assignment(maths, tests, "Test 2", 20)).id
+    grades.enter_score(t1, ada, "7.5")
+    grades.enter_score(t2, ada, "ex")
+    path = tmp_path / "maths.csv"
+    write_gradebook_csv(path, grades.sheet(maths))
+    assert path.read_text(encoding="utf-8-sig").splitlines() == [
+        "Student #,Last name,First name,Test 1 (/10),Test 2 (/20),Tests %,Average %",
+        "S1,Lovelace,Ada,7.5,ex,75.0,75.0",
+        ",Smith,Bob,,,,",
+    ]

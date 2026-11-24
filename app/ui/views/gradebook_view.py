@@ -30,10 +30,12 @@ from app.services.gradebook import (
     GradeSheet,
     format_number,
 )
+from app.services.export import write_gradebook_csv
 from app.services.roster import RosterService, matches
 from app.ui import style
 from app.ui.dialogs.assignment_dialog import AssignmentDialog
 from app.ui.dialogs.categories_dialog import CategoriesDialog
+from app.ui.files import ask_save_path
 
 
 ASSIGNMENT_ID = Qt.ItemDataRole.UserRole  # on header items
@@ -99,6 +101,10 @@ class GradebookView(QWidget):
         self.categories_button.clicked.connect(self.edit_categories)
         header = QHBoxLayout()
         header.addLayout(titles, stretch=1)
+        self.export_button = QPushButton("E&xport…")
+        self.export_button.setToolTip("Save the scores, category percents and averages as a CSV file")
+        self.export_button.clicked.connect(self.export_csv)
+        header.addWidget(self.export_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.categories_button, alignment=Qt.AlignmentFlag.AlignBottom)
         self.new_button = QPushButton("&New assignment")
         self.new_button.setObjectName("Primary")
@@ -211,8 +217,25 @@ class GradebookView(QWidget):
         else:
             self.subtitle.setText(school_class.display_name if school_class else "")
         self.categories_button.setEnabled(self.sheet is not None)
+        self.export_button.setEnabled(self.sheet is not None and bool(self.sheet.assignments))
         self.new_button.setEnabled(self.sheet is not None and bool(self.sheet.categories))
         self._show_state()
+
+    def export_csv(self) -> None:
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if self.sheet is None or school_class is None:
+            return
+        name = f"{school_class.display_name} {self.sheet.subject.name} grades"
+        path = ask_save_path(self, "Export grades", name, "CSV files", ".csv")
+        if path is None:
+            return
+        try:
+            write_gradebook_csv(path, self.sheet)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export grades", f"The file could not be saved:\n{exc}")
+            return
+        n = len(self.sheet.students)
+        QMessageBox.information(self, "Export grades", f"Saved the grades of {n} student{'' if n == 1 else 's'} to\n{path}")
 
     def edit_categories(self) -> None:
         if self.subject_id is None:

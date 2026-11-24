@@ -11,6 +11,7 @@ from pathlib import Path
 from app.models import AttendanceStatus, Student
 from app.services.attendance import DayRegister, MonthRegister, PeriodSummary, RegisterRow, StudentHistory
 from app.services.dashboard import attendance_rate
+from app.services.gradebook import GradeSheet, format_number
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
@@ -319,3 +320,32 @@ def _notes_html(register: MonthRegister) -> str:
         name = f"{row.student.last_name}, {row.student.first_name}"
         items.append(f"<li>{day:%a} {day.day}: {html.escape(name)}{mark}: {html.escape(note)}</li>")
     return '<h3 style="margin-bottom: 2px;">Notes</h3><ul style="margin-top: 2px;">' + "".join(items) + "</ul>"
+
+
+def _gradebook_rows(sheet: GradeSheet) -> list[Sequence[object]]:
+    """Students down, then each assignment's points, each category's percent and the average.
+    An exempt student's cell says "ex"; one with nothing entered is empty."""
+    header = ["Student #", "Last name", "First name"]
+    header += [f"{a.title} (/{format_number(a.max_score)})" for a in sheet.assignments]
+    header += [f"{c.name} %" for c in sheet.categories]
+    header.append("Average %")
+    rows: list[Sequence[object]] = [header]
+    for student in sheet.students:
+        row: list[object] = [student.student_no or "", student.last_name, student.first_name]
+        for a in sheet.assignments:
+            if not sheet.is_entered(a.id, student.id):
+                row.append("")
+            else:
+                score = sheet.score(a.id, student.id)
+                row.append("ex" if score is None else int(score) if score == int(score) else score)  # 8, not 8.0
+        percents = sheet.category_percents(student.id)
+        row += [round(percents[c.id], 1) if c.id in percents else "" for c in sheet.categories]
+        average = sheet.average(student.id)
+        row.append(round(average, 1) if average is not None else "")
+        rows.append(row)
+    return rows
+
+
+def write_gradebook_csv(path: Path, sheet: GradeSheet) -> None:
+    """Save one subject's gradebook as CSV, e.g. for the school's report cards."""
+    _write_csv(path, _gradebook_rows(sheet))

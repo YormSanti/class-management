@@ -511,3 +511,20 @@ def test_gradebook_order_is_remembered(qapp, conn, roster: RosterService, tmp_pa
     second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.gradebook_view.by_average
     second.close()
+
+
+def test_export_saves_the_gradebook_as_csv(window: MainWindow, roster: RosterService, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("8")
+    asked, infos = [], []
+    target = tmp_path / "grades.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: asked.append(a[2]) or (str(target), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    assert view.export_button.isEnabled()
+    view.export_button.click()
+    assert asked[0].endswith("7B (2026-2027) Maths grades.csv")
+    assert target.read_text(encoding="utf-8-sig").splitlines()[1] == ",Lovelace,Ada,8,,80.0,80.0"
+    assert infos[0].startswith("Saved the grades of 2 students")
