@@ -1,8 +1,9 @@
 import sqlite3
+from datetime import date
 
 import pytest
 
-from app.models import Category, SchoolClass, Subject
+from app.models import Assignment, Category, SchoolClass, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.services.roster import RosterService
 
@@ -48,3 +49,31 @@ def test_unused_category_can_be_deleted(repo: GradebookRepository, subject_id: i
     tests = repo.add_category(Category(subject_id, "Tests", 50))
     repo.delete_category(tests.id)
     assert repo.categories(subject_id) == []
+
+
+def test_assignments_are_listed_by_date_undated_last(repo: GradebookRepository, subject_id: int):
+    tests = repo.add_category(Category(subject_id, "Tests", 50))
+    repo.add_assignment(Assignment(subject_id, tests.id, "Project", 20))
+    repo.add_assignment(Assignment(subject_id, tests.id, "Test 2", 10, date(2026, 10, 20)))
+    first = repo.add_assignment(Assignment(subject_id, tests.id, "Test 1", 10, date(2026, 9, 20)))
+    assert [a.title for a in repo.assignments(subject_id)] == ["Test 1", "Test 2", "Project"]
+    assert repo.get_assignment(first.id) == first
+
+
+def test_assignment_can_be_changed(repo: GradebookRepository, subject_id: int):
+    tests = repo.add_category(Category(subject_id, "Tests", 50))
+    quizzes = repo.add_category(Category(subject_id, "Quizzes", 20))
+    quiz = repo.add_assignment(Assignment(subject_id, tests.id, "Quiz", 10))
+    changed = Assignment(subject_id, quizzes.id, "Quiz 1", 12, date(2026, 9, 1), id=quiz.id)
+    repo.update_assignment(changed)
+    assert repo.get_assignment(quiz.id) == changed
+
+
+def test_category_in_use_cannot_be_deleted(repo: GradebookRepository, subject_id: int):
+    tests = repo.add_category(Category(subject_id, "Tests", 50))
+    test = repo.add_assignment(Assignment(subject_id, tests.id, "Test 1", 10))
+    assert repo.assignment_counts(subject_id) == {tests.id: 1}
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.delete_category(tests.id)
+    repo.delete_assignment(test.id)
+    repo.delete_category(tests.id)

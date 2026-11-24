@@ -8,13 +8,25 @@ and differs both from 0 and from no row at all (nothing entered yet).
 
 import sqlite3
 from dataclasses import replace
+from datetime import date
 
 from app.db.connection import transaction
-from app.models import Category
+from app.models import Assignment, Category
 
 
 def _category(row: sqlite3.Row) -> Category:
     return Category(id=row["id"], subject_id=row["subject_id"], name=row["name"], weight=row["weight"])
+
+
+def _assignment(row: sqlite3.Row) -> Assignment:
+    return Assignment(
+        id=row["id"],
+        subject_id=row["subject_id"],
+        category_id=row["category_id"],
+        title=row["title"],
+        max_score=row["max_score"],
+        date=date.fromisoformat(row["date"]) if row["date"] else None,
+    )
 
 
 class GradebookRepository:
@@ -62,3 +74,47 @@ class GradebookRepository:
             (subject_id,),
         )
         return [_category(r) for r in rows]
+
+    # --- assignments ---------------------------------------------------------
+
+    def add_assignment(self, assignment: Assignment) -> Assignment:
+        a = assignment
+        with transaction(self.conn):
+            cur = self.conn.execute(
+                "INSERT INTO assignments (subject_id, category_id, title, date, max_score) VALUES (?, ?, ?, ?, ?)",
+                (a.subject_id, a.category_id, a.title, a.date.isoformat() if a.date else None, a.max_score),
+            )
+        return replace(assignment, id=cur.lastrowid)
+
+    def update_assignment(self, assignment: Assignment) -> None:
+        a = assignment
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE assignments SET category_id = ?, title = ?, date = ?, max_score = ? WHERE id = ?",
+                (a.category_id, a.title, a.date.isoformat() if a.date else None, a.max_score, a.id),
+            )
+
+    def delete_assignment(self, assignment_id: int) -> None:
+        """Delete an assignment with its scores."""
+        with transaction(self.conn):
+            self.conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+
+    def get_assignment(self, assignment_id: int) -> Assignment | None:
+        row = self.conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        return _assignment(row) if row else None
+
+    def assignments(self, subject_id: int) -> list[Assignment]:
+        """The subject's assignments by date, undated ones last, then in the order added."""
+        rows = self.conn.execute(
+            "SELECT * FROM assignments WHERE subject_id = ? ORDER BY date IS NULL, date, id",
+            (subject_id,),
+        )
+        return [_assignment(r) for r in rows]
+
+    def assignment_counts(self, subject_id: int) -> dict[int, int]:
+        """{category id: assignments in it}; categories without any are left out."""
+        rows = self.conn.execute(
+            "SELECT category_id, count(*) AS n FROM assignments WHERE subject_id = ? GROUP BY category_id",
+            (subject_id,),
+        )
+        return {r["category_id"]: r["n"] for r in rows}
