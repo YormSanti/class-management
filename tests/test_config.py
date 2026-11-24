@@ -60,4 +60,4 @@ def test_pass_mark_is_kept_and_a_strange_one_ignored(tmp_path):
     assert load_config(path).pass_mark == 60
     for strange in (120, -1, "sixty", True, None):
         path.write_text(json.dumps({"data_dir": str(tmp_path), "pass_mark": strange}), encoding="utf-8")
-        assert load_config(path).pass_mark == 50
+        assert load_config(path).pass_mark == 60

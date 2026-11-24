@@ -22,7 +22,7 @@ DAYS_AHEAD = 366
 OVER_MAX_LIMIT = 2  # a score up to twice the maximum is bonus points; more is a typo
 EXEMPT = "exempt"  # score text for an exempt student, stored as NULL
 EXEMPT_WORDS = {"ex", "exempt", "x", "excused"}
-PASS_MARK = 50.0  # percent: an average under this is failing
+PASS_MARK = 60.0  # percent: an average under this is failing, as on the dashboard
 SUGGESTED_CATEGORIES = (("Tests", 50.0), ("Quizzes", 20.0), ("Homework", 20.0), ("Participation", 10.0))
 
 

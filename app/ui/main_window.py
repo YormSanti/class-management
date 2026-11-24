@@ -84,6 +84,7 @@ class MainWindow(QMainWindow):
         self.attendance_view.navigate_requested.connect(self.show_page)
         self.gradebook_view = GradebookView(grades, roster)
         self.gradebook_view.pass_mark = config.pass_mark
+        dashboard.pass_mark = config.pass_mark
         self.gradebook_view.manage_subjects_requested.connect(self.show_subjects)
         self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
@@ -249,6 +250,8 @@ class MainWindow(QMainWindow):
         if pass_mark_changed:
             self.gradebook_view.pass_mark = changed.pass_mark
             self.gradebook_view.refresh()
+            self.dashboard_view.dashboard.pass_mark = changed.pass_mark
+            self.dashboard_view.refresh()
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))

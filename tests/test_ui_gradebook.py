@@ -370,9 +370,9 @@ def test_failing_average_is_shown_in_the_danger_colour(window: MainWindow, roste
     average = view.table.item(0, 3)
     assert average.text() == "40%"
     assert average.foreground().color() == style.color(view, "danger")
-    assert average.toolTip() == "Under the pass mark of 50%\nTests (weight 100): 40%"
-    view.table.item(0, 1).setText("5")
-    assert average.toolTip() == "Tests (weight 100): 50%"
+    assert average.toolTip() == "Under the pass mark of 60%\nTests (weight 100): 40%"
+    view.table.item(0, 1).setText("6")
+    assert average.toolTip() == "Tests (weight 100): 60%"
     assert average.foreground().color() != style.color(view, "danger")
 
 
@@ -381,10 +381,13 @@ def test_pass_mark_set_in_settings_is_used_by_the_gradebook(window: MainWindow, 
     view = window.gradebook_view
     view.table.item(0, 1).setText("6")
     assert view.table.item(1, 3).toolTip() == "Nothing scored yet"
+    window.select_class(window.class_id)  # the dashboard shows it too
     assert not view.table.item(0, 3).toolTip().startswith("Under")
     window.settings_view.pass_mark.setValue(65)
     assert window.config.pass_mark == 65
     assert view.table.item(0, 3).toolTip().startswith("Under the pass mark of 65%")
+    summary = window.dashboard_view.dashboard.summary(window.class_id)
+    assert summary.subjects[0].below_pass == 1
 
 
 def test_bonus_and_exempt_scores_are_explained(window: MainWindow, roster: RosterService):

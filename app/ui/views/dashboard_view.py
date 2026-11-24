@@ -25,7 +25,6 @@ from app.services.dashboard import (
     EXCUSED,
     GRADE_SCALE,
     LATE,
-    LOW_AVERAGE,
     PRESENT,
     AttentionItem,
     DashboardService,
@@ -589,7 +588,7 @@ class DashboardView(QWidget):
             grid.addWidget(hint, 0, 0)
             return
 
-        for col, text in enumerate(("Subject", "Teacher", "Class average", f"Below {LOW_AVERAGE:.0f}%")):
+        for col, text in enumerate(("Subject", "Teacher", "Class average", f"Below {self.dashboard.pass_mark:.0f}%")):
             caption = style.caption(text)
             if col == 3:
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -602,7 +601,7 @@ class DashboardView(QWidget):
             average.setSpacing(10)
             meter = Meter(height=8)
             if s.average is not None:
-                color = "danger" if s.average < LOW_AVERAGE else "warn" if s.average < 70 else "accent"
+                color = "danger" if s.average < self.dashboard.pass_mark else "warn" if s.average < 70 else "accent"
                 meter.set_value(s.average, 100, color)
             average.addWidget(meter, stretch=1)
             value = style.label("No scores" if s.average is None else f"{s.average:.0f}% {letter_grade(s.average)}", 0.92, bold=s.average is not None, muted=s.average is None)

@@ -201,7 +201,7 @@ class SettingsView(QWidget):
         )
 
         # --- grades ---
-        grades = style.Panel("Grades", "Gradebook averages under the pass mark are shown in red.")
+        grades = style.Panel("Grades", "Averages under the pass mark are shown in red in the gradebook and pointed out on the dashboard.")
         self.pass_mark = QSpinBox()
         self.pass_mark.setRange(0, 100)
         self.pass_mark.setSuffix(" %")
