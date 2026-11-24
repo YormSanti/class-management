@@ -18,6 +18,9 @@ TITLE_MAX = 80  # characters in an assignment title
 MAX_SCORE_LIMIT = 1000.0  # points: more is surely a typo
 EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
 DAYS_AHEAD = 366
+OVER_MAX_LIMIT = 2  # a score up to twice the maximum is bonus points; more is a typo
+EXEMPT = "exempt"  # score text for an exempt student, stored as NULL
+EXEMPT_WORDS = {"ex", "exempt", "x", "excused"}
 
 
 class GradebookError(ValueError):
@@ -35,6 +38,36 @@ def _plural(n: int, word: str, plural: str | None = None) -> str:
 def format_number(value: float) -> str:
     """A score or weight as people write it: 8 not 8.0, 8.5, 8.25."""
     return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def parse_score(text: str, max_score: float) -> float | str | None:
+    """What the teacher typed in a score cell: a number of points ("8", "8,5"), a
+    percentage of the maximum ("85%"), EXEMPT ("ex"), or None for an empty cell.
+    Raises GradebookError for anything else."""
+    text = text.strip().casefold()
+    if not text:
+        return None
+    if text in EXEMPT_WORDS:
+        return EXEMPT
+    percent = text.endswith("%")
+    number = text.removesuffix("%").strip().replace(",", ".")
+    try:
+        value = float(number)
+    except ValueError:
+        raise GradebookError(
+            f"{text!r} isn't a score. Type the points, e.g. 8.5, a percentage, e.g. 85%, or ex for exempt."
+        ) from None
+    if value != value or value in (float("inf"), float("-inf")):  # nan, inf
+        raise GradebookError(f"{text!r} isn't a score.")
+    if percent:
+        value = value * max_score / 100
+    if value < 0:
+        raise GradebookError("A score can't be negative.")
+    if value > max_score * OVER_MAX_LIMIT:
+        raise GradebookError(
+            f"{format_number(value)} is far more than the maximum of {format_number(max_score)}. Check the score."
+        )
+    return round(value, 2)
 
 
 class GradebookService:
@@ -126,3 +159,22 @@ class GradebookService:
     def delete_assignment(self, assignment_id: int) -> None:
         """Delete an assignment with all its scores."""
         self.gradebook.delete_assignment(assignment_id)
+
+    # --- scores --------------------------------------------------------------
+
+    def enter_score(self, assignment_id: int, student_id: int, text: str) -> float | str | None:
+        """Save what was typed in a score cell (see parse_score); returns what was saved:
+        the points, EXEMPT, or None when the cell was emptied."""
+        assignment = self.gradebook.get_assignment(assignment_id)
+        if assignment is None:
+            raise GradebookError("This assignment no longer exists.")
+        student = self.students.get(student_id)
+        subject = self.subjects.get(assignment.subject_id)
+        if student is None or subject is None or student.class_id != subject.class_id:
+            raise GradebookError("This student isn't in the class any more.")
+        value = parse_score(text, assignment.max_score)
+        if value is None:
+            self.gradebook.clear_score(assignment_id, student_id)
+        else:
+            self.gradebook.save_score(assignment_id, student_id, None if value == EXEMPT else value)
+        return value

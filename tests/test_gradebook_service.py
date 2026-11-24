@@ -8,7 +8,7 @@ from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.gradebook import GradebookError, GradebookService, format_number
+from app.services.gradebook import EXEMPT, GradebookError, GradebookService, format_number, parse_score
 from app.services.roster import RosterService
 
 
@@ -121,3 +121,42 @@ def test_deleting_an_assignment_deletes_its_scores(
     assert grades.score_count(test) == 1
     grades.delete_assignment(test)
     assert grades.list_assignments(subject_id) == []
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [("", None), ("  ", None), ("8", 8), ("8,5", 8.5), (" 7.25 ", 7.25), ("85%", 17), ("ex", EXEMPT),
+     ("X", EXEMPT), ("Excused", EXEMPT), ("0", 0), ("25", 25), ("40", 40)],
+)
+def test_typed_scores_are_read(text, expected):
+    assert parse_score(text, 20) == expected
+
+
+@pytest.mark.parametrize("text, message", [("abc", "isn't a score"), ("nan", "isn't a score"),
+                                           ("-1", "can't be negative"), ("41", "far more than the maximum of 20")])
+def test_impossible_scores_are_refused(text, message):
+    with pytest.raises(GradebookError, match=message):
+        parse_score(text, 20)
+
+
+def test_score_is_entered_exempted_and_cleared(
+    grades: GradebookService, roster: RosterService, class_id, subject_id, tests_id
+):
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    test = grades.save_assignment(Assignment(subject_id, tests_id, "Test 1", 10)).id
+    assert grades.enter_score(test, ada, "8,5") == 8.5
+    assert grades.gradebook.scores(subject_id) == {(test, ada): 8.5}
+    assert grades.enter_score(test, ada, "ex") == EXEMPT
+    assert grades.gradebook.scores(subject_id) == {(test, ada): None}
+    assert grades.enter_score(test, ada, "") is None
+    assert grades.gradebook.scores(subject_id) == {}
+
+
+def test_score_of_a_student_of_another_class_is_refused(
+    grades: GradebookService, roster: RosterService, subject_id, tests_id
+):
+    other = roster.save_class(SchoolClass(name="7C", term="2026-2027")).id
+    bob = roster.save_student(Student(other, "Bob", "Smith")).id
+    test = grades.save_assignment(Assignment(subject_id, tests_id, "Test 1", 10)).id
+    with pytest.raises(GradebookError, match="isn't in the class"):
+        grades.enter_score(test, bob, "5")
