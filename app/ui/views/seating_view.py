@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -69,6 +70,9 @@ class SeatingView(QWidget):
         self.edit_button = QPushButton("&Edit…")
         self.edit_button.setToolTip("Rename the plan or change the rows and seats of the room")
         self.edit_button.clicked.connect(self.edit_layout)
+        self.copy_button = QPushButton("&Copy…")
+        self.copy_button.setToolTip("Start a new plan from this one, with everyone in the same seat")
+        self.copy_button.clicked.connect(self.copy_layout)
         self.delete_button = QPushButton("&Delete")
         self.delete_button.setToolTip("Delete the plan shown")
         self.delete_button.clicked.connect(self.delete_layout)
@@ -77,6 +81,7 @@ class SeatingView(QWidget):
         header.addWidget(plan_label, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.layout_combo, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.edit_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.copy_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.delete_button, alignment=Qt.AlignmentFlag.AlignBottom)
         self.pdf_button = QPushButton("Save PD&F…")
         self.pdf_button.setToolTip("Save the plan as a PDF to print, e.g. for a substitute teacher")
@@ -224,7 +229,7 @@ class SeatingView(QWidget):
             for x in layouts:
                 self.layout_combo.addItem(f"{x.name} ({x.rows} × {x.cols})", x.id)
             self.layout_combo.setCurrentIndex(self.layout_combo.findData(self.layout_id))
-        for widget in (self.layout_combo, self.edit_button, self.delete_button, self.pdf_button):
+        for widget in (self.layout_combo, self.edit_button, self.copy_button, self.delete_button, self.pdf_button):
             widget.setEnabled(bool(layouts))
         self.new_button.setEnabled(self.class_id is not None)
         self.plan = self.seating.plan(self.layout_id) if self.layout_id is not None else None
@@ -281,6 +286,22 @@ class SeatingView(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 raise SeatingError("Choose more rows or seats, or Cancel to keep the room as it is.")
         return self.seating.save_layout(layout)
+
+    def copy_layout(self) -> None:
+        if self.plan is None:
+            return
+        name, ok = QInputDialog.getText(
+            self, "Copy seating plan", "Name of the new plan:", text=f"{self.plan.layout.name} (copy)"
+        )
+        if not ok:
+            return
+        try:
+            copy = self.seating.copy_layout(self.plan.layout.id, name)
+        except SeatingError as exc:
+            QMessageBox.warning(self, "Copy seating plan", str(exc))
+            return
+        self.layout_id = copy.id
+        self.refresh()
 
     def save_pdf(self) -> None:
         """Save the plan shown as a landscape A4 PDF, ready to print."""

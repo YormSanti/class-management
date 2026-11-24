@@ -177,3 +177,17 @@ def test_shuffle_reseats_everyone(seating: SeatingService, roster: RosterService
         seating.fill(layout, shuffle=True, rng=random.Random(seed))
         orders.add(tuple(seating.plan(layout).seats[(0, c)] for c in range(3)))
     assert len(orders) > 1
+
+
+def test_a_plan_is_copied_with_its_seats(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, ada, bob, _cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, ada, 0, 0)
+    seating.place(layout, bob, 1, 2)
+    copy = seating.copy_layout(layout, " Exams ")
+    assert (copy.name, copy.rows, copy.cols) == ("Exams", 2, 3)
+    assert seating.plan(copy.id).seats == {(0, 0): ada, (1, 2): bob}
+    seating.place(copy.id, ada, 0, 1)  # the copy is a plan of its own
+    assert seating.plan(layout).seat_of(ada) == (0, 0)
+    with pytest.raises(SeatingError, match="already has a seating plan called Exams"):
+        seating.copy_layout(layout, "exams")
+    assert len(seating.list_layouts(class_id)) == 2

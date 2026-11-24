@@ -8,6 +8,7 @@ as free and is given away when someone else is put in it.
 import random
 from dataclasses import dataclass, field, replace
 
+from app.db.connection import transaction
 from app.models import SeatLayout, Student
 from app.repositories.class_repo import ClassRepository
 from app.repositories.seating_repo import SeatingRepository
@@ -84,6 +85,16 @@ class SeatingService:
             return self.seating.add_layout(layout)
         self.seating.update_layout(layout)
         return layout
+
+    def copy_layout(self, layout_id: int, name: str) -> SeatLayout:
+        """A new plan called `name` with the same room and everyone in the same seat."""
+        layout = self.seating.get_layout(layout_id)
+        if layout is None:
+            raise SeatingError("This seating plan no longer exists.")
+        with transaction(self.seating.conn):
+            copy = self.save_layout(replace(layout, name=name, id=None))
+            self.seating.set_seats(copy.id, self.seating.seats(layout_id))
+        return copy
 
     def seated_outside(self, layout_id: int, rows: int, cols: int) -> list[Student]:
         """The active students who would lose their seat if the layout had `rows` × `cols` seats."""

@@ -316,3 +316,18 @@ def test_the_plan_shown_is_remembered(qapp, conn, roster: RosterService, tmp_pat
     second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.seating_view.layout_id == tests
     second.close()
+
+
+def test_a_plan_is_copied_under_a_new_name(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)
+    view.refresh()
+    asked = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: asked.append(k["text"]) or ("Exams", True))
+    view.copy_button.click()
+    assert asked == ["Tests (copy)"]
+    assert view.layout_combo.currentText() == "Exams (2 × 3)"
+    assert _grid(window)[1][0] == "Ada Lovelace"
