@@ -186,3 +186,51 @@ def test_escape_puts_the_picked_student_down(window: MainWindow, roster: RosterS
     view.pick(ids["Bob"])
     view.pick(None)
     assert view.picked is None and view.hint.text() == HINT
+
+
+def test_seat_the_rest_shuffle_clear_and_undo(window: MainWindow, roster: RosterService):
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Bob"], 1, 2)
+    view.refresh()
+    view.fill_button.click()
+    assert _grid(window) == [["", "", "Bob Smith"], ["Ada Lovelace", "Cy Young", ""]]
+    assert not view.fill_button.isEnabled()  # everyone is seated
+
+    view.shuffle_button.click()
+    assert _unseated(window) == []
+    assert all(name for name in _grid(window)[1])  # the front row is full
+
+    view.clear_button.click()
+    assert _grid(window) == [["", "", ""], ["", "", ""]] and len(_unseated(window)) == 3
+    assert not view.clear_button.isEnabled()
+
+    view.undo()  # the shuffle is back
+    assert _unseated(window) == []
+    view.undo()
+    view.undo()
+    assert _grid(window) == [["", "", "Bob Smith"], ["", "", ""]]
+    view.undo()  # nothing more to undo
+    view.redo()
+    assert _grid(window) == [["", "", "Bob Smith"], ["Ada Lovelace", "Cy Young", ""]]
+
+
+def test_moves_can_be_undone(window: MainWindow, roster: RosterService):
+    _class_id, _layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.pick(ids["Ada"])
+    _click_seat(window, 0, 0)
+    view.undo()
+    assert _unseated(window) == ["Ada Lovelace", "Bob Smith", "Cy Young"]
+    view.redo()
+    assert _grid(window)[1][0] == "Ada Lovelace"
+
+
+def test_seat_the_rest_says_who_did_not_fit(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    _seated_class(window, roster, rows=1, cols=2)
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    window.seating_view.fill_button.click()
+    assert infos == ["There's no free seat for Cy Young. Add seats with Edit…"]

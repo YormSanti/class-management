@@ -28,6 +28,7 @@ from app.ui.dialogs.layout_dialog import LayoutDialog
 STUDENT_ID = Qt.ItemDataRole.UserRole
 SEAT_WIDTH = 120
 SEAT_HEIGHT = 56
+UNDO_LIMIT = 50
 HINT = (
     "Click a student under Not seated, then a seat. Click a seated student, then another seat "
     "to move them; if it's taken, the two swap."
@@ -43,6 +44,9 @@ class SeatingView(QWidget):
         self.layout_id: int | None = None
         self.plan: SeatingPlan | None = None
         self.picked: int | None = None  # the student clicked, waiting for a seat
+        # Who sat where before each change, as (layout id, {(row, col): student id}).
+        self._undo: list[tuple[int, dict[tuple[int, int], int]]] = []
+        self._redo: list[tuple[int, dict[tuple[int, int], int]]] = []
 
         self.title = style.label("Seating chart", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -74,6 +78,19 @@ class SeatingView(QWidget):
 
         # --- the room ---
         self.summary = style.label("", 0.95, muted=True)
+        self.fill_button = QPushButton("Seat the &rest")
+        self.fill_button.setToolTip("Seat the students not seated yet in the free seats, front row first, by name")
+        self.fill_button.clicked.connect(lambda: self.fill(shuffle=False))
+        self.shuffle_button = QPushButton("&Shuffle")
+        self.shuffle_button.setToolTip("Seat everyone at random, front row first (Ctrl+Z undoes)")
+        self.shuffle_button.clicked.connect(lambda: self.fill(shuffle=True))
+        self.clear_button = QPushButton("C&lear")
+        self.clear_button.setToolTip("Take every student out of their seat (Ctrl+Z undoes)")
+        self.clear_button.clicked.connect(self.clear_seats)
+        summary_row = QHBoxLayout()
+        summary_row.addWidget(self.summary, stretch=1)
+        for button in (self.fill_button, self.shuffle_button, self.clear_button):
+            summary_row.addWidget(button)
         self.grid = QTableWidget()
         self.grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.grid.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -99,7 +116,7 @@ class SeatingView(QWidget):
         self.plan_page = QWidget()
         plan_layout = QVBoxLayout(self.plan_page)
         plan_layout.setContentsMargins(0, 0, 0, 0)
-        plan_layout.addWidget(self.summary)
+        plan_layout.addLayout(summary_row)
         plan_layout.addLayout(body, stretch=1)
         self.hint = style.label(HINT, 0.85, muted=True)
         self.hint.setWordWrap(True)
@@ -119,6 +136,13 @@ class SeatingView(QWidget):
         cancel = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         cancel.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         cancel.activated.connect(lambda: self.pick(None))
+        undo = QShortcut(QKeySequence.StandardKey.Undo, self)
+        undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        undo.activated.connect(self.undo)
+        for keys in ("Ctrl+Y", "Ctrl+Shift+Z"):
+            redo = QShortcut(QKeySequence(keys), self)
+            redo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            redo.activated.connect(self.redo)
 
         # --- empty states ---
         self.empty_label = QLabel()
@@ -151,6 +175,7 @@ class SeatingView(QWidget):
     def set_class(self, class_id: int | None) -> None:
         if class_id != self.class_id:
             self.layout_id = None
+            self.clear_undo()
         self.class_id = class_id
         self.refresh()
 
@@ -268,6 +293,7 @@ class SeatingView(QWidget):
             return
         picked, self.picked = self.picked, None
         if self.plan.seat_of(picked) != (row, col):
+            self._remember()
             try:
                 self.seating.place(self.plan.layout.id, picked, row, col)
             except SeatingError as exc:
@@ -275,6 +301,57 @@ class SeatingView(QWidget):
         self.refresh()
         self.grid.setCurrentCell(*self.cell_of(row, col))
         self.pick(None)
+
+    def fill(self, shuffle: bool) -> None:
+        """Seat the rest by name, or everyone at random."""
+        if self.plan is None:
+            return
+        self._remember()
+        self.seating.fill(self.plan.layout.id, shuffle=shuffle)
+        self.refresh()
+        if self.plan.unseated:
+            names = ", ".join(s.full_name for s in self.plan.unseated)
+            QMessageBox.information(
+                self, "Seating chart", f"There's no free seat for {names}. Add seats with Edit…"
+            )
+
+    def clear_seats(self) -> None:
+        if self.plan is None or not self.plan.seats:
+            return
+        self._remember()
+        self.seating.set_seats(self.plan.layout.id, {})
+        self.refresh()
+
+    # --- undo ------------------------------------------------------------------
+
+    def _remember(self) -> None:
+        """Keep who sits where now, before a change, so Ctrl+Z can put it back."""
+        self._undo.append((self.plan.layout.id, dict(self.plan.seats)))
+        del self._undo[:-UNDO_LIMIT]
+        self._redo.clear()
+
+    def clear_undo(self) -> None:
+        self._undo.clear()
+        self._redo.clear()
+
+    def undo(self) -> None:
+        self._step(self._undo, self._redo)
+
+    def redo(self) -> None:
+        self._step(self._redo, self._undo)
+
+    def _step(self, source: list, target: list) -> None:
+        if not source:
+            return
+        layout_id, seats = source.pop()
+        current = self.seating.plan(layout_id)
+        if current is None:  # the plan was deleted meanwhile
+            self.clear_undo()
+            return
+        target.append((layout_id, dict(current.seats)))
+        self.seating.set_seats(layout_id, seats)
+        self.layout_id = layout_id
+        self.refresh()
 
     # --- the room --------------------------------------------------------------
 
@@ -301,6 +378,9 @@ class SeatingView(QWidget):
             f"{seated} of {len(plan.students)} students seated · {free} free seat{'' if free == 1 else 's'}"
         )
         self.unseated_label.setText(f"Not seated ({len(plan.unseated)})")
+        self.fill_button.setEnabled(bool(plan.unseated and plan.free_seats))
+        self.shuffle_button.setEnabled(bool(plan.students))
+        self.clear_button.setEnabled(bool(plan.seats))
 
     def cell_of(self, row: int, col: int) -> tuple[int, int]:
         """The grid cell of seat (row, col); row 0 is the front, shown at the bottom."""

@@ -389,6 +389,7 @@ class MainWindow(QMainWindow):
         """Reload every page after the whole database was swapped, e.g. by a restore."""
         self.attendance_view.clear_undo()  # its snapshots belong to the old data
         self.gradebook_view.clear_undo()
+        self.seating_view.clear_undo()
         self.select_class(self.class_id)
 
     # --- classes -------------------------------------------------------------
