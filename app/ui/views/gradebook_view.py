@@ -275,6 +275,15 @@ class GradebookView(QWidget):
         if dialog.exec():
             self.refresh()
             self.go_to_assignment(assignment_id)  # its date may have moved it
+            saved = dialog.saved or assignment
+            above = [s for s in self.sheet.students if (self.sheet.score(assignment_id, s.id) or 0) > saved.max_score]
+            if saved.max_score < assignment.max_score and above:
+                n = len(above)
+                QMessageBox.information(
+                    self, "Edit assignment",
+                    f"{n} score{'' if n == 1 else 's'} {'is' if n == 1 else 'are'} now above the maximum of "
+                    f"{format_number(saved.max_score)} and count{'s' if n == 1 else ''} as bonus points.",
+                )  # fmt: skip
 
     def delete_assignment(self, assignment_id: int) -> None:
         """Delete an assignment with its scores, after asking."""

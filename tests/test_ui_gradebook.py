@@ -532,3 +532,29 @@ def test_export_saves_the_gradebook_as_csv(window: MainWindow, roster: RosterSer
     assert asked[0].endswith("7B (2026-2027) Maths grades.csv")
     assert target.read_text(encoding="utf-8-sig").splitlines()[1] == ",Lovelace,Ada,8,,80.0,80.0,B"
     assert infos[0].startswith("Saved the grades of 2 students")
+
+
+def test_lowering_a_maximum_below_scores_says_they_are_bonus(window: MainWindow, roster: RosterService, monkeypatch):
+    from dataclasses import replace
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.views import gradebook_view
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("9")
+    view.table.item(1, 1).setText("5")
+
+    class FakeDialog:
+        def __init__(self, save, subject_id, categories, assignment, parent=None):
+            self.saved = save(replace(assignment, max_score=8))
+
+        def exec(self):
+            return True
+
+    infos = []
+    monkeypatch.setattr(gradebook_view, "AssignmentDialog", FakeDialog)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    view.edit_assignment(test)
+    assert infos == ["1 score is now above the maximum of 8 and counts as bonus points."]
