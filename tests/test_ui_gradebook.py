@@ -529,5 +529,5 @@ def test_export_saves_the_gradebook_as_csv(window: MainWindow, roster: RosterSer
     assert view.export_button.isEnabled()
     view.export_button.click()
     assert asked[0].endswith("7B (2026-2027) Maths grades.csv")
-    assert target.read_text(encoding="utf-8-sig").splitlines()[1] == ",Lovelace,Ada,8,,80.0,80.0"
+    assert target.read_text(encoding="utf-8-sig").splitlines()[1] == ",Lovelace,Ada,8,,80.0,80.0,B"
     assert infos[0].startswith("Saved the grades of 2 students")

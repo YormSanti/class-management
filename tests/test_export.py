@@ -296,7 +296,7 @@ def test_gradebook_csv_has_scores_category_percents_and_averages(conn, roster, t
     path = tmp_path / "maths.csv"
     write_gradebook_csv(path, grades.sheet(maths))
     assert path.read_text(encoding="utf-8-sig").splitlines() == [
-        "Student #,Last name,First name,Test 1 (/10),Test 2 (/20),Tests %,Average %",
-        "S1,Lovelace,Ada,7.5,ex,75.0,75.0",
-        ",Smith,Bob,,,,",
+        "Student #,Last name,First name,Test 1 (/10),Test 2 (/20),Tests %,Average %,Grade",
+        "S1,Lovelace,Ada,7.5,ex,75.0,75.0,C",
+        ",Smith,Bob,,,,,",
     ]
