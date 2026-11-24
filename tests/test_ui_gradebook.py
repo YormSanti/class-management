@@ -100,3 +100,41 @@ def test_category_dialog_saves_a_new_category(window: MainWindow, roster: Roster
     again.accept()
     assert "already has a category called Tests" in warnings[0]
     assert again.saved is None
+
+
+def test_categories_dialog_adds_edits_and_deletes(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.dialogs import categories_dialog
+    from app.ui.dialogs.categories_dialog import CategoriesDialog
+
+    maths, *_ = _graded_class(window, roster)
+    grades = window.gradebook_view.grades
+    dialog = CategoriesDialog(grades, maths)
+    assert dialog.windowTitle() == "Categories of Maths"
+    assert [dialog.table.item(0, c).text() for c in range(4)] == ["Tests", "100", "100%", "2"]
+    assert not dialog.delete_button.isEnabled()
+
+    class FakeDialog:  # stands in for CategoryDialog: saves straight away
+        def __init__(self, save, subject_id, category=None, parent=None):
+            from app.models import Category
+
+            self.saved = save(Category(subject_id, "Homework", 25) if category is None else category)
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(categories_dialog, "CategoryDialog", FakeDialog)
+    dialog.add_category()
+    assert dialog.changed
+    assert [dialog.table.item(1, c).text() for c in range(4)] == ["Homework", "25", "20%", "0"]
+    assert dialog.selected_id() == dialog.table.item(1, 0).data(categories_dialog.CATEGORY_ID)
+
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    dialog.table.selectRow(0)
+    dialog.delete_category()
+    assert "Tests can't be deleted: it has 2 assignments" in infos[0]
+    dialog.table.selectRow(1)
+    dialog.delete_category()
+    assert dialog.table.rowCount() == 1

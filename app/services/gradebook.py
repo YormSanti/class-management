@@ -70,6 +70,12 @@ def parse_score(text: str, max_score: float) -> float | str | None:
     return round(value, 2)
 
 
+def weight_shares(categories: list[Category]) -> dict[int, float]:
+    """{category id: percent of the average it makes up}, once every category has work scored."""
+    total = sum(c.weight for c in categories)
+    return {c.id: 100 * c.weight / total if total else 0.0 for c in categories}
+
+
 def category_percents(
     assignments: list[Assignment], scores: dict[int, float | None]
 ) -> dict[int, float]:
@@ -175,6 +181,10 @@ class GradebookService:
             return self.gradebook.add_category(category)
         self.gradebook.update_category(category)
         return category
+
+    def assignment_counts(self, subject_id: int) -> dict[int, int]:
+        """{category id: assignments in it}; categories without any are left out."""
+        return self.gradebook.assignment_counts(subject_id)
 
     def delete_category(self, category_id: int) -> None:
         """Delete a category while no assignment uses it."""

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.services.gradebook import GradebookError, GradebookService, GradeSheet, format_number
 from app.services.roster import RosterService
 from app.ui import style
+from app.ui.dialogs.categories_dialog import CategoriesDialog
 
 
 ASSIGNMENT_ID = Qt.ItemDataRole.UserRole  # on header items
@@ -46,8 +47,12 @@ class GradebookView(QWidget):
         titles.setSpacing(2)
         titles.addWidget(self.title)
         titles.addWidget(self.subtitle)
+        self.categories_button = QPushButton("&Categories…")
+        self.categories_button.setToolTip("The subject's grade categories and how much each counts")
+        self.categories_button.clicked.connect(self.edit_categories)
         header = QHBoxLayout()
         header.addLayout(titles, stretch=1)
+        header.addWidget(self.categories_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
         self.table = QTableWidget()
@@ -108,7 +113,16 @@ class GradebookView(QWidget):
             self.subtitle.setText(f"{self.sheet.subject.name} · {school_class.display_name}")
         else:
             self.subtitle.setText(school_class.display_name if school_class else "")
+        self.categories_button.setEnabled(self.sheet is not None)
         self._show_state()
+
+    def edit_categories(self) -> None:
+        if self.subject_id is None:
+            return
+        dialog = CategoriesDialog(self.grades, self.subject_id, parent=self)
+        dialog.exec()
+        if dialog.changed:
+            self.refresh()
 
     def _show_state(self) -> None:
         if self.class_id is None:

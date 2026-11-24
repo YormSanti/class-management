@@ -8,7 +8,7 @@ from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.gradebook import EXEMPT, GradebookError, GradebookService, format_number, parse_score, weighted_average
+from app.services.gradebook import EXEMPT, GradebookError, GradebookService, format_number, parse_score, weight_shares, weighted_average
 from app.services.roster import RosterService
 
 
@@ -211,3 +211,9 @@ def test_sheet_lists_active_students_with_their_averages(
 
 def test_sheet_of_a_deleted_subject_is_none(grades: GradebookService):
     assert grades.sheet(999) is None
+
+
+def test_weights_are_shown_as_shares_of_the_average():
+    categories, _ = _book()
+    assert weight_shares(categories) == {1: 60, 2: 40, 3: 0}
+    assert weight_shares([Category(1, "A", 0, id=1)]) == {1: 0}
