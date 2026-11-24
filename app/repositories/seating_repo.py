@@ -1,6 +1,7 @@
 """Seating plans of a class: named layouts of rows × columns of seats, and who sits where.
 
 A seat row only exists while a student sits in it; an empty seat is just a missing row.
+A row without a student marks a spot with no desk, e.g. an aisle.
 """
 
 import sqlite3
@@ -73,10 +74,36 @@ class SeatingRepository:
         return {(r["row"], r["col"]): r["student_id"] for r in rows}
 
     def set_seats(self, layout_id: int, seats: dict[tuple[int, int], int]) -> None:
-        """Replace who sits where in the layout with `seats` {(row, col): student id}."""
+        """Replace who sits where in the layout with `seats` {(row, col): student id}.
+        A student put where there was no desk gets the desk back."""
         with transaction(self.conn):
-            self.conn.execute("DELETE FROM seats WHERE layout_id = ?", (layout_id,))
+            self.conn.execute("DELETE FROM seats WHERE layout_id = ? AND student_id IS NOT NULL", (layout_id,))
+            self.conn.executemany(
+                "DELETE FROM seats WHERE layout_id = ? AND row = ? AND col = ?",
+                [(layout_id, row, col) for row, col in seats],
+            )
             self.conn.executemany(
                 "INSERT INTO seats (layout_id, row, col, student_id) VALUES (?, ?, ?, ?)",
                 [(layout_id, row, col, student) for (row, col), student in seats.items()],
             )
+
+    def gaps(self, layout_id: int) -> set[tuple[int, int]]:
+        """The (row, col) spots with no desk."""
+        rows = self.conn.execute(
+            "SELECT row, col FROM seats WHERE layout_id = ? AND student_id IS NULL", (layout_id,)
+        )
+        return {(r["row"], r["col"]) for r in rows}
+
+    def set_gap(self, layout_id: int, row: int, col: int, gap: bool) -> None:
+        """Mark the spot (row, col) as having no desk, freeing it of whoever sat there,
+        or put a desk back."""
+        with transaction(self.conn):
+            self.conn.execute(
+                "DELETE FROM seats WHERE layout_id = ? AND row = ? AND col = ?"
+                + ("" if gap else " AND student_id IS NULL"),
+                (layout_id, row, col),
+            )
+            if gap:
+                self.conn.execute(
+                    "INSERT INTO seats (layout_id, row, col, student_id) VALUES (?, ?, ?, NULL)", (layout_id, row, col)
+                )

@@ -191,3 +191,59 @@ def test_a_plan_is_copied_with_its_seats(seating: SeatingService, roster: Roster
     with pytest.raises(SeatingError, match="already has a seating plan called Exams"):
         seating.copy_layout(layout, "exams")
     assert len(seating.list_layouts(class_id)) == 2
+
+
+def test_a_spot_without_a_desk_is_skipped(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, ada, bob, cy = _seated_class(roster, seating, class_id)
+    seating.set_desk(layout, 0, 1, desk=False)  # an aisle down the middle
+    seating.set_desk(layout, 1, 1, desk=False)
+    plan = seating.plan(layout)
+    assert plan.gaps == {(0, 1), (1, 1)}
+    assert plan.free_seats == [(0, 0), (0, 2), (1, 0), (1, 2)]
+    with pytest.raises(SeatingError, match="no desk there"):
+        seating.place(layout, ada, 0, 1)
+    seating.fill(layout)
+    assert seating.plan(layout).seats == {(0, 0): ada, (0, 2): bob, (1, 0): cy}
+    assert seating.plan(layout).gaps == {(0, 1), (1, 1)}  # filling keeps the aisle
+    seating.fill(layout, shuffle=True)
+    assert (0, 1) not in seating.plan(layout).seats
+
+
+def test_an_occupied_desk_stays(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, ada, _bob, _cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, ada, 0, 0)
+    with pytest.raises(SeatingError, match="Ada Lovelace sits there"):
+        seating.set_desk(layout, 0, 0, desk=False)
+    seating.set_desk(layout, 0, 1, desk=False)
+    seating.set_desk(layout, 0, 1, desk=True)
+    assert seating.plan(layout).gaps == set()
+
+
+def test_putting_a_student_back_where_the_desk_was_taken_away_brings_it_back(
+    seating: SeatingService, roster: RosterService, class_id: int
+):
+    layout, ada, _bob, _cy = _seated_class(roster, seating, class_id)
+    seating.set_desk(layout, 0, 0, desk=False)
+    seating.set_seats(layout, {(0, 0): ada})  # e.g. undoing to before the desk went
+    plan = seating.plan(layout)
+    assert plan.seats == {(0, 0): ada} and plan.gaps == set()
+
+
+def test_gaps_are_copied_and_cut_off_with_the_room(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, _ada, _bob, _cy = _seated_class(roster, seating, class_id)
+    seating.set_desk(layout, 1, 2, desk=False)
+    copy = seating.copy_layout(layout, "Exams")
+    assert seating.plan(copy.id).gaps == {(1, 2)}
+    seating.save_layout(replace(copy, rows=1))
+    assert seating.plan(copy.id).gaps == set()
+
+
+def test_a_desk_held_by_a_deactivated_student_can_go(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, ada, bob, _cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, ada, 0, 0)
+    seating.place(layout, bob, 0, 1)
+    roster.deactivate_student(ada)
+    roster.deactivate_student(bob)
+    seating.set_desk(layout, 0, 0, desk=False)
+    assert seating.seating.seats(layout) == {(0, 1): bob}  # only the desk taken away is freed
+    assert seating.plan(layout).gaps == {(0, 0)}

@@ -34,6 +34,7 @@ class SeatingPlan:
     layout: SeatLayout
     students: list[Student]
     seats: dict[tuple[int, int], int] = field(default_factory=dict)  # (row, col) -> student id
+    gaps: set[tuple[int, int]] = field(default_factory=set)  # spots with no desk, e.g. an aisle
 
     def student_at(self, row: int, col: int) -> Student | None:
         student_id = self.seats.get((row, col))
@@ -48,11 +49,16 @@ class SeatingPlan:
         return [s for s in self.students if s.id not in seated]
 
     @property
+    def desks(self) -> list[tuple[int, int]]:
+        """Every seat, front row first, left to right; spots with no desk left out."""
+        return [
+            (r, c) for r in range(self.layout.rows) for c in range(self.layout.cols) if (r, c) not in self.gaps
+        ]
+
+    @property
     def free_seats(self) -> list[tuple[int, int]]:
         """Empty seats, front row first, left to right."""
-        return [
-            (r, c) for r in range(self.layout.rows) for c in range(self.layout.cols) if (r, c) not in self.seats
-        ]
+        return [seat for seat in self.desks if seat not in self.seats]
 
 
 class SeatingService:
@@ -93,6 +99,8 @@ class SeatingService:
             raise SeatingError("This seating plan no longer exists.")
         with transaction(self.seating.conn):
             copy = self.save_layout(replace(layout, name=name, id=None))
+            for row, col in self.seating.gaps(layout_id):
+                self.seating.set_gap(copy.id, row, col, True)
             self.seating.set_seats(copy.id, self.seating.seats(layout_id))
         return copy
 
@@ -116,7 +124,7 @@ class SeatingService:
         students = self.students.list_for_class(layout.class_id)
         active = {s.id for s in students}
         seats = {seat: s for seat, s in self.seating.seats(layout_id).items() if s in active}
-        return SeatingPlan(layout, students, seats)
+        return SeatingPlan(layout, students, seats, self.seating.gaps(layout_id))
 
     def _checked(self, layout_id: int, student_id: int) -> SeatingPlan:
         plan = self.plan(layout_id)
@@ -132,6 +140,8 @@ class SeatingService:
         plan = self._checked(layout_id, student_id)
         if not (0 <= row < plan.layout.rows and 0 <= col < plan.layout.cols):
             raise SeatingError("There is no such seat in this room.")
+        if (row, col) in plan.gaps:
+            raise SeatingError("There's no desk there. Put one there first.")
         seats = dict(plan.seats)
         old = plan.seat_of(student_id)
         occupant = seats.get((row, col))
@@ -141,6 +151,16 @@ class SeatingService:
                 seats[old] = occupant
         seats[(row, col)] = student_id
         self.seating.set_seats(layout_id, seats)
+
+    def set_desk(self, layout_id: int, row: int, col: int, desk: bool) -> None:
+        """Put a desk at (row, col), or mark it as a spot with no desk, e.g. an aisle.
+        The desk has to be free to be taken away; a deactivated student's seat counts as free."""
+        plan = self.plan(layout_id)
+        if plan is None:
+            raise SeatingError("This seating plan no longer exists.")
+        if not desk and (occupant := plan.student_at(row, col)) is not None:
+            raise SeatingError(f"{occupant.full_name} sits there. Take them out of the seat first.")
+        self.seating.set_gap(layout_id, row, col, not desk)
 
     def unseat(self, layout_id: int, student_id: int) -> None:
         """Take a student out of their seat."""
@@ -162,7 +182,7 @@ class SeatingService:
             students = list(plan.students)
             (rng or random.Random()).shuffle(students)
             seats = {}
-            free = [(r, c) for r in range(plan.layout.rows) for c in range(plan.layout.cols)]
+            free = plan.desks
         else:
             students = plan.unseated
             seats = dict(plan.seats)
