@@ -143,3 +143,28 @@ def test_categories_dialog_adds_edits_and_deletes(window: MainWindow, roster: Ro
     dialog.table.selectRow(1)
     dialog.delete_category()
     assert dialog.table.rowCount() == 1
+
+
+def test_assignment_dialog_saves_a_new_assignment(window: MainWindow, roster: RosterService):
+    from datetime import date
+
+    from app.ui.dialogs.assignment_dialog import AssignmentDialog
+
+    maths, *_ = _graded_class(window, roster)
+    grades = window.gradebook_view.grades
+    categories = grades.list_categories(maths)
+    dialog = AssignmentDialog(grades.save_assignment, maths, categories, default_max=20, today=date(2026, 11, 24))
+    dialog.title.setText("Quiz 3")
+    assert dialog.max_score.value() == 20
+    dialog.max_score.setValue(15)
+    dialog.accept()
+    assert dialog.saved.title == "Quiz 3"
+    assert dialog.saved.max_score == 15
+    assert dialog.saved.date == date(2026, 11, 24)
+    assert dialog.saved.category_id == categories[0].id
+
+    edit = AssignmentDialog(grades.save_assignment, maths, categories, dialog.saved)
+    assert edit.title.text() == "Quiz 3"
+    edit.dated.setChecked(False)
+    edit.accept()
+    assert grades.get_assignment(dialog.saved.id).date is None
