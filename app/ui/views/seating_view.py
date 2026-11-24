@@ -1,6 +1,7 @@
 """The seating chart of the current class: desks in rows, the front of the room at the bottom."""
 
 from PySide6.QtCore import QSignalBlocker, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -27,6 +28,10 @@ from app.ui.dialogs.layout_dialog import LayoutDialog
 STUDENT_ID = Qt.ItemDataRole.UserRole
 SEAT_WIDTH = 120
 SEAT_HEIGHT = 56
+HINT = (
+    "Click a student under Not seated, then a seat. Click a seated student, then another seat "
+    "to move them; if it's taken, the two swap."
+)
 
 
 class SeatingView(QWidget):
@@ -37,6 +42,7 @@ class SeatingView(QWidget):
         self.class_id: int | None = None
         self.layout_id: int | None = None
         self.plan: SeatingPlan | None = None
+        self.picked: int | None = None  # the student clicked, waiting for a seat
 
         self.title = style.label("Seating chart", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -95,6 +101,24 @@ class SeatingView(QWidget):
         plan_layout.setContentsMargins(0, 0, 0, 0)
         plan_layout.addWidget(self.summary)
         plan_layout.addLayout(body, stretch=1)
+        self.hint = style.label(HINT, 0.85, muted=True)
+        self.hint.setWordWrap(True)
+        plan_layout.addWidget(self.hint)
+        self.grid.cellClicked.connect(lambda r, c: self.seat_clicked(*self.seat_at(r, c)))
+        self.unseated.itemClicked.connect(lambda item: self.pick(item.data(STUDENT_ID)))
+        for widget, act in (
+            (self.grid, lambda: self.grid.currentRow() >= 0 and self.seat_clicked(
+                *self.seat_at(self.grid.currentRow(), self.grid.currentColumn()))),
+            (self.unseated, lambda: self.unseated.currentItem() and self.pick(
+                self.unseated.currentItem().data(STUDENT_ID))),
+        ):
+            for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+                shortcut = QShortcut(QKeySequence(key), widget)
+                shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+                shortcut.activated.connect(act)
+        cancel = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        cancel.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        cancel.activated.connect(lambda: self.pick(None))
 
         # --- empty states ---
         self.empty_label = QLabel()
@@ -137,6 +161,7 @@ class SeatingView(QWidget):
 
     def refresh(self) -> None:
         """Read the current plan from the database again."""
+        self.picked = None
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             self.class_id = None
@@ -217,6 +242,39 @@ class SeatingView(QWidget):
             self.seating.delete_layout(self.plan.layout.id)
             self.layout_id = None
             self.refresh()
+
+    # --- seating students -------------------------------------------------------
+
+    def pick(self, student_id: int | None) -> None:
+        """Take up a student to seat with the next seat clicked; None puts them down."""
+        student = next((s for s in self.plan.students if s.id == student_id), None) if self.plan else None
+        self.picked = student.id if student else None
+        if student is None:
+            self.hint.setText(HINT)
+        else:
+            if self.plan.seat_of(student.id):
+                self.hint.setText(f"Now click where {student.full_name} should sit; in a taken seat, the two swap · Esc cancels")
+            else:
+                self.hint.setText(f"Now click a seat for {student.full_name} · Esc cancels")
+
+    def seat_clicked(self, row: int, col: int) -> None:
+        """Seat the student picked here, or pick up whoever sits here."""
+        if self.plan is None:
+            return
+        if self.picked is None:
+            occupant = self.plan.student_at(row, col)
+            if occupant is not None:
+                self.pick(occupant.id)
+            return
+        picked, self.picked = self.picked, None
+        if self.plan.seat_of(picked) != (row, col):
+            try:
+                self.seating.place(self.plan.layout.id, picked, row, col)
+            except SeatingError as exc:
+                QMessageBox.warning(self, "Seating chart", str(exc))
+        self.refresh()
+        self.grid.setCurrentCell(*self.cell_of(row, col))
+        self.pick(None)
 
     # --- the room --------------------------------------------------------------
 

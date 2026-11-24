@@ -136,3 +136,53 @@ def test_a_plan_is_deleted_after_asking(window: MainWindow, roster: RosterServic
     assert view.seating.list_layouts(class_id) == []
     assert "No seating plan yet" in view.empty_label.text()
     assert not view.edit_button.isEnabled() and not view.delete_button.isEnabled()
+
+
+def _click_seat(window: MainWindow, row: int, col: int) -> None:
+    """Click seat (row, col) of the room, row 0 being the front."""
+    view = window.seating_view
+    view.grid.cellClicked.emit(*view.cell_of(row, col))
+
+
+def test_a_student_is_seated_by_clicking_them_then_a_seat(window: MainWindow, roster: RosterService):
+    _class_id, _layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.unseated.itemClicked.emit(view.unseated.item(0))  # Ada
+    assert view.picked == ids["Ada"]
+    assert view.hint.text() == "Now click a seat for Ada Lovelace · Esc cancels"
+    _click_seat(window, 0, 1)
+    assert _grid(window)[1] == ["", "Ada Lovelace", ""]
+    assert _unseated(window) == ["Bob Smith", "Cy Young"]
+    assert view.picked is None
+
+
+def test_a_seated_student_is_moved_or_swapped(window: MainWindow, roster: RosterService):
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)
+    view.seating.place(layout, ids["Bob"], 1, 0)
+    view.refresh()
+    _click_seat(window, 0, 0)  # pick up Ada
+    assert view.hint.text().startswith("Now click where Ada Lovelace should sit")
+    _click_seat(window, 0, 2)
+    assert _grid(window) == [["Bob Smith", "", ""], ["", "", "Ada Lovelace"]]
+    _click_seat(window, 1, 0)  # Bob onto Ada: they swap
+    _click_seat(window, 0, 2)
+    assert _grid(window) == [["Ada Lovelace", "", ""], ["", "", "Bob Smith"]]
+
+
+def test_clicking_an_empty_seat_with_nobody_picked_does_nothing(window: MainWindow, roster: RosterService):
+    _class_id, _layout, _ids = _seated_class(window, roster)
+    _click_seat(window, 0, 0)
+    assert window.seating_view.picked is None
+    assert _grid(window) == [["", "", ""], ["", "", ""]]
+
+
+def test_escape_puts_the_picked_student_down(window: MainWindow, roster: RosterService):
+    from app.ui.views.seating_view import HINT
+
+    _class_id, _layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.pick(ids["Bob"])
+    view.pick(None)
+    assert view.picked is None and view.hint.text() == HINT
