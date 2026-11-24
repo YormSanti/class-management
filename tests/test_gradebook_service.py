@@ -178,8 +178,26 @@ def test_average_weighs_each_category_by_its_points():
 def test_average_leaves_out_exempt_unentered_and_unweighted_work():
     categories, assignments = _book()
     assert weighted_average(categories, assignments, {10: 15, 11: None}) == pytest.approx(75)  # Tests only
-    assert weighted_average(categories, assignments, {30: 10}) is None  # weight 0 doesn't count
+    assert weighted_average(categories, assignments, {10: 15, 30: 0}) == pytest.approx(75)  # weight 0: left out
+    assert weighted_average(categories, assignments, {30: 10}) == pytest.approx(100)  # unless all are 0
     assert weighted_average(categories, assignments, {}) is None
+
+
+def test_gradebook_average_is_the_dashboards_subject_average(
+    grades: GradebookService, roster: RosterService, conn, class_id, subject_id, tests_id
+):
+    from app.repositories.dashboard_repo import DashboardRepository
+    from app.services.dashboard import subject_averages
+
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    zero = grades.save_category(Category(subject_id, "Extra", 0)).id
+    homework = grades.save_category(Category(subject_id, "Homework", 20)).id
+    for category, maximum, text in ((tests_id, 10, "7"), (homework, 5, "5"), (zero, 10, "1"), (tests_id, 20, "ex")):
+        n = len(grades.list_assignments(subject_id))
+        assignment = grades.save_assignment(Assignment(subject_id, category, f"A{n}", maximum)).id
+        grades.enter_score(assignment, ada, text)
+    dashboard = subject_averages(DashboardRepository(conn).category_points(class_id))
+    assert grades.sheet(subject_id).average(ada) == pytest.approx(dashboard[(ada, subject_id)])
 
 
 def test_sheet_lists_active_students_with_their_averages(

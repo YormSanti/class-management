@@ -42,7 +42,8 @@ class CategoryDialog(QDialog):
         self.weight.setValue(category.weight if category else 10)
         self.weight.setToolTip(
             "How much the category counts towards the average, compared with the others. "
-            "Weights needn't add up to 100; 0 leaves the category out of the average."
+            "Weights needn't add up to 100; 0 leaves the category out of the average "
+            "(unless every category is 0: then they count equally)."
         )
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)

@@ -102,12 +102,15 @@ def weighted_average(
     """One student's average percent: each category's percent counted by its weight.
     Categories with nothing scored yet are left out and the others' weights stretched
     to make up for them, so an early average isn't dragged down by work not set yet.
-    None while nothing counts."""
+    If every category scored has weight 0, they count equally, as on the dashboard.
+    None while nothing is scored."""
     percents = category_percents(assignments, scores)
-    weights = {c.id: c.weight for c in categories if c.id in percents and c.weight > 0}
+    weights = {c.id: c.weight for c in categories if c.id in percents}
+    if not weights:
+        return None
     total = sum(weights.values())
     if not total:
-        return None
+        return sum(percents[c] for c in weights) / len(weights)
     return sum(percents[c] * w for c, w in weights.items()) / total
 
 
