@@ -70,6 +70,38 @@ def parse_score(text: str, max_score: float) -> float | str | None:
     return round(value, 2)
 
 
+def category_percents(
+    assignments: list[Assignment], scores: dict[int, float | None]
+) -> dict[int, float]:
+    """{category id: percent} for one student, from `scores` {assignment id: score}:
+    the points scored over the points possible in each category. Exempt and not yet
+    entered assignments don't count; a category with nothing scored is left out."""
+    got: dict[int, float] = {}
+    possible: dict[int, float] = {}
+    for a in assignments:
+        score = scores.get(a.id)
+        if score is None:
+            continue
+        got[a.category_id] = got.get(a.category_id, 0) + score
+        possible[a.category_id] = possible.get(a.category_id, 0) + a.max_score
+    return {c: 100 * got[c] / possible[c] for c in got}
+
+
+def weighted_average(
+    categories: list[Category], assignments: list[Assignment], scores: dict[int, float | None]
+) -> float | None:
+    """One student's average percent: each category's percent counted by its weight.
+    Categories with nothing scored yet are left out and the others' weights stretched
+    to make up for them, so an early average isn't dragged down by work not set yet.
+    None while nothing counts."""
+    percents = category_percents(assignments, scores)
+    weights = {c.id: c.weight for c in categories if c.id in percents and c.weight > 0}
+    total = sum(weights.values())
+    if not total:
+        return None
+    return sum(percents[c] * w for c, w in weights.items()) / total
+
+
 class GradebookService:
     def __init__(self, gradebook: GradebookRepository, students: StudentRepository, subjects: SubjectRepository):
         self.gradebook = gradebook

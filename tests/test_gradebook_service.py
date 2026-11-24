@@ -8,7 +8,7 @@ from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.gradebook import EXEMPT, GradebookError, GradebookService, format_number, parse_score
+from app.services.gradebook import EXEMPT, GradebookError, GradebookService, format_number, parse_score, weighted_average
 from app.services.roster import RosterService
 
 
@@ -160,3 +160,23 @@ def test_score_of_a_student_of_another_class_is_refused(
     test = grades.save_assignment(Assignment(subject_id, tests_id, "Test 1", 10)).id
     with pytest.raises(GradebookError, match="isn't in the class"):
         grades.enter_score(test, bob, "5")
+
+
+def _book():
+    tests, homework, extra = Category(1, "Tests", 60, id=1), Category(1, "Homework", 40, id=2), Category(1, "Extra", 0, id=3)
+    assignments = [Assignment(1, 1, "T1", 20, id=10), Assignment(1, 1, "T2", 30, id=11),
+                   Assignment(1, 2, "H1", 10, id=20), Assignment(1, 3, "Bonus", 10, id=30)]  # fmt: skip
+    return [tests, homework, extra], assignments
+
+
+def test_average_weighs_each_category_by_its_points():
+    categories, assignments = _book()
+    # Tests: (10 + 30) / 50 = 80 %, Homework 5 / 10 = 50 %; 0.6 * 80 + 0.4 * 50 = 68
+    assert weighted_average(categories, assignments, {10: 10, 11: 30, 20: 5, 30: 0}) == pytest.approx(68)
+
+
+def test_average_leaves_out_exempt_unentered_and_unweighted_work():
+    categories, assignments = _book()
+    assert weighted_average(categories, assignments, {10: 15, 11: None}) == pytest.approx(75)  # Tests only
+    assert weighted_average(categories, assignments, {30: 10}) is None  # weight 0 doesn't count
+    assert weighted_average(categories, assignments, {}) is None
