@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.gradebook import (
+    PASS_MARK,
     SUGGESTED_CATEGORIES,
     GradebookError,
     GradebookService,
@@ -73,6 +74,7 @@ class GradebookView(QWidget):
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self.sheet: GradeSheet | None = None
+        self.pass_mark = PASS_MARK
         # Each change is a list of (assignment id, student id, text before, text after).
         self._undo: list[list[tuple[int, int, str, str]]] = []
         self._redo: list[list[tuple[int, int, str, str]]] = []
@@ -366,13 +368,25 @@ class GradebookView(QWidget):
         return " · ".join(first) + "\n" + " · ".join(second) + "\nDouble-click to edit, right-click for more"
 
     def _average_item(self, student_id: int) -> QTableWidgetItem:
-        item = QTableWidgetItem(percent_text(self.sheet.average(student_id)))
+        item = QTableWidgetItem()
+        self._show_average(item, student_id)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         font = item.font()
         font.setBold(True)
         item.setFont(font)
         return item
+
+    def _show_average(self, item: QTableWidgetItem, student_id: int) -> None:
+        """The student's average, in the danger colour under the pass mark."""
+        average = self.sheet.average(student_id)
+        item.setText(percent_text(average))
+        if average is not None and average < self.pass_mark:
+            item.setForeground(style.color(self, "danger"))
+            item.setToolTip(f"Under the pass mark of {format_number(self.pass_mark)}%")
+        else:
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
+            item.setToolTip("")
 
     def assignment_at(self, column: int) -> int | None:
         """The id of the assignment in `column`, None for the name and average columns."""
@@ -518,7 +532,7 @@ class GradebookView(QWidget):
         with QSignalBlocker(self.table):
             for col, assignment in enumerate(self.sheet.assignments, start=1):
                 self.table.item(row, col).setText(self._score_text(assignment.id, student_id))
-            self.table.item(row, self.average_column()).setText(percent_text(self.sheet.average(student_id)))
+            self._show_average(self.table.item(row, self.average_column()), student_id)
             for col, assignment in enumerate(self.sheet.assignments, start=1):
                 self.table.horizontalHeaderItem(col).setToolTip(self._assignment_tip(assignment))
         self.summary.setText(self._summary_text())

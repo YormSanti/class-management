@@ -359,3 +359,18 @@ def test_replaced_data_forgets_the_score_undo(window: MainWindow, roster: Roster
     window._data_replaced()  # e.g. after Restore
     view.undo()
     assert view.table.item(0, 1).text() == "8"
+
+
+def test_failing_average_is_shown_in_the_danger_colour(window: MainWindow, roster: RosterService):
+    from app.ui import style
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("4")
+    average = view.table.item(0, 3)
+    assert average.text() == "40%"
+    assert average.foreground().color() == style.color(view, "danger")
+    assert average.toolTip() == "Under the pass mark of 50%"
+    view.table.item(0, 1).setText("5")
+    assert average.toolTip() == ""
+    assert average.foreground().color() != style.color(view, "danger")
