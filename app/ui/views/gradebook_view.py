@@ -76,6 +76,7 @@ class GradebookView(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.horizontalHeader().sectionDoubleClicked.connect(self._header_double_clicked)
         self.sheet_page = QWidget()
         sheet_layout = QVBoxLayout(self.sheet_page)
         sheet_layout.setContentsMargins(0, 0, 0, 0)
@@ -160,6 +161,21 @@ class GradebookView(QWidget):
         if dialog.exec() and dialog.saved:
             self.refresh()
             self.go_to_assignment(dialog.saved.id)
+
+    def edit_assignment(self, assignment_id: int) -> None:
+        assignment = self.grades.get_assignment(assignment_id)
+        if assignment is None or self.sheet is None:
+            return
+        dialog = AssignmentDialog(
+            self.grades.save_assignment, assignment.subject_id, self.sheet.categories, assignment, parent=self
+        )
+        if dialog.exec():
+            self.refresh()
+            self.go_to_assignment(assignment_id)  # its date may have moved it
+
+    def _header_double_clicked(self, column: int) -> None:
+        if (assignment_id := self.assignment_at(column)) is not None:
+            self.edit_assignment(assignment_id)
 
     def go_to_assignment(self, assignment_id: int) -> None:
         """Select the first student's cell of the assignment, ready to type."""

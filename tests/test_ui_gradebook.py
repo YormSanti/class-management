@@ -193,3 +193,26 @@ def test_new_assignment_opens_its_column(window: MainWindow, roster: RosterServi
     assert seen["default_max"] == 5  # like the latest assignment, Homework / 5
     assert view.table.horizontalHeaderItem(3).text() == "Quiz 3\n/ 5"
     assert (view.table.currentRow(), view.table.currentColumn()) == (0, 3)
+
+
+def test_double_clicking_a_header_edits_its_assignment(window: MainWindow, roster: RosterService, monkeypatch):
+    from dataclasses import replace
+    from datetime import date
+
+    from app.ui.views import gradebook_view
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+
+    class FakeDialog:
+        def __init__(self, save, subject_id, categories, assignment, parent=None):
+            self.saved = save(replace(assignment, title="Test 1 (fractions)", date=date(2026, 9, 1)))
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(gradebook_view, "AssignmentDialog", FakeDialog)
+    view.table.horizontalHeader().sectionDoubleClicked.emit(2)  # Homework, now dated, moves first
+    assert view.table.horizontalHeaderItem(1).text() == "Test 1 (fractions)\n/ 5"
+    assert view.table.currentColumn() == 1
+    view.table.horizontalHeader().sectionDoubleClicked.emit(0)  # the names: nothing to edit
