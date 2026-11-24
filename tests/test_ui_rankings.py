@@ -151,9 +151,10 @@ def test_rankings_number_shared_places_as_settings_say(window: MainWindow, roste
         [(test, ids["Ada"], "9"), (test, ids["Bob"], "9"), (test, ids["Cy"], "5")]
     )
     window.show_page("Rankings")
-    assert [row[0] for row in _rows(window)][:3] == ["1", "1", "3"]
+    assert [row[0] for row in _rows(window)][:3] == ["1=", "1=", "3"]
     window.settings_view.ranking_buttons["dense"].click()
-    assert [row[0] for row in _rows(window)][:3] == ["1", "1", "2"]
+    assert [row[0] for row in _rows(window)][:3] == ["1=", "1=", "2"]
+    assert window.rankings_view.table.item(0, 0).toolTip() == "Shared with Bob Smith"
 
 
 def test_rankings_start_with_the_saved_method(qapp, conn, roster: RosterService, tmp_path):
@@ -169,3 +170,20 @@ def test_rankings_start_with_the_saved_method(qapp, conn, roster: RosterService,
     window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), config)
     assert window.rankings_view.rankings.method == "dense"
     window.close()
+
+
+def test_rankings_point_out_averages_under_the_pass_mark(window: MainWindow, roster: RosterService):
+    from app.ui import style
+
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "9"), (test, ids["Bob"], "5.5")])
+    window.show_page("Rankings")
+    view = window.rankings_view
+    danger = style.color(view, "danger")
+    assert view.table.item(1, 2).foreground().color() == danger
+    assert view.table.item(1, 2).toolTip() == "Under the pass mark of 60%"
+    assert view.table.item(0, 2).foreground().color() != danger
+    assert view.table.item(0, 2).toolTip() == ""
+
+    window.settings_view.pass_mark.setValue(50)
+    assert view.table.item(1, 2).foreground().color() != danger

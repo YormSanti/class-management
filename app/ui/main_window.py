@@ -90,6 +90,7 @@ class MainWindow(QMainWindow):
         self.gradebook_view.manage_subjects_requested.connect(self.show_subjects)
         self.rankings_view = RankingsView(RankingService(grades), roster)
         self.rankings_view.rankings.method = config.ranking_method
+        self.rankings_view.pass_mark = config.pass_mark
         self.rankings_view.manage_subjects_requested.connect(self.show_subjects)
         self.rankings_view.navigate_requested.connect(self.show_page)
         self.rankings_view.subject_selected.connect(self.select_subject)
@@ -265,6 +266,8 @@ class MainWindow(QMainWindow):
             self.gradebook_view.refresh()
             self.dashboard_view.dashboard.pass_mark = changed.pass_mark
             self.dashboard_view.refresh()
+            self.rankings_view.pass_mark = changed.pass_mark
+            self.rankings_view.refresh()
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))

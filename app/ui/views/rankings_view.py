@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.dashboard import letter_grade
+from app.services.gradebook import PASS_MARK, format_number
 from app.services.rankings import Ranking, RankingService
 from app.services.roster import RosterService
 from app.ui import style
@@ -28,6 +29,11 @@ OVERALL = -1  # the "All subjects" choice of Rank by
 def average_text(value: float) -> str:
     """One decimal, so averages that look the same are the ones sharing a place."""
     return f"{value:.1f}%"
+
+
+def place_text(place: int, shared: bool) -> str:
+    """ "2" or, when another student has the same place, "2=" as in a results table."""
+    return f"{place}=" if shared else str(place)
 
 
 def overall_tip(counted: int, subjects: int) -> str:
@@ -55,6 +61,7 @@ class RankingsView(QWidget):
         self.subject_id: int | None = None
         self.ranking: Ranking | None = None
         self.overall = False  # ranked by all subjects instead of the current one
+        self.pass_mark = PASS_MARK
 
         self.title = style.label("Rankings", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -217,11 +224,20 @@ class RankingsView(QWidget):
         table.clearContents()
         table.setRowCount(len(ranking.ranked) + len(ranking.unranked))
         for row, ranked in enumerate(ranking.ranked):
-            self._set_row(row, str(ranked.place), ranked.student.full_name,
+            self._set_row(row, place_text(ranked.place, ranked.shared), ranked.student.full_name,
                           average_text(ranked.average), letter_grade(ranked.average))
+            tips = []
             if self.overall:
                 counted = ranking.subjects_counted.get(ranked.student.id, 0)
-                table.item(row, 2).setToolTip(overall_tip(counted, ranking.subjects))
+                tips.append(overall_tip(counted, ranking.subjects))
+            if ranked.average < self.pass_mark:
+                tips.insert(0, f"Under the pass mark of {format_number(self.pass_mark)}%")
+                for col in (2, 3):
+                    table.item(row, col).setForeground(style.color(self, "danger"))
+            table.item(row, 2).setToolTip("\n".join(tips))
+            if ranked.shared:
+                others = [r.student.full_name for r in ranking.ranked if r.place == ranked.place and r is not ranked]
+                table.item(row, 0).setToolTip("Shared with " + ", ".join(others))
         muted = self.palette().color(QPalette.ColorRole.PlaceholderText)
         for row, student in enumerate(ranking.unranked, start=len(ranking.ranked)):
             self._set_row(row, "—", student.full_name, "—", "")
