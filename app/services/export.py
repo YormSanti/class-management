@@ -12,6 +12,7 @@ from app.models import AttendanceStatus, Student
 from app.services.attendance import DayRegister, MonthRegister, PeriodSummary, RegisterRow, StudentHistory
 from app.services.dashboard import attendance_rate, letter_grade
 from app.services.gradebook import GradeSheet, format_number
+from app.services.rankings import Ranking
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
@@ -349,3 +350,21 @@ def _gradebook_rows(sheet: GradeSheet) -> list[Sequence[object]]:
 def write_gradebook_csv(path: Path, sheet: GradeSheet) -> None:
     """Save one subject's gradebook as CSV, e.g. for the school's report cards."""
     _write_csv(path, _gradebook_rows(sheet))
+
+
+def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> None:
+    """Save a ranking as CSV, best first; students with nothing scored come last without
+    a place. An `overall` ranking also says how many subjects each average is made of."""
+    header = ["Place", "Student #", "Last name", "First name", "Average %", "Grade"]
+    if overall:
+        header.append("Subjects")
+    rows: list[Sequence[object]] = [header]
+    for r in ranking.ranked:
+        s = r.student
+        row = [r.place, s.student_no or "", s.last_name, s.first_name, round(r.average, 1), letter_grade(r.average)]
+        if overall:
+            row.append(ranking.subjects_counted.get(s.id, 0))
+        rows.append(row)
+    for s in ranking.unranked:
+        rows.append(["", s.student_no or "", s.last_name, s.first_name, "", ""] + ([0] if overall else []))
+    _write_csv(path, rows)

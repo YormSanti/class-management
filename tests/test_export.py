@@ -300,3 +300,27 @@ def test_gradebook_csv_has_scores_category_percents_and_averages(conn, roster, t
         "S1,Lovelace,Ada,7.5,ex,75.0,75.0,C",
         ",Smith,Bob,,,,,",
     ]
+
+
+def test_ranking_csv_lists_places_best_first_then_those_unscored(tmp_path):
+    from app.models import Student
+    from app.services.export import write_ranking_csv
+    from app.services.rankings import make_ranking
+
+    ada = Student(1, "Ada", "Lovelace", student_no="S1", id=1)
+    bob = Student(1, "Bob", "Smith", id=2)
+    cy = Student(1, "Cy", "Young", id=3)
+    ranking = make_ranking([ada, bob, cy], {1: 72.25, 2: 91.0})
+    path = tmp_path / "ranking.csv"
+    write_ranking_csv(path, ranking)
+    assert path.read_text(encoding="utf-8-sig").splitlines() == [
+        "Place,Student #,Last name,First name,Average %,Grade",
+        "1,,Smith,Bob,91.0,A",
+        "2,S1,Lovelace,Ada,72.2,C",
+        ",,Young,Cy,,",
+    ]
+    ranking.subjects_counted = {1: 2, 2: 1}
+    write_ranking_csv(path, ranking, overall=True)
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    assert lines[0].endswith(",Subjects")
+    assert lines[1:] == ["1,,Smith,Bob,91.0,A,1", "2,S1,Lovelace,Ada,72.2,C,2", ",,Young,Cy,,,0"]

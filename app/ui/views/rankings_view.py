@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QTableWidget,
@@ -17,10 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.dashboard import letter_grade
+from app.services.export import write_ranking_csv
 from app.services.gradebook import PASS_MARK, format_number
 from app.services.rankings import Ranking, RankingService
 from app.services.roster import RosterService
 from app.ui import style
+from app.ui.files import ask_save_path
 
 COLUMNS = ("Place", "Student", "Average", "Grade")
 OVERALL = -1  # the "All subjects" choice of Rank by
@@ -78,6 +81,10 @@ class RankingsView(QWidget):
         rank_by.setBuddy(self.scope)
         header.addWidget(rank_by, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.scope, alignment=Qt.AlignmentFlag.AlignBottom)
+        self.export_button = QPushButton("E&xport…")
+        self.export_button.setToolTip("Save the ranking as a CSV file")
+        self.export_button.clicked.connect(self.export_csv)
+        header.addWidget(self.export_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
         self.table = QTableWidget(0, len(COLUMNS))
@@ -153,7 +160,25 @@ class RankingsView(QWidget):
         scope = "All subjects" if self.overall else subject and subject.name
         context = [x for x in (scope if subjects else None, school_class and school_class.display_name) if x]
         self.subtitle.setText(" · ".join(context))
+        self.export_button.setEnabled(self.ranking is not None and bool(self.ranking.ranked))
         self._show_state(subject.name if subject else "")
+
+    def export_csv(self) -> None:
+        if self.ranking is None or not self.ranking.ranked:
+            return
+        name = self.subtitle.text().replace(" · ", " ")  # e.g. "Maths 7B (2026-2027)"
+        path = ask_save_path(self, "Export ranking", f"{name} ranking", "CSV files", ".csv")
+        if path is None:
+            return
+        try:
+            write_ranking_csv(path, self.ranking, overall=self.overall)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export ranking", f"The file could not be saved:\n{exc}")
+            return
+        n = len(self.ranking.ranked)
+        QMessageBox.information(
+            self, "Export ranking", f"Saved the ranking of {n} student{'' if n == 1 else 's'} to\n{path}"
+        )
 
     def set_overall(self, overall: bool) -> None:
         """Rank by all subjects, or by the current one."""

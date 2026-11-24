@@ -187,3 +187,26 @@ def test_rankings_point_out_averages_under_the_pass_mark(window: MainWindow, ros
 
     window.settings_view.pass_mark.setValue(50)
     assert view.table.item(1, 2).foreground().color() != danger
+
+
+def test_export_saves_the_ranking_as_csv(window: MainWindow, roster: RosterService, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    _class_id, test, ids = _ranked_class(window, roster)
+    view = window.rankings_view
+    window.show_page("Rankings")
+    assert not view.export_button.isEnabled()  # nothing scored yet
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7"), (test, ids["Bob"], "9")])
+    view.refresh()
+    asked, infos = [], []
+    target = tmp_path / "ranking.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: asked.append(a[2]) or (str(target), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    assert view.export_button.isEnabled()
+    view.export_button.click()
+    assert asked[0].endswith("Maths 7B (2026-2027) ranking.csv")
+    assert target.read_text(encoding="utf-8-sig").splitlines()[1:3] == [
+        "1,,Smith,Bob,90.0,A",
+        "2,,Lovelace,Ada,70.0,C",
+    ]
+    assert infos[0].startswith("Saved the ranking of 2 students")
