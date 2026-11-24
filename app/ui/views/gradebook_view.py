@@ -166,15 +166,16 @@ class GradebookView(QWidget):
         del blocker
         self.summary.setText(self._summary_text())
 
-    def _score_item(self, assignment_id: int, student_id: int) -> QTableWidgetItem:
+    def _score_text(self, assignment_id: int, student_id: int) -> str:
         sheet = self.sheet
         if not sheet.is_entered(assignment_id, student_id):
-            text = ""
-        elif (score := sheet.score(assignment_id, student_id)) is None:
-            text = EXEMPT_TEXT
-        else:
-            text = format_number(score)
-        item = QTableWidgetItem(text)
+            return ""
+        if (score := sheet.score(assignment_id, student_id)) is None:
+            return EXEMPT_TEXT
+        return format_number(score)
+
+    def _score_item(self, assignment_id: int, student_id: int) -> QTableWidgetItem:
+        item = QTableWidgetItem(self._score_text(assignment_id, student_id))
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         return item
 
@@ -211,10 +212,11 @@ class GradebookView(QWidget):
         """Show a student's scores and average as saved, after a change."""
         self.sheet = self.grades.sheet(self.subject_id)
         student_id = self.student_at(row)
+        # Change the texts, not the items: the item being edited mustn't be deleted under Qt.
         with QSignalBlocker(self.table):
             for col, assignment in enumerate(self.sheet.assignments, start=1):
-                self.table.setItem(row, col, self._score_item(assignment.id, student_id))
-            self.table.setItem(row, self.average_column(), self._average_item(student_id))
+                self.table.item(row, col).setText(self._score_text(assignment.id, student_id))
+            self.table.item(row, self.average_column()).setText(percent_text(self.sheet.average(student_id)))
         self.summary.setText(self._summary_text())
 
     def _summary_text(self) -> str:
