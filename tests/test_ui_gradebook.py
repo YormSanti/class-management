@@ -78,3 +78,25 @@ def test_typing_a_score_saves_it_and_updates_the_average(window: MainWindow, ros
     view.table.item(0, 1).setText("")
     assert not view.grades.sheet(maths).is_entered(test, ada)
     assert view.table.item(0, 3).text() == "—"
+
+
+def test_category_dialog_saves_a_new_category(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.dialogs.category_dialog import CategoryDialog
+
+    maths, *_ = _graded_class(window, roster)
+    grades = window.gradebook_view.grades
+    dialog = CategoryDialog(grades.save_category, maths)
+    dialog.name.setText(" Homework ")
+    dialog.weight.setValue(20)
+    dialog.accept()
+    assert dialog.saved.name == "Homework" and dialog.saved.weight == 20
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
+    again = CategoryDialog(grades.save_category, maths)
+    again.name.setText("tests")
+    again.accept()
+    assert "already has a category called Tests" in warnings[0]
+    assert again.saved is None
