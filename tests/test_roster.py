@@ -780,3 +780,26 @@ def test_number_key_sorts_numbers_as_people_read_them():
     students = [Student(class_id=1, first_name=n, last_name="X", student_no=no)
                 for n, no in (("a", "S10"), ("b", None), ("c", "s2"), ("d", "S1"), ("e", ""))]  # fmt: skip
     assert [s.first_name for s in sorted(students, key=number_key)] == ["d", "c", "a", "b", "e"]
+
+
+def test_copied_subjects_bring_their_grade_categories(roster, conn):
+    from app.models import Category
+    from app.repositories.gradebook_repo import GradebookRepository
+
+    grades = GradebookRepository(conn)
+    seventh = roster.save_class(SchoolClass(name="7B", term="2025-2026")).id
+    maths = roster.save_subject(Subject(class_id=seventh, name="Maths")).id
+    grades.add_category(Category(maths, "Tests", 60))
+    grades.add_category(Category(maths, "Homework", 40))
+
+    def categories(class_id):
+        (subject,) = roster.list_subjects(class_id)
+        return [(c.name, c.weight) for c in grades.categories(subject.id)]
+
+    (eighth,) = roster.start_new_year("2026-2027", [(seventh, "8B")])
+    assert categories(eighth.id) == [("Tests", 60), ("Homework", 40)]
+    sister = roster.copy_class(seventh, "7C")
+    assert categories(sister.id) == [("Tests", 60), ("Homework", 40)]
+    other = roster.save_class(SchoolClass(name="7D", term="2025-2026")).id
+    roster.copy_subjects(seventh, other)
+    assert categories(other) == [("Tests", 60), ("Homework", 40)]

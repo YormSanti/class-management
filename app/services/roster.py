@@ -365,7 +365,7 @@ class RosterService:
         """Create next year's classes from existing ones, all at once or not at all.
 
         `plan` lists (existing class id, name for the new class), e.g. (7B's id, "8B").
-        Each new class gets the old class's subjects and teachers and, if
+        Each new class gets the old class's subjects, teachers and grade categories and, if
         `copy_students`, its active students (as new records, so last year's
         attendance and grades stay with last year's class). Nothing else is copied.
         """
@@ -397,9 +397,10 @@ class RosterService:
                     )
                 new_class = self.save_class(SchoolClass(name=name, term=new_term))
                 for subject in self.subjects.list_for_class(source_id):
-                    self.subjects.add(
+                    added = self.subjects.add(
                         Subject(class_id=new_class.id, name=subject.name, teacher=subject.teacher)
                     )
+                    self.subjects.copy_categories(subject.id, added.id)
                 if copy_students:
                     for student in self.students.list_for_class(source_id):
                         self.students.add(replace(student, id=None, class_id=new_class.id))
@@ -488,7 +489,7 @@ class RosterService:
 
     def copy_subjects(self, from_class_id: int, to_class_id: int) -> list[Subject]:
         """Give `to_class_id` each subject of `from_class_id` it doesn't have yet (by name,
-        ignoring case), with its teacher. Grades and attendance aren't copied.
+        ignoring case), with its teacher and grade categories. Grades and attendance aren't copied.
         Returns the subjects added, which may be none."""
         if self.classes.get(to_class_id) is None or self.classes.get(from_class_id) is None:
             raise RosterError("The selected class no longer exists.")
@@ -497,6 +498,7 @@ class RosterService:
             for subject in self.subjects.list_for_class(from_class_id):
                 if self.subjects.find_by_name(to_class_id, subject.name) is None:
                     added.append(self.subjects.add(Subject(to_class_id, subject.name, subject.teacher)))
+                    self.subjects.copy_categories(subject.id, added[-1].id)
         return added
 
     def subject_names(self) -> list[str]:

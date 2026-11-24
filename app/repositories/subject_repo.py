@@ -33,6 +33,19 @@ class SubjectRepository:
         with transaction(self.conn):
             self.conn.execute("DELETE FROM subjects WHERE id = ?", (subject_id,))
 
+    def copy_categories(self, from_subject_id: int, to_subject_id: int) -> None:
+        """Give `to_subject_id` the grade categories of `from_subject_id` it doesn't have yet."""
+        with transaction(self.conn):
+            self.conn.execute(
+                """
+                INSERT INTO categories (subject_id, name, weight)
+                SELECT ?, name, weight FROM categories c WHERE subject_id = ?
+                  AND NOT EXISTS (SELECT 1 FROM categories WHERE subject_id = ? AND name = c.name COLLATE NOCASE)
+                ORDER BY id
+                """,
+                (to_subject_id, from_subject_id, to_subject_id),
+            )
+
     def recorded(self, subject_id: int) -> dict[str, int]:
         """What stops delete() from removing the subject: {"attendance", "scores",
         "assignments", "categories": count}."""
