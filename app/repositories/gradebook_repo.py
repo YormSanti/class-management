@@ -2,8 +2,8 @@
 
 A category (e.g. Tests, weight 50) groups assignments; every assignment has a
 maximum score; a score is what one student got on one assignment. A score row
-with score NULL means "exempt / not submitted", which is ignored in averages
-and differs both from 0 and from no row at all (nothing entered yet).
+with score NULL means "exempt", which is ignored in averages and differs both
+from 0 and from no row at all (nothing entered yet).
 """
 
 import sqlite3

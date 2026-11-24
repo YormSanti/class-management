@@ -143,11 +143,11 @@ def test_missing_work_counts_only_past_dated_assignments(service, roster, conn, 
     ada = _student(roster, class_id, "Ada")
     cat = _category(conn, maths, "Homework", 1)
     _score(conn, _assignment(conn, maths, cat, "Scored", 10, TODAY), ada, 0)  # 0 is a score
-    _score(conn, _assignment(conn, maths, cat, "Not submitted", 10, TODAY), ada, None)
+    _score(conn, _assignment(conn, maths, cat, "Exempt", 10, TODAY), ada, None)  # not missing
     _assignment(conn, maths, cat, "No row yet", 10, TODAY - timedelta(days=1))
     _assignment(conn, maths, cat, "Due later", 10, TODAY + timedelta(days=1))
     _assignment(conn, maths, cat, "Undated", 10, None)
-    assert service.summary(class_id, TODAY).missing_total == 2
+    assert service.summary(class_id, TODAY).missing_total == 1
 
 
 def test_needs_attention_uses_most_serious_reason(service, roster, conn, class_id, maths):

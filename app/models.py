@@ -82,7 +82,7 @@ class Assignment:
 class Score:
     assignment_id: int
     student_id: int
-    score: float | None  # None = not submitted / exempt, not zero
+    score: float | None  # None = exempt, not zero
     id: int | None = None
 
 

@@ -139,7 +139,8 @@ class DashboardRepository:
         ]
 
     def missing_by_student(self, class_id: int, on_or_before: date) -> dict[int, int]:
-        """{student_id: number of dated assignments up to `on_or_before` without a score}."""
+        """{student_id: number of dated assignments up to `on_or_before` with nothing entered}.
+        An exempt student (a NULL score) isn't missing anything."""
         rows = self.conn.execute(
             """
             SELECT s.id AS student_id, count(*) AS n
@@ -148,7 +149,7 @@ class DashboardRepository:
             JOIN assignments a ON a.subject_id = sub.id
             LEFT JOIN scores sc ON sc.assignment_id = a.id AND sc.student_id = s.id
             WHERE s.class_id = ? AND s.active = 1
-              AND a.date IS NOT NULL AND a.date <= ? AND sc.score IS NULL
+              AND a.date IS NOT NULL AND a.date <= ? AND sc.id IS NULL
             GROUP BY s.id
             """,
             (class_id, on_or_before.isoformat()),

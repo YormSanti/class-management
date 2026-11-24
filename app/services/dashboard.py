@@ -1,7 +1,7 @@
 """Overview numbers for one class: attendance, grades and students who need a look.
 
-Inactive students are left out of every figure. Scores that are NULL (not submitted
-or exempt) are ignored in averages, unlike a score of 0. A student's overall average
+Inactive students are left out of every figure. Scores that are NULL (exempt) are
+ignored in averages, unlike a score of 0, and aren't missing work. A student's overall average
 is the mean of their subject averages, so each subject counts equally.
 """
 
