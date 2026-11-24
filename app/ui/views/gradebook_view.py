@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QMenu,
     QMessageBox,
@@ -239,6 +240,33 @@ class GradebookView(QWidget):
             self.grades.delete_assignment(assignment_id)
             self.refresh()
 
+    def fill_empty(self, assignment_id: int, text: str) -> int:
+        """Give every student without a score for the assignment `text`; returns how many."""
+        empty = [s.id for s in self.sheet.students if not self.sheet.is_entered(assignment_id, s.id)]
+        before = [(assignment_id, s, "") for s in empty]
+        try:
+            self.grades.enter_scores([(assignment_id, s, text) for s in empty])
+        except GradebookError as exc:
+            QMessageBox.warning(self, "Fill empty cells", str(exc))
+            return 0
+        self.refresh()
+        self._remember(before)
+        return len(empty)
+
+    def ask_fill_empty(self, assignment_id: int) -> None:
+        assignment = self.grades.get_assignment(assignment_id)
+        if assignment is None or self.sheet is None:
+            return
+        n = len(self.sheet.students) - self.sheet.entered(assignment_id)
+        text, ok = QInputDialog.getText(
+            self, "Fill empty cells",
+            f"Score for the {n} student{'' if n == 1 else 's'} without one in {assignment.title} "
+            f"(out of {format_number(assignment.max_score)}; ex for exempt, 0 for work not handed in):",
+            text=format_number(assignment.max_score),
+        )  # fmt: skip
+        if ok and text.strip():
+            self.fill_empty(assignment_id, text)
+
     def header_menu(self, column: int) -> QMenu | None:
         """What can be done with the assignment in `column`; None for other columns."""
         assignment_id = self.assignment_at(column)
@@ -246,6 +274,8 @@ class GradebookView(QWidget):
             return None
         menu = QMenu(self)
         menu.addAction("&Edit…", lambda: self.edit_assignment(assignment_id))
+        fill = menu.addAction("&Fill empty cells…", lambda: self.ask_fill_empty(assignment_id))
+        fill.setEnabled(self.sheet.entered(assignment_id) < len(self.sheet.students))
         menu.addAction("&Delete…", lambda: self.delete_assignment(assignment_id))
         return menu
 

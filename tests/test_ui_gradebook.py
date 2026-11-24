@@ -226,16 +226,16 @@ def test_header_menu_deletes_an_assignment_after_asking(window: MainWindow, rost
     view.table.item(0, 1).setText("9")
     assert view.header_menu(0) is None and view.header_menu(3) is None
     menu = view.header_menu(1)
-    assert [a.text() for a in menu.actions()] == ["&Edit…", "&Delete…"]
+    assert [a.text() for a in menu.actions()] == ["&Edit…", "&Fill empty cells…", "&Delete…"]
 
     questions = []
     answer = QMessageBox.StandardButton.No
     monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or answer)
-    menu.actions()[1].trigger()
+    menu.actions()[2].trigger()
     assert questions == ["Delete Test 1 with its 1 score?\n\nThis can't be undone."]
     assert view.table.columnCount() == 4
     answer = QMessageBox.StandardButton.Yes
-    menu.actions()[1].trigger()
+    menu.actions()[2].trigger()
     assert view.table.columnCount() == 3
     assert view.table.horizontalHeaderItem(1).text() == "Homework\n/ 5"
 
@@ -400,3 +400,20 @@ def test_bonus_and_exempt_scores_are_explained(window: MainWindow, roster: Roste
     assert cell.toolTip() == "Exempt: left out of the average"
     cell.setText("10")
     assert cell.toolTip() == ""
+
+
+def test_empty_cells_of_an_assignment_can_be_filled(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("8")
+    prompts = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: prompts.append((a[2], k["text"])) or ("0", True))
+    view.ask_fill_empty(test)
+    assert prompts[0][1] == "10"
+    assert prompts[0][0].startswith("Score for the 1 student without one in Test 1")
+    assert [view.table.item(r, 1).text() for r in range(2)] == ["8", "0"]
+    assert not view.header_menu(1).actions()[1].isEnabled()  # nothing left to fill
+    view.undo()
+    assert view.table.item(1, 1).text() == ""
