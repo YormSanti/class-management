@@ -7,6 +7,7 @@ Each subject has its own gradebook. Assignments belong to a weighted category
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
+from app.db.connection import transaction
 from app.models import Assignment, Category, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
@@ -21,6 +22,7 @@ DAYS_AHEAD = 366
 OVER_MAX_LIMIT = 2  # a score up to twice the maximum is bonus points; more is a typo
 EXEMPT = "exempt"  # score text for an exempt student, stored as NULL
 EXEMPT_WORDS = {"ex", "exempt", "x", "excused"}
+SUGGESTED_CATEGORIES = (("Tests", 50.0), ("Quizzes", 20.0), ("Homework", 20.0), ("Participation", 10.0))
 
 
 class GradebookError(ValueError):
@@ -181,6 +183,16 @@ class GradebookService:
             return self.gradebook.add_category(category)
         self.gradebook.update_category(category)
         return category
+
+    def add_categories(self, subject_id: int, categories: tuple[tuple[str, float], ...]) -> list[Category]:
+        """Add (name, weight) categories the subject doesn't have yet, all or none.
+        Returns those added."""
+        added = []
+        with transaction(self.gradebook.conn):
+            for name, weight in categories:
+                if self.gradebook.find_category(subject_id, name) is None:
+                    added.append(self.save_category(Category(subject_id, name, weight)))
+        return added
 
     def assignment_counts(self, subject_id: int) -> dict[int, int]:
         """{category id: assignments in it}; categories without any are left out."""

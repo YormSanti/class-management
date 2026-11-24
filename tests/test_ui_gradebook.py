@@ -24,8 +24,13 @@ def test_gradebook_asks_for_a_class_then_a_subject(window: MainWindow, roster: R
 
     maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
     window.select_subject(maths)
-    assert view.pages.currentWidget() is view.sheet_page
     assert view.subtitle.text() == "Maths · 7B (2026-2027)"
+    assert "How is Maths graded?" in view.empty_label.text()
+    assert "Tests 50, Quizzes 20, Homework 20, Participation 10" in view.empty_label.text()
+    assert not view.own_categories_button.isHidden()
+    view.empty_button.click()
+    assert view.pages.currentWidget() is view.sheet_page
+    assert len(view.sheet.categories) == 4
 
 
 def _graded_class(window: MainWindow, roster: RosterService) -> tuple[int, int, int, int]:

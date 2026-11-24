@@ -15,7 +15,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.services.gradebook import GradebookError, GradebookService, GradeSheet, format_number
+from app.services.gradebook import (
+    SUGGESTED_CATEGORIES,
+    GradebookError,
+    GradebookService,
+    GradeSheet,
+    format_number,
+)
 from app.services.roster import RosterService
 from app.ui import style
 from app.ui.dialogs.categories_dialog import CategoriesDialog
@@ -81,6 +87,9 @@ class GradebookView(QWidget):
         empty_layout.addStretch()
         empty_layout.addWidget(self.empty_label)
         empty_layout.addWidget(self.empty_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.own_categories_button = QPushButton("Set up my own categories…")
+        self.own_categories_button.clicked.connect(self.edit_categories)
+        empty_layout.addWidget(self.own_categories_button, alignment=Qt.AlignmentFlag.AlignCenter)
         empty_layout.addStretch()
 
         self.pages = QStackedWidget()
@@ -133,6 +142,15 @@ class GradebookView(QWidget):
                 "Add the subjects you teach this class first.</p>",
                 "Add a subject",
             )
+        elif not self.sheet.categories:
+            suggested = ", ".join(f"{name} {weight:.0f}" for name, weight in SUGGESTED_CATEGORIES)
+            self._empty(
+                f"<h2>How is {self.sheet.subject.name} graded?</h2><p>Assignments are grouped in "
+                "categories, and each category counts towards the average by its weight. "
+                f"Start with {suggested}, or set up your own.</p>",
+                "Use these categories",
+            )
+            self.own_categories_button.show()
         else:
             self._fill_table()
             self.pages.setCurrentWidget(self.sheet_page)
@@ -141,11 +159,17 @@ class GradebookView(QWidget):
         self.empty_label.setText(text)
         self.empty_button.setText(button)
         self.empty_button.setVisible(bool(button))
+        self.own_categories_button.hide()
         self.pages.setCurrentIndex(0)
 
     def _empty_action(self) -> None:
-        if self.class_id is not None and self.sheet is None:
+        if self.class_id is None:
+            return
+        if self.sheet is None:
             self.manage_subjects_requested.emit()
+        elif not self.sheet.categories:
+            self.grades.add_categories(self.sheet.subject.id, SUGGESTED_CATEGORIES)
+            self.refresh()
 
     # --- the table -------------------------------------------------------------
 

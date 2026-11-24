@@ -8,7 +8,7 @@ from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.gradebook import EXEMPT, GradebookError, GradebookService, format_number, parse_score, weight_shares, weighted_average
+from app.services.gradebook import EXEMPT, SUGGESTED_CATEGORIES, GradebookError, GradebookService, format_number, parse_score, weight_shares, weighted_average
 from app.services.roster import RosterService
 
 
@@ -217,3 +217,11 @@ def test_weights_are_shown_as_shares_of_the_average():
     categories, _ = _book()
     assert weight_shares(categories) == {1: 60, 2: 40, 3: 0}
     assert weight_shares([Category(1, "A", 0, id=1)]) == {1: 0}
+
+
+def test_suggested_categories_are_added_once(grades: GradebookService, subject_id: int):
+    grades.save_category(Category(subject_id, "tests", 70))
+    added = grades.add_categories(subject_id, SUGGESTED_CATEGORIES)
+    assert [c.name for c in added] == ["Quizzes", "Homework", "Participation"]
+    assert grades.add_categories(subject_id, SUGGESTED_CATEGORIES) == []
+    assert len(grades.list_categories(subject_id)) == 4
