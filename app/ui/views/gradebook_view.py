@@ -135,6 +135,10 @@ class GradebookView(QWidget):
         layout.addLayout(header)
         layout.addWidget(self.pages, stretch=1)
         self.setStyleSheet(style.card_stylesheet(self))
+        for key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            clear = QShortcut(QKeySequence(key), self.table)
+            clear.setContext(Qt.ShortcutContext.WidgetShortcut)  # not while a score is being typed
+            clear.activated.connect(self.clear_selected)
         new = QShortcut(QKeySequence.StandardKey.New, self)
         new.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         new.activated.connect(lambda: self.new_button.isEnabled() and self.new_assignment())
@@ -368,6 +372,24 @@ class GradebookView(QWidget):
         except GradebookError as exc:
             QMessageBox.warning(self, "Gradebook", str(exc))
         self._update_row(item.row())
+
+    def selected_cells(self) -> list[tuple[int, int, int, int]]:
+        """(row, column, assignment id, student id) of every selected score cell."""
+        cells = []
+        for item in self.table.selectedItems():
+            assignment_id, student_id = self.assignment_at(item.column()), self.student_at(item.row())
+            if assignment_id is not None and student_id is not None:
+                cells.append((item.row(), item.column(), assignment_id, student_id))
+        return cells
+
+    def clear_selected(self) -> None:
+        """Forget the selected scores (Delete)."""
+        cells = [c for c in self.selected_cells() if self.table.item(c[0], c[1]).text()]
+        if not cells:
+            return
+        self.grades.enter_scores([(a, s, "") for _r, _c, a, s in cells])
+        for row in sorted({c[0] for c in cells}):
+            self._update_row(row)
 
     def _update_row(self, row: int) -> None:
         """Show a student's scores and average as saved, after a change."""

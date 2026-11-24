@@ -267,3 +267,21 @@ def test_enter_saves_a_score_and_goes_to_the_next_student(window: MainWindow, ro
     QTest.keyClick(view.table, Qt.Key.Key_Up)
     QTest.keyClick(view.table, Qt.Key.Key_Return)  # not editing: just moves down
     assert view.table.currentRow() == 1
+
+
+def test_delete_clears_the_selected_scores(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QTableWidgetSelectionRange
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    window.show_page("Gradebook")
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("8")
+    view.table.item(0, 2).setText("4")
+    view.table.item(1, 1).setText("6")
+    view.table.setRangeSelected(QTableWidgetSelectionRange(0, 0, 0, 3), True)  # Ada's whole row
+    view.clear_selected()
+    assert [view.table.item(0, c).text() for c in range(1, 4)] == ["", "", "—"]
+    assert view.table.item(1, 1).text() == "6"
+    assert view.table.item(0, 0).text() == "Ada Lovelace"  # names and averages aren't scores

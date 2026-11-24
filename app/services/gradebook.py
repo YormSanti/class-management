@@ -286,3 +286,12 @@ class GradebookService:
         return GradeSheet(
             subject, self.gradebook.categories(subject_id), self.gradebook.assignments(subject_id), students, scores
         )
+
+    def enter_scores(self, entries: list[tuple[int, int, str]]) -> int:
+        """enter_score() for many (assignment id, student id, text) cells, all or none:
+        a problem in any cell raises GradebookError and nothing is saved. Returns how many
+        cells were entered."""
+        with transaction(self.gradebook.conn):
+            for assignment_id, student_id, text in entries:
+                self.enter_score(assignment_id, student_id, text)
+        return len(entries)

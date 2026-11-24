@@ -225,3 +225,16 @@ def test_suggested_categories_are_added_once(grades: GradebookService, subject_i
     assert [c.name for c in added] == ["Quizzes", "Homework", "Participation"]
     assert grades.add_categories(subject_id, SUGGESTED_CATEGORIES) == []
     assert len(grades.list_categories(subject_id)) == 4
+
+
+def test_many_scores_are_entered_all_or_none(
+    grades: GradebookService, roster: RosterService, class_id, subject_id, tests_id
+):
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    bob = roster.save_student(Student(class_id, "Bob", "Smith")).id
+    test = grades.save_assignment(Assignment(subject_id, tests_id, "Test 1", 10)).id
+    with pytest.raises(GradebookError):
+        grades.enter_scores([(test, ada, "8"), (test, bob, "eight")])
+    assert grades.gradebook.scores(subject_id) == {}
+    assert grades.enter_scores([(test, ada, "8"), (test, bob, "ex")]) == 2
+    assert grades.gradebook.scores(subject_id) == {(test, ada): 8, (test, bob): None}
