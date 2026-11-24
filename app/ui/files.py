@@ -1,9 +1,10 @@
-"""Asking where to save a file, shared by every export on every page."""
+"""Asking where to save a file and writing PDFs, shared by every export on every page."""
 
 import re
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QWidget
+from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 _UNSAFE = re.compile(r'[\\/:*?"<>|]+')  # not allowed in Windows file names
 _last_folder: Path | None = None  # where the last export went, this session
@@ -33,3 +34,20 @@ def ask_save_path(
     chosen = Path(path) if path.lower().endswith(suffix.lower()) else Path(path + suffix)
     _last_folder = chosen.parent
     return chosen
+
+
+def write_pdf(parent: QWidget, path, title: str, page_html: str, landscape: bool) -> bool:
+    """Print `page_html` to an A4 PDF at `path`; says so and returns False if it failed."""
+    writer = QPdfWriter(str(path))
+    writer.setTitle(title)
+    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    orientation = QPageLayout.Orientation.Landscape if landscape else QPageLayout.Orientation.Portrait
+    writer.setPageOrientation(orientation)
+    document = QTextDocument()
+    document.setHtml(page_html)
+    document.print_(writer)
+    del writer  # finishes the file
+    if not path.exists() or path.stat().st_size == 0:
+        QMessageBox.warning(parent, "Save PDF", f"The PDF could not be saved to\n{path}")
+        return False
+    return True

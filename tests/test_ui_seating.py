@@ -259,3 +259,20 @@ def test_a_student_is_taken_out_of_their_seat(window: MainWindow, roster: Roster
     view.seat_menu(0, 0).actions()[1].trigger()
     assert _grid(window)[1] == ["", "Bob Smith", ""]
     assert view.seat_menu(1, 1) is None  # an empty seat
+
+
+def test_a_plan_is_saved_as_pdf(window: MainWindow, roster: RosterService, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)
+    view.refresh()
+    target = tmp_path / "plan.pdf"
+    asked, infos = [], []
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: asked.append(a[2]) or (str(target), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    view.pdf_button.click()
+    assert asked[0].endswith("7B (2026-2027) Tests seating.pdf")
+    assert target.read_bytes().startswith(b"%PDF")
+    assert infos[0].startswith("Saved the seating plan to")

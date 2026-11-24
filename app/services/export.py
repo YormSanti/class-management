@@ -13,6 +13,7 @@ from app.services.attendance import DayRegister, MonthRegister, PeriodSummary, R
 from app.services.dashboard import attendance_rate, letter_grade
 from app.services.gradebook import GradeSheet, format_number
 from app.services.rankings import Ranking
+from app.services.seating import SeatingPlan
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
@@ -368,3 +369,37 @@ def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> No
     for s in ranking.unranked:
         rows.append(["", s.student_no or "", s.last_name, s.first_name, "", ""] + ([0] if overall else []))
     _write_csv(path, rows)
+
+
+def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None) -> str:
+    """A printable seating plan: the desks as the teacher sees them, the front of the
+    room at the bottom, then the students without a seat."""
+    printed = printed or date.today()
+    layout = plan.layout
+    width = f"{100 / layout.cols:.1f}%"
+    seat = f'style="border: 1px solid #777; padding: 14px 4px; text-align: center; width: {width};"'
+    lines = []
+    for row in reversed(range(layout.rows)):
+        cells = []
+        for col in range(layout.cols):
+            student = plan.student_at(row, col)
+            name = f"{html.escape(student.first_name)}<br>{html.escape(student.last_name)}" if student else "&nbsp;"
+            cells.append(f"<td {seat}>{name}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    front = (
+        f'<tr><td colspan="{layout.cols}" style="padding: 8px; text-align: center; color: #555;">'
+        "Front of the room</td></tr>"
+    )
+    seated = len(plan.seats)
+    summary = f"{seated} of {len(plan.students)} students seated · printed {printed.day} {printed:%B} {printed.year}"
+    unseated = ""
+    if plan.unseated:
+        names = ", ".join(html.escape(s.full_name) for s in plan.unseated)
+        unseated = f"<p><b>Not seated:</b> {names}</p>"
+    return (
+        '<html><body style="font-family: sans-serif; font-size: 10pt;">'
+        f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
+        f'<p style="color: #555;">{summary}</p>'
+        '<table width="100%" style="border-collapse: collapse;" cellspacing="6">'
+        + "".join(lines) + front + "</table>" + unseated + "</body></html>"
+    )

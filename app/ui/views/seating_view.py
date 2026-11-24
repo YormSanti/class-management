@@ -22,9 +22,11 @@ from PySide6.QtWidgets import (
 
 from app.services.roster import RosterService
 from app.models import SeatLayout
+from app.services.export import seating_plan_html
 from app.services.seating import SeatingError, SeatingPlan, SeatingService
 from app.ui import style
 from app.ui.dialogs.layout_dialog import LayoutDialog
+from app.ui.files import ask_save_path, write_pdf
 
 STUDENT_ID = Qt.ItemDataRole.UserRole
 SEAT_WIDTH = 120
@@ -75,6 +77,10 @@ class SeatingView(QWidget):
         header.addWidget(self.layout_combo, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.edit_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.delete_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        self.pdf_button = QPushButton("Save PD&F…")
+        self.pdf_button.setToolTip("Save the plan as a PDF to print, e.g. for a substitute teacher")
+        self.pdf_button.clicked.connect(self.save_pdf)
+        header.addWidget(self.pdf_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.new_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         # --- the room ---
@@ -209,7 +215,7 @@ class SeatingView(QWidget):
             for x in layouts:
                 self.layout_combo.addItem(f"{x.name} ({x.rows} × {x.cols})", x.id)
             self.layout_combo.setCurrentIndex(self.layout_combo.findData(self.layout_id))
-        for widget in (self.layout_combo, self.edit_button, self.delete_button):
+        for widget in (self.layout_combo, self.edit_button, self.delete_button, self.pdf_button):
             widget.setEnabled(bool(layouts))
         self.new_button.setEnabled(self.class_id is not None)
         self.plan = self.seating.plan(self.layout_id) if self.layout_id is not None else None
@@ -266,6 +272,16 @@ class SeatingView(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 raise SeatingError("Choose more rows or seats, or Cancel to keep the room as it is.")
         return self.seating.save_layout(layout)
+
+    def save_pdf(self) -> None:
+        """Save the plan shown as a landscape A4 PDF, ready to print."""
+        if self.plan is None:
+            return
+        title = f"{self.subtitle.text()} · {self.plan.layout.name}"
+        name = f"{self.subtitle.text()} {self.plan.layout.name} seating"
+        path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
+        if path is not None and write_pdf(self, path, title, seating_plan_html(self.plan, title), True):
+            QMessageBox.information(self, "Save PDF", f"Saved the seating plan to\n{path}")
 
     def delete_layout(self) -> None:
         if self.plan is None:

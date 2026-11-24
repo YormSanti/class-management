@@ -324,3 +324,21 @@ def test_ranking_csv_lists_places_best_first_then_those_unscored(tmp_path):
     lines = path.read_text(encoding="utf-8-sig").splitlines()
     assert lines[0].endswith(",Subjects")
     assert lines[1:] == ["1,,Smith,Bob,91.0,A,1", "2,S1,Lovelace,Ada,72.2,C,2", ",,Young,Cy,,,0"]
+
+
+def test_seating_plan_html_shows_the_room_front_at_the_bottom():
+    from datetime import date
+
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_plan_html
+    from app.services.seating import SeatingPlan
+
+    ada = Student(1, "Ada", "Lovelace", id=1)
+    bob = Student(1, "Bob", "<Smith>", id=2)
+    cy = Student(1, "Cy", "Young", id=3)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 2, 2, id=1), [ada, bob, cy], {(0, 0): 1, (1, 1): 2})
+    page = seating_plan_html(plan, "7B · Tests", printed=date(2026, 11, 24))
+    assert "<h2" in page and "7B · Tests" in page
+    assert "2 of 3 students seated · printed 24 November 2026" in page
+    assert page.index("&lt;Smith&gt;") < page.index("Lovelace") < page.index("Front of the room")
+    assert "<b>Not seated:</b> Cy Young" in page
