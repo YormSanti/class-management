@@ -5,14 +5,19 @@ Each subject has its own gradebook. Assignments belong to a weighted category
 """
 
 from dataclasses import replace
+from datetime import date, timedelta
 
-from app.models import Category
+from app.models import Assignment, Category
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
 
 CATEGORY_NAME_MAX = 40  # characters: "Oral presentations" fits
 WEIGHT_MAX = 100.0
+TITLE_MAX = 80  # characters in an assignment title
+MAX_SCORE_LIMIT = 1000.0  # points: more is surely a typo
+EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
+DAYS_AHEAD = 366
 
 
 class GradebookError(ValueError):
@@ -77,3 +82,47 @@ class GradebookService:
                 f"Move {them} to another category or delete {them} first."
             )
         self.gradebook.delete_category(category_id)
+
+    # --- assignments ---------------------------------------------------------
+
+    def list_assignments(self, subject_id: int) -> list[Assignment]:
+        """By date, undated ones last."""
+        return self.gradebook.assignments(subject_id)
+
+    def get_assignment(self, assignment_id: int) -> Assignment | None:
+        return self.gradebook.get_assignment(assignment_id)
+
+    def save_assignment(self, assignment: Assignment, today: date | None = None) -> Assignment:
+        """Validate and create (id is None) or update an assignment."""
+        assignment = replace(assignment, title=_clean(assignment.title))
+        if not assignment.title:
+            raise GradebookError("Assignment title is required.")
+        if len(assignment.title) > TITLE_MAX:
+            raise GradebookError(
+                f"A title can be at most {TITLE_MAX} characters; this one has {len(assignment.title)}."
+            )
+        if not 0 < assignment.max_score <= MAX_SCORE_LIMIT:
+            raise GradebookError(f"The maximum score has to be more than 0 and at most {format_number(MAX_SCORE_LIMIT)}.")
+        category = self.gradebook.get_category(assignment.category_id)
+        if category is None or category.subject_id != assignment.subject_id:
+            raise GradebookError("Choose one of the subject's categories.")
+        if assignment.date is not None:
+            today = today or date.today()
+            if not EARLIEST_DAY <= assignment.date <= today + timedelta(days=DAYS_AHEAD):
+                d = assignment.date
+                raise GradebookError(f"{d.day} {d:%B} {d.year} can't be right. Check the year.")
+        for other in self.gradebook.assignments(assignment.subject_id):
+            if other.id != assignment.id and other.title.casefold() == assignment.title.casefold():
+                raise GradebookError(f"This subject already has an assignment called {other.title}.")
+        if assignment.id is None:
+            return self.gradebook.add_assignment(assignment)
+        self.gradebook.update_assignment(assignment)
+        return assignment
+
+    def score_count(self, assignment_id: int) -> int:
+        """Scores entered for the assignment, exemptions included."""
+        return self.gradebook.score_count(assignment_id)
+
+    def delete_assignment(self, assignment_id: int) -> None:
+        """Delete an assignment with all its scores."""
+        self.gradebook.delete_assignment(assignment_id)
