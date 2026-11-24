@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -77,6 +78,8 @@ class GradebookView(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.horizontalHeader().sectionDoubleClicked.connect(self._header_double_clicked)
+        self.table.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.horizontalHeader().customContextMenuRequested.connect(self._show_header_menu)
         self.sheet_page = QWidget()
         sheet_layout = QVBoxLayout(self.sheet_page)
         sheet_layout.setContentsMargins(0, 0, 0, 0)
@@ -172,6 +175,35 @@ class GradebookView(QWidget):
         if dialog.exec():
             self.refresh()
             self.go_to_assignment(assignment_id)  # its date may have moved it
+
+    def delete_assignment(self, assignment_id: int) -> None:
+        """Delete an assignment with its scores, after asking."""
+        assignment = self.grades.get_assignment(assignment_id)
+        if assignment is None:
+            return
+        n = self.grades.score_count(assignment_id)
+        scores = f" with its {n} score{'' if n == 1 else 's'}" if n else ""
+        answer = QMessageBox.question(
+            self, "Delete assignment", f"Delete {assignment.title}{scores}?\n\nThis can't be undone."
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.grades.delete_assignment(assignment_id)
+            self.refresh()
+
+    def header_menu(self, column: int) -> QMenu | None:
+        """What can be done with the assignment in `column`; None for other columns."""
+        assignment_id = self.assignment_at(column)
+        if assignment_id is None:
+            return None
+        menu = QMenu(self)
+        menu.addAction("&Edit…", lambda: self.edit_assignment(assignment_id))
+        menu.addAction("&Delete…", lambda: self.delete_assignment(assignment_id))
+        return menu
+
+    def _show_header_menu(self, pos) -> None:
+        head = self.table.horizontalHeader()
+        if menu := self.header_menu(head.logicalIndexAt(pos)):
+            menu.exec(head.mapToGlobal(pos))
 
     def _header_double_clicked(self, column: int) -> None:
         if (assignment_id := self.assignment_at(column)) is not None:

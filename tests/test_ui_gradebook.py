@@ -216,3 +216,25 @@ def test_double_clicking_a_header_edits_its_assignment(window: MainWindow, roste
     assert view.table.horizontalHeaderItem(1).text() == "Test 1 (fractions)\n/ 5"
     assert view.table.currentColumn() == 1
     view.table.horizontalHeader().sectionDoubleClicked.emit(0)  # the names: nothing to edit
+
+
+def test_header_menu_deletes_an_assignment_after_asking(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("9")
+    assert view.header_menu(0) is None and view.header_menu(3) is None
+    menu = view.header_menu(1)
+    assert [a.text() for a in menu.actions()] == ["&Edit…", "&Delete…"]
+
+    questions = []
+    answer = QMessageBox.StandardButton.No
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or answer)
+    menu.actions()[1].trigger()
+    assert questions == ["Delete Test 1 with its 1 score?\n\nThis can't be undone."]
+    assert view.table.columnCount() == 4
+    answer = QMessageBox.StandardButton.Yes
+    menu.actions()[1].trigger()
+    assert view.table.columnCount() == 3
+    assert view.table.horizontalHeaderItem(1).text() == "Homework\n/ 5"
