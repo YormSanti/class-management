@@ -144,6 +144,15 @@ class GradebookView(QWidget):
         sheet_layout.setContentsMargins(0, 0, 0, 0)
         sheet_layout.addLayout(summary_row)
         sheet_layout.addWidget(self.table, stretch=1)
+        self.keys_hint = style.label(
+            "Type a score: points, a percentage (85%) or ex for exempt · Enter goes to the next student · "
+            "Delete clears · Ctrl+V pastes scores from a spreadsheet · Ctrl+Z undoes · "
+            "double-click a column header to edit it, right-click for more · F1 lists every key",
+            0.85,
+            muted=True,
+        )
+        self.keys_hint.setWordWrap(True)
+        sheet_layout.addWidget(self.keys_hint)
 
         # --- empty states ---
         self.empty_label = QLabel()

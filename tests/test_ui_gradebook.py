@@ -565,3 +565,9 @@ def test_keyboard_shortcuts_list_the_gradebook_keys():
 
     gradebook = {keys for where, keys, _what in SHORTCUTS if where == "Gradebook"}
     assert {"Enter", "Delete", "Ctrl+Z", "Ctrl+N", "Ctrl+F"} <= gradebook
+
+
+def test_gradebook_names_its_keys_under_the_table(window: MainWindow, roster: RosterService):
+    _graded_class(window, roster)
+    hint = window.gradebook_view.keys_hint.text()
+    assert "Enter goes to the next student" in hint and "F1 lists every key" in hint
