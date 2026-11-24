@@ -280,7 +280,6 @@ _RECORD_WORDS = {  # what recorded() counts, in words: (one, many)
     "attendance": ("attendance mark", "attendance marks"),
     "scores": ("score", "scores"),
     "assignments": ("assignment", "assignments"),
-    "categories": ("grade category", "grade categories"),
     "seating": ("seating plan", "seating plans"),
 }
 
@@ -445,7 +444,8 @@ class RosterService:
 
     def delete_class(self, class_id: int) -> None:
         """Delete a class with its students and subjects, but only while nothing is
-        recorded for them: no attendance, grades, grade categories or seating.
+        recorded for them: no attendance, assignments, grades or seating. Grade categories
+        are setup and go with their subjects.
 
         This is for undoing a mistake, e.g. a class created in the wrong school year.
         """

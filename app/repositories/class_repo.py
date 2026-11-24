@@ -36,13 +36,16 @@ class ClassRepository:
         """
         with transaction(self.conn):
             self.conn.execute("DELETE FROM students WHERE class_id = ?", (class_id,))
+            # Grade categories are setup, not records; one with assignments still stops the delete.
+            self.conn.execute(
+                "DELETE FROM categories WHERE subject_id IN (SELECT id FROM subjects WHERE class_id = ?)", (class_id,)
+            )
             self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 
     def recorded(self, class_id: int) -> dict[str, int]:
         """How much is recorded for the class's students and subjects, i.e. what stops
-        delete() from removing it: {"attendance", "scores", "assignments", "categories",
-        "seating": count}. Seating counts its layouts and others its students sit in."""
+        delete() from removing it: {"attendance", "scores", "assignments", "seating": count}. Seating counts its layouts and others its students sit in."""
         row = self.conn.execute(
             """
             WITH st AS (SELECT id FROM students WHERE class_id = :c),
@@ -52,7 +55,6 @@ class ClassRepository:
               (SELECT count(*) FROM scores WHERE student_id IN st
                   OR assignment_id IN (SELECT id FROM assignments WHERE subject_id IN sub)) AS scores,
               (SELECT count(*) FROM assignments WHERE subject_id IN sub) AS assignments,
-              (SELECT count(*) FROM categories WHERE subject_id IN sub) AS categories,
               (SELECT count(*) FROM seat_layouts WHERE class_id = :c
                   OR id IN (SELECT layout_id FROM seats WHERE student_id IN st)) AS seating
             """,

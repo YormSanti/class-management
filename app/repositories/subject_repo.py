@@ -29,8 +29,10 @@ class SubjectRepository:
             )
 
     def delete(self, subject_id: int) -> None:
-        """Delete a subject. Raises sqlite3.IntegrityError if grades or attendance reference it."""
+        """Delete a subject with its grade categories. Raises sqlite3.IntegrityError if
+        assignments or attendance reference it."""
         with transaction(self.conn):
+            self.conn.execute("DELETE FROM categories WHERE subject_id = ?", (subject_id,))
             self.conn.execute("DELETE FROM subjects WHERE id = ?", (subject_id,))
 
     def copy_categories(self, from_subject_id: int, to_subject_id: int) -> None:
@@ -48,15 +50,14 @@ class SubjectRepository:
 
     def recorded(self, subject_id: int) -> dict[str, int]:
         """What stops delete() from removing the subject: {"attendance", "scores",
-        "assignments", "categories": count}."""
+        "assignments": count}."""
         row = self.conn.execute(
             """
             SELECT
               (SELECT count(*) FROM attendance WHERE subject_id = :s) AS attendance,
               (SELECT count(*) FROM scores
                   WHERE assignment_id IN (SELECT id FROM assignments WHERE subject_id = :s)) AS scores,
-              (SELECT count(*) FROM assignments WHERE subject_id = :s) AS assignments,
-              (SELECT count(*) FROM categories WHERE subject_id = :s) AS categories
+              (SELECT count(*) FROM assignments WHERE subject_id = :s) AS assignments
             """,
             {"s": subject_id},
         ).fetchone()

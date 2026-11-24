@@ -304,9 +304,10 @@ def test_subject_with_grades_cannot_be_deleted(roster: RosterService, class_id: 
         "INSERT INTO attendance (student_id, subject_id, date, status) VALUES (?, ?, '2026-09-01', 'late')",
         (ada.id, maths),
     )
-    with pytest.raises(RosterError, match="it has 1 attendance mark and 1 grade category recorded"):
+    with pytest.raises(RosterError, match="it has 1 attendance mark recorded"):
         roster.delete_subject(maths)
-    roster.delete_subject(art)
+    conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (art,))
+    roster.delete_subject(art)  # categories alone are setup, not records
     assert [s.name for s in roster.list_subjects(class_id)] == ["Maths"]
 
 
@@ -319,10 +320,25 @@ def test_class_with_only_empty_subjects_can_be_deleted(roster: RosterService):
 def test_class_with_graded_subject_cannot_be_deleted(roster: RosterService, conn):
     school_class = roster.save_class(SchoolClass(name="8A"), first_subject="Science")
     subject_id = roster.list_subjects(school_class.id)[0].id
-    conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,))
-    with pytest.raises(RosterError, match="it has 1 grade category recorded"):
+    category = conn.execute(
+        "INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,)
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO assignments (subject_id, category_id, title, max_score) VALUES (?, ?, 'Quiz', 10)",
+        (subject_id, category),
+    )
+    with pytest.raises(RosterError, match="it has 1 assignment recorded"):
         roster.delete_class(school_class.id)
     assert roster.list_subjects(school_class.id)  # nothing was half-deleted
+    assert conn.execute("SELECT count(*) FROM categories").fetchone()[0] == 1
+
+
+def test_class_whose_subjects_only_have_categories_can_be_deleted(roster: RosterService, conn):
+    school_class = roster.save_class(SchoolClass(name="8A"), first_subject="Science")
+    subject_id = roster.list_subjects(school_class.id)[0].id
+    conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,))
+    roster.delete_class(school_class.id)  # e.g. copied by mistake, with its subjects' categories
+    assert roster.list_classes() == []
 
 
 @pytest.mark.parametrize(
@@ -769,10 +785,8 @@ def test_class_records_are_counted_and_described(roster: RosterService, conn):
     conn.execute("INSERT INTO seats (layout_id, row, col, student_id) VALUES (?, 0, 0, ?)", (layout, ada.id))
 
     counts = ClassRepository(conn).recorded(class_id)
-    assert counts == {"attendance": 2, "scores": 1, "assignments": 1, "categories": 1, "seating": 1}
-    assert describe_records(counts) == (
-        "2 attendance marks, 1 score, 1 assignment, 1 grade category and 1 seating plan"
-    )
+    assert counts == {"attendance": 2, "scores": 1, "assignments": 1, "seating": 1}
+    assert describe_records(counts) == "2 attendance marks, 1 score, 1 assignment and 1 seating plan"
     assert describe_records({"attendance": 0}) == ""
 
 
