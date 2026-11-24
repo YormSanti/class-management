@@ -1,9 +1,10 @@
 """Rankings: the current class's students in order of their averages."""
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.dashboard import letter_grade
-from app.services.export import write_ranking_csv
+from app.services.export import ranking_tsv, write_ranking_csv
 from app.services.gradebook import PASS_MARK, format_number
 from app.services.rankings import Ranking, RankingService
 from app.services.roster import RosterService
@@ -126,7 +127,15 @@ class RankingsView(QWidget):
         layout.addLayout(header)
         layout.addWidget(self.pages, stretch=1)
         self.setStyleSheet(style.card_stylesheet(self))
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self)
+        copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy.activated.connect(self.copy_ranking)
         self.refresh()
+
+    def copy_ranking(self) -> None:
+        """Copy the whole ranking, to paste into a spreadsheet."""
+        if self.ranking is not None and self.ranking.ranked:
+            QApplication.clipboard().setText(ranking_tsv(self.ranking, self.overall))
 
     # --- page protocol ---------------------------------------------------------
 
@@ -269,7 +278,7 @@ class RankingsView(QWidget):
             for col in range(len(COLUMNS)):
                 table.item(row, col).setForeground(muted)
                 table.item(row, col).setToolTip("Nothing scored yet")
-        self.summary.setText(self._summary_text())
+        self.summary.setText(self._summary_text() + " · Ctrl+C copies the ranking for a spreadsheet")
 
     def _set_row(self, row: int, *texts: str) -> None:
         for col, text in enumerate(texts):

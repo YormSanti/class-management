@@ -353,9 +353,9 @@ def write_gradebook_csv(path: Path, sheet: GradeSheet) -> None:
     _write_csv(path, _gradebook_rows(sheet))
 
 
-def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> None:
-    """Save a ranking as CSV, best first; students with nothing scored come last without
-    a place. An `overall` ranking also says how many subjects each average is made of."""
+def _ranking_rows(ranking: Ranking, overall: bool) -> list[Sequence[object]]:
+    """A ranking best first; students with nothing scored come last without a place.
+    An `overall` ranking also says how many subjects each average is made of."""
     header = ["Place", "Student #", "Last name", "First name", "Average %", "Grade"]
     if overall:
         header.append("Subjects")
@@ -368,7 +368,17 @@ def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> No
         rows.append(row)
     for s in ranking.unranked:
         rows.append(["", s.student_no or "", s.last_name, s.first_name, "", ""] + ([0] if overall else []))
-    _write_csv(path, rows)
+    return rows
+
+
+def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> None:
+    """Save a ranking as CSV (see _ranking_rows)."""
+    _write_csv(path, _ranking_rows(ranking, overall))
+
+
+def ranking_tsv(ranking: Ranking, overall: bool = False) -> str:
+    """A ranking as tab-separated text, to paste into a spreadsheet."""
+    return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _ranking_rows(ranking, overall))
 
 
 def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None) -> str:

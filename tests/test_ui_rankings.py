@@ -63,7 +63,7 @@ def test_rankings_list_students_best_first_then_those_unscored(window: MainWindo
         ["3", "Cy Young", "55.0%", "F"],
         ["—", "Dee Ward", "—", ""],
     ]
-    assert view.summary.text() == "3 students ranked · 1 with nothing scored yet, listed last"
+    assert view.summary.text().startswith("3 students ranked · 1 with nothing scored yet, listed last · ")
     assert view.table.item(3, 1).toolTip() == "Nothing scored yet"
 
 
@@ -210,3 +210,19 @@ def test_export_saves_the_ranking_as_csv(window: MainWindow, roster: RosterServi
         "2,,Lovelace,Ada,70.0,C",
     ]
     assert infos[0].startswith("Saved the ranking of 2 students")
+
+
+def test_ctrl_c_copies_the_ranking(window: MainWindow, roster: RosterService):
+    from PySide6.QtWidgets import QApplication
+
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7"), (test, ids["Bob"], "9")])
+    view = window.rankings_view
+    view.refresh()
+    view.copy_ranking()
+    lines = QApplication.clipboard().text().splitlines()
+    assert lines[:3] == [
+        "Place\tStudent #\tLast name\tFirst name\tAverage %\tGrade",
+        "1\t\tSmith\tBob\t90.0\tA",
+        "2\t\tLovelace\tAda\t70.0\tC",
+    ]
