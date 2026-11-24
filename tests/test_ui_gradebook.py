@@ -374,3 +374,13 @@ def test_failing_average_is_shown_in_the_danger_colour(window: MainWindow, roste
     view.table.item(0, 1).setText("5")
     assert average.toolTip() == ""
     assert average.foreground().color() != style.color(view, "danger")
+
+
+def test_pass_mark_set_in_settings_is_used_by_the_gradebook(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("6")
+    assert view.table.item(0, 3).toolTip() == ""
+    window.settings_view.pass_mark.setValue(65)
+    assert window.config.pass_mark == 65
+    assert view.table.item(0, 3).toolTip() == "Under the pass mark of 65%"

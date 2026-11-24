@@ -83,12 +83,13 @@ class MainWindow(QMainWindow):
         self.attendance_view.class_selected.connect(self.select_class)
         self.attendance_view.navigate_requested.connect(self.show_page)
         self.gradebook_view = GradebookView(grades, roster)
+        self.gradebook_view.pass_mark = config.pass_mark
         self.gradebook_view.manage_subjects_requested.connect(self.show_subjects)
         self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
         self.settings_view.back_up_requested.connect(self.back_up_now)
-        self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
+        self.settings_view.config_changed.connect(self._config_changed)
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.roster_view.history_requested.connect(self.show_attendance_history)
@@ -238,6 +239,14 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"{reminder} Save a copy, e.g. on a USB stick: File → Back up now (Ctrl+Shift+B)."
             )
+
+    def _config_changed(self, changed: AppConfig) -> None:
+        """A setting was changed on the Settings page."""
+        pass_mark_changed = changed.pass_mark != self.config.pass_mark
+        self.config = changed
+        if pass_mark_changed:
+            self.gradebook_view.pass_mark = changed.pass_mark
+            self.gradebook_view.refresh()
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))

@@ -48,3 +48,16 @@ def test_theme_defaults_to_system(tmp_path: Path):
     assert load_config(path).theme == "system"  # config.json from before themes existed
     path.write_text(json.dumps({"data_dir": str(tmp_path), "theme": "purple"}))
     assert load_config(path).theme == "system"
+
+
+def test_pass_mark_is_kept_and_a_strange_one_ignored(tmp_path):
+    import json
+
+    from app.config import AppConfig, load_config, save_config
+
+    path = tmp_path / "config.json"
+    save_config(AppConfig(data_dir=tmp_path, pass_mark=60), path)
+    assert load_config(path).pass_mark == 60
+    for strange in (120, -1, "sixty", True, None):
+        path.write_text(json.dumps({"data_dir": str(tmp_path), "pass_mark": strange}), encoding="utf-8")
+        assert load_config(path).pass_mark == 50

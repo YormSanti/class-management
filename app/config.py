@@ -30,6 +30,7 @@ class AppConfig:
     data_dir: Path
     ranking_method: str = "competition"
     theme: str = "system"
+    pass_mark: float = 50.0  # percent: a gradebook average under this is failing
 
     @property
     def db_path(self) -> Path:
@@ -76,7 +77,10 @@ def load_config(path: Path | None = None) -> AppConfig | None:
     theme = raw.get("theme", "system")
     if theme not in THEMES:
         theme = "system"
-    return AppConfig(data_dir=data_dir, ranking_method=ranking_method, theme=theme)
+    pass_mark = raw.get("pass_mark", 50.0)
+    if not isinstance(pass_mark, (int, float)) or isinstance(pass_mark, bool) or not 0 <= pass_mark <= 100:
+        pass_mark = 50.0
+    return AppConfig(data_dir=data_dir, ranking_method=ranking_method, theme=theme, pass_mark=float(pass_mark))
 
 
 def save_config(config: AppConfig, path: Path | None = None) -> None:
