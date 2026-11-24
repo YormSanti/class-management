@@ -143,6 +143,9 @@ class GradebookView(QWidget):
         paste = QShortcut(QKeySequence.StandardKey.Paste, self.table)
         paste.setContext(Qt.ShortcutContext.WidgetShortcut)
         paste.activated.connect(lambda: self.paste_scores(QApplication.clipboard().text()))
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self.table)
+        copy.setContext(Qt.ShortcutContext.WidgetShortcut)
+        copy.activated.connect(lambda: QApplication.clipboard().setText(self.selection_text()))
         new = QShortcut(QKeySequence.StandardKey.New, self)
         new.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         new.activated.connect(lambda: self.new_button.isEnabled() and self.new_assignment())
@@ -394,6 +397,30 @@ class GradebookView(QWidget):
         self.grades.enter_scores([(a, s, "") for _r, _c, a, s in cells])
         for row in sorted({c[0] for c in cells}):
             self._update_row(row)
+
+    def selection_text(self) -> str:
+        """The selected cells as tab-separated lines for a spreadsheet. With the names in
+        the selection, a first line gives the column titles."""
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return ""
+        top = min(r.topRow() for r in ranges)
+        bottom = max(r.bottomRow() for r in ranges)
+        left = min(r.leftColumn() for r in ranges)
+        right = max(r.rightColumn() for r in ranges)
+        columns = range(left, right + 1)
+        lines = []
+        if left == 0:
+            titles = []
+            for c in columns:
+                if (assignment_id := self.assignment_at(c)) is not None:
+                    titles.append(self.grades.get_assignment(assignment_id).title)
+                else:
+                    titles.append(self.table.horizontalHeaderItem(c).text())
+            lines.append("\t".join(titles))
+        for row in range(top, bottom + 1):
+            lines.append("\t".join(self.table.item(row, c).text() for c in columns))
+        return "\n".join(lines) + "\n"
 
     def paste_scores(self, text: str) -> None:
         """Enter a block of scores copied from a spreadsheet (tab-separated, one student per

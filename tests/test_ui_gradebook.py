@@ -313,3 +313,18 @@ def test_pasted_block_of_scores_is_entered(window: MainWindow, roster: RosterSer
     view.paste_scores("5\nfive")
     assert messages.pop().startswith("Nothing was pasted.\n\nBob Smith, Test 1: 'five' isn't a score")
     assert view.table.item(0, 1).text() == "1"
+
+
+def test_selected_cells_are_copied_for_a_spreadsheet(window: MainWindow, roster: RosterService):
+    from PySide6.QtWidgets import QTableWidgetSelectionRange
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.setCurrentCell(0, 1)
+    view.table.item(0, 1).setText("8")
+    view.table.clearSelection()
+    view.table.setRangeSelected(QTableWidgetSelectionRange(0, 1, 1, 1), True)
+    assert view.selection_text() == "8\n\n"
+    view.table.selectAll()
+    assert view.selection_text() == (
+        "Student\tTest 1\tHomework\tAverage\nAda Lovelace\t8\t\t80%\nBob Smith\t\t\t—\n")
