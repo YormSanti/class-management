@@ -24,6 +24,7 @@ from app.services.attendance import AttendanceService
 from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
 from app.services.gradebook import GradebookService
+from app.services.rankings import RankingService
 from app.services.roster import RosterError, RosterService, sister_class_name
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
@@ -35,6 +36,7 @@ from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.gradebook_view import GradebookView
 from app.ui.views.placeholder_view import PlaceholderView
+from app.ui.views.rankings_view import RankingsView
 from app.ui.views.settings_view import SettingsView
 
 BOTTOM_PAGES = ("Settings",)  # pinned to the bottom of the sidebar
@@ -86,6 +88,10 @@ class MainWindow(QMainWindow):
         self.gradebook_view.pass_mark = config.pass_mark
         dashboard.pass_mark = config.pass_mark
         self.gradebook_view.manage_subjects_requested.connect(self.show_subjects)
+        self.rankings_view = RankingsView(RankingService(grades), roster)
+        self.rankings_view.rankings.method = config.ranking_method
+        self.rankings_view.manage_subjects_requested.connect(self.show_subjects)
+        self.rankings_view.navigate_requested.connect(self.show_page)
         self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
@@ -111,7 +117,7 @@ class MainWindow(QMainWindow):
             ("Dashboard", self.dashboard_view),
             ("Attendance", self.attendance_view),
             ("Gradebook", self.gradebook_view),
-            ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
+            ("Rankings", self.rankings_view),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
             ("Manage classes", self.classes_view),
             ("Settings", self.settings_view),
