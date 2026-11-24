@@ -349,9 +349,23 @@ class GradebookView(QWidget):
         return format_number(score)
 
     def _score_item(self, assignment_id: int, student_id: int) -> QTableWidgetItem:
-        item = QTableWidgetItem(self._score_text(assignment_id, student_id))
+        item = QTableWidgetItem()
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._show_score(item, assignment_id, student_id)
         return item
+
+    def _show_score(self, item: QTableWidgetItem, assignment_id: int, student_id: int) -> None:
+        """The score, with points above the maximum shown as a bonus."""
+        item.setText(self._score_text(assignment_id, student_id))
+        score = self.sheet.score(assignment_id, student_id)
+        maximum = next(a.max_score for a in self.sheet.assignments if a.id == assignment_id)
+        if score is not None and score > maximum:
+            item.setForeground(style.color(self, "info"))
+            item.setToolTip(f"{format_number(score - maximum)} bonus points above the maximum of {format_number(maximum)}")
+        else:
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
+            item.setToolTip("Exempt: left out of the average" if self.sheet.is_entered(assignment_id, student_id)
+                            and score is None else "")  # fmt: skip
 
     def _assignment_tip(self, assignment) -> str:
         """e.g. "Tests · 3 Oct 2026 · out of 20 / Class average 72% · 24 of 25 scores entered"."""
@@ -536,7 +550,7 @@ class GradebookView(QWidget):
         # Change the texts, not the items: the item being edited mustn't be deleted under Qt.
         with QSignalBlocker(self.table):
             for col, assignment in enumerate(self.sheet.assignments, start=1):
-                self.table.item(row, col).setText(self._score_text(assignment.id, student_id))
+                self._show_score(self.table.item(row, col), assignment.id, student_id)
             self._show_average(self.table.item(row, self.average_column()), student_id)
             for col, assignment in enumerate(self.sheet.assignments, start=1):
                 self.table.horizontalHeaderItem(col).setToolTip(self._assignment_tip(assignment))

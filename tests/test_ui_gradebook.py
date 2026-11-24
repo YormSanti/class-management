@@ -385,3 +385,18 @@ def test_pass_mark_set_in_settings_is_used_by_the_gradebook(window: MainWindow, 
     window.settings_view.pass_mark.setValue(65)
     assert window.config.pass_mark == 65
     assert view.table.item(0, 3).toolTip().startswith("Under the pass mark of 65%")
+
+
+def test_bonus_and_exempt_scores_are_explained(window: MainWindow, roster: RosterService):
+    from app.ui import style
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    cell = view.table.item(0, 1)
+    cell.setText("12")
+    assert cell.foreground().color() == style.color(view, "info")
+    assert cell.toolTip() == "2 bonus points above the maximum of 10"
+    cell.setText("ex")
+    assert cell.toolTip() == "Exempt: left out of the average"
+    cell.setText("10")
+    assert cell.toolTip() == ""
