@@ -285,3 +285,31 @@ def test_delete_clears_the_selected_scores(window: MainWindow, roster: RosterSer
     assert [view.table.item(0, c).text() for c in range(1, 4)] == ["", "", "—"]
     assert view.table.item(1, 1).text() == "6"
     assert view.table.item(0, 0).text() == "Ada Lovelace"  # names and averages aren't scores
+
+
+def test_pasted_block_of_scores_is_entered(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    messages = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: messages.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: messages.append(a[2]))
+
+    view.table.setCurrentCell(0, 0)
+    view.paste_scores("8")
+    assert messages.pop() == "Select the score cell to paste into first."
+
+    view.table.setCurrentCell(0, 1)
+    view.paste_scores("8\tx\r\n6\t3\r\n")
+    assert [view.table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80%"]
+    assert [view.table.item(1, c).text() for c in range(1, 4)] == ["6", "3", "60%"]
+    assert messages == []
+
+    view.paste_scores("1\n2\n3")  # one student too many
+    assert view.table.item(1, 1).text() == "2"
+    assert "1 value didn't fit" in messages.pop()
+
+    view.paste_scores("5\nfive")
+    assert messages.pop().startswith("Nothing was pasted.\n\nBob Smith, Test 1: 'five' isn't a score")
+    assert view.table.item(0, 1).text() == "1"

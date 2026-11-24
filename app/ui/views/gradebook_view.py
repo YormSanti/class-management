@@ -5,6 +5,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -139,6 +140,9 @@ class GradebookView(QWidget):
             clear = QShortcut(QKeySequence(key), self.table)
             clear.setContext(Qt.ShortcutContext.WidgetShortcut)  # not while a score is being typed
             clear.activated.connect(self.clear_selected)
+        paste = QShortcut(QKeySequence.StandardKey.Paste, self.table)
+        paste.setContext(Qt.ShortcutContext.WidgetShortcut)
+        paste.activated.connect(lambda: self.paste_scores(QApplication.clipboard().text()))
         new = QShortcut(QKeySequence.StandardKey.New, self)
         new.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         new.activated.connect(lambda: self.new_button.isEnabled() and self.new_assignment())
@@ -390,6 +394,38 @@ class GradebookView(QWidget):
         self.grades.enter_scores([(a, s, "") for _r, _c, a, s in cells])
         for row in sorted({c[0] for c in cells}):
             self._update_row(row)
+
+    def paste_scores(self, text: str) -> None:
+        """Enter a block of scores copied from a spreadsheet (tab-separated, one student per
+        line), starting at the current cell. All or nothing."""
+        row0, col0 = self.table.currentRow(), self.table.currentColumn()
+        if self.assignment_at(col0) is None or row0 < 0:
+            QMessageBox.information(self, "Paste scores", "Select the score cell to paste into first.")
+            return
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")
+        entries, cells, left_out = [], set(), 0
+        for r, line in enumerate(lines):
+            for c, value in enumerate(line.split("\t")):
+                row, col = row0 + r, col0 + c
+                assignment_id = self.assignment_at(col)
+                if row >= self.table.rowCount() or assignment_id is None:
+                    left_out += bool(value.strip())
+                    continue
+                entries.append((assignment_id, self.student_at(row), value))
+                cells.add(row)
+        try:
+            self.grades.enter_scores(entries)
+        except GradebookError as exc:
+            QMessageBox.warning(self, "Paste scores", f"Nothing was pasted.\n\n{exc}")
+            return
+        for row in sorted(cells):
+            self._update_row(row)
+        if left_out:
+            QMessageBox.information(
+                self, "Paste scores",
+                f"{left_out} value{'' if left_out == 1 else 's'} didn't fit in the gradebook and "
+                f"{'was' if left_out == 1 else 'were'} left out. Start the paste further up or left.",
+            )  # fmt: skip
 
     def _update_row(self, row: int) -> None:
         """Show a student's scores and average as saved, after a change."""

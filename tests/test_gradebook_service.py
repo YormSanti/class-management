@@ -233,7 +233,7 @@ def test_many_scores_are_entered_all_or_none(
     ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
     bob = roster.save_student(Student(class_id, "Bob", "Smith")).id
     test = grades.save_assignment(Assignment(subject_id, tests_id, "Test 1", 10)).id
-    with pytest.raises(GradebookError):
+    with pytest.raises(GradebookError, match="^Bob Smith, Test 1: 'eight' isn't a score"):
         grades.enter_scores([(test, ada, "8"), (test, bob, "eight")])
     assert grades.gradebook.scores(subject_id) == {}
     assert grades.enter_scores([(test, ada, "8"), (test, bob, "ex")]) == 2

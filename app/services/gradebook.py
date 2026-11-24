@@ -293,5 +293,11 @@ class GradebookService:
         cells were entered."""
         with transaction(self.gradebook.conn):
             for assignment_id, student_id, text in entries:
-                self.enter_score(assignment_id, student_id, text)
+                try:
+                    self.enter_score(assignment_id, student_id, text)
+                except GradebookError as exc:
+                    student = self.students.get(student_id)
+                    assignment = self.gradebook.get_assignment(assignment_id)
+                    where = f"{student.full_name}, {assignment.title}: " if student and assignment else ""
+                    raise GradebookError(where + str(exc)) from None
         return len(entries)
