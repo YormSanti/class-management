@@ -168,3 +168,28 @@ def test_assignment_dialog_saves_a_new_assignment(window: MainWindow, roster: Ro
     edit.dated.setChecked(False)
     edit.accept()
     assert grades.get_assignment(dialog.saved.id).date is None
+
+
+def test_new_assignment_opens_its_column(window: MainWindow, roster: RosterService, monkeypatch):
+    from app.ui.views import gradebook_view
+
+    maths, *_ = _graded_class(window, roster)
+    view = window.gradebook_view
+    seen = {}
+
+    class FakeDialog:
+        def __init__(self, save, subject_id, categories, parent=None, **defaults):
+            seen.update(defaults)
+            from app.models import Assignment
+
+            self.saved = save(Assignment(subject_id, categories[0].id, "Quiz 3", 5))
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(gradebook_view, "AssignmentDialog", FakeDialog)
+    assert view.new_button.isEnabled()
+    view.new_button.click()
+    assert seen["default_max"] == 5  # like the latest assignment, Homework / 5
+    assert view.table.horizontalHeaderItem(3).text() == "Quiz 3\n/ 5"
+    assert (view.table.currentRow(), view.table.currentColumn()) == (0, 3)

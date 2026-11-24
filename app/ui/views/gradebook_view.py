@@ -1,6 +1,7 @@
 """The gradebook of the current subject: students down the side, assignments across."""
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -24,6 +25,7 @@ from app.services.gradebook import (
 )
 from app.services.roster import RosterService
 from app.ui import style
+from app.ui.dialogs.assignment_dialog import AssignmentDialog
 from app.ui.dialogs.categories_dialog import CategoriesDialog
 
 
@@ -59,6 +61,11 @@ class GradebookView(QWidget):
         header = QHBoxLayout()
         header.addLayout(titles, stretch=1)
         header.addWidget(self.categories_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        self.new_button = QPushButton("&New assignment")
+        self.new_button.setObjectName("Primary")
+        self.new_button.setToolTip("Add a column for a test, quiz or piece of homework (Ctrl+N)")
+        self.new_button.clicked.connect(self.new_assignment)
+        header.addWidget(self.new_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
         self.table = QTableWidget()
@@ -102,6 +109,9 @@ class GradebookView(QWidget):
         layout.addLayout(header)
         layout.addWidget(self.pages, stretch=1)
         self.setStyleSheet(style.card_stylesheet(self))
+        new = QShortcut(QKeySequence.StandardKey.New, self)
+        new.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        new.activated.connect(lambda: self.new_button.isEnabled() and self.new_assignment())
         self.refresh()
 
     # --- page protocol ---------------------------------------------------------
@@ -123,6 +133,7 @@ class GradebookView(QWidget):
         else:
             self.subtitle.setText(school_class.display_name if school_class else "")
         self.categories_button.setEnabled(self.sheet is not None)
+        self.new_button.setEnabled(self.sheet is not None and bool(self.sheet.categories))
         self._show_state()
 
     def edit_categories(self) -> None:
@@ -132,6 +143,33 @@ class GradebookView(QWidget):
         dialog.exec()
         if dialog.changed:
             self.refresh()
+
+    def new_assignment(self) -> None:
+        """Ask for a new assignment like the latest one, then go to its column to enter scores."""
+        if self.sheet is None or not self.sheet.categories:
+            return
+        latest = self.sheet.assignments[-1] if self.sheet.assignments else None
+        dialog = AssignmentDialog(
+            self.grades.save_assignment,
+            self.sheet.subject.id,
+            self.sheet.categories,
+            parent=self,
+            default_category=latest.category_id if latest else None,
+            default_max=latest.max_score if latest else 10,
+        )
+        if dialog.exec() and dialog.saved:
+            self.refresh()
+            self.go_to_assignment(dialog.saved.id)
+
+    def go_to_assignment(self, assignment_id: int) -> None:
+        """Select the first student's cell of the assignment, ready to type."""
+        for col in range(1, self.average_column()):
+            if self.assignment_at(col) == assignment_id:
+                if self.table.rowCount():
+                    self.table.setCurrentCell(0, col)
+                    self.table.scrollToItem(self.table.item(0, col))
+                self.table.setFocus()
+                return
 
     def _show_state(self) -> None:
         if self.class_id is None:
