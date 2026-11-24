@@ -349,3 +349,18 @@ def test_a_desk_is_taken_away_and_put_back(window: MainWindow, roster: RosterSer
     view.seat_menu(0, 1).actions()[0].trigger()  # put the desk back
     assert view.plan.gaps == set()
     assert view.grid.item(*view.cell_of(0, 1)).toolTip() == ""
+
+
+def test_find_selects_a_students_seat_or_them_under_not_seated(window: MainWindow, roster: RosterService):
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Bob"], 1, 2)
+    view.refresh()
+    view.search.setText("smi")
+    assert view.seat_at(view.grid.currentRow(), view.grid.currentColumn()) == (1, 2)
+    assert view.grid.currentItem().isSelected()
+    view.search.setText("young")
+    assert view.unseated.currentItem().text() == "Cy Young"
+    assert not view.grid.selectedItems()
+    view.search.setText("nobody")
+    assert view.unseated.currentItem().text() == "Cy Young"  # nothing found: stays

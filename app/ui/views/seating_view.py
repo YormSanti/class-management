@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMenu,
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.services.roster import RosterService
+from app.services.roster import RosterService, matches
 from app.models import SeatLayout
 from app.services.export import seating_plan_html
 from app.services.seating import SeatingError, SeatingPlan, SeatingService
@@ -101,8 +102,15 @@ class SeatingView(QWidget):
         self.clear_button = QPushButton("C&lear")
         self.clear_button.setToolTip("Take every student out of their seat (Ctrl+Z undoes)")
         self.clear_button.clicked.connect(self.clear_seats)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a student (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(220)
+        self.search.textChanged.connect(self.find_student)
+        self.search.returnPressed.connect(self._leave_search)
         summary_row = QHBoxLayout()
         summary_row.addWidget(self.summary, stretch=1)
+        summary_row.addWidget(self.search)
         for button in (self.fill_button, self.shuffle_button, self.clear_button):
             summary_row.addWidget(button)
         self.grid = QTableWidget()
@@ -159,6 +167,9 @@ class SeatingView(QWidget):
         cancel = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         cancel.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         cancel.activated.connect(lambda: self.pick(None))
+        find = QShortcut(QKeySequence.StandardKey.Find, self)
+        find.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        find.activated.connect(lambda: (self.search.setFocus(), self.search.selectAll()))
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)
         undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         undo.activated.connect(self.undo)
@@ -324,6 +335,28 @@ class SeatingView(QWidget):
             self.seating.delete_layout(self.plan.layout.id)
             self.layout_id = None
             self.refresh()
+
+    def find_student(self, text: str) -> None:
+        """Select the seat of the first student matching `text`, or them under Not seated."""
+        if self.plan is None or not text.strip():
+            return
+        student = next((x for x in self.plan.students if matches(x, text)), None)
+        if student is None:
+            return
+        seat = self.plan.seat_of(student.id)
+        if seat is not None:
+            self.unseated.clearSelection()
+            self.grid.setCurrentCell(*self.cell_of(*seat))
+            self.grid.scrollToItem(self.grid.currentItem())
+        else:
+            self.grid.clearSelection()
+            for i in range(self.unseated.count()):
+                if self.unseated.item(i).data(STUDENT_ID) == student.id:
+                    self.unseated.setCurrentRow(i)
+
+    def _leave_search(self) -> None:
+        """Enter in Find goes to the student found, to move them with Enter."""
+        (self.grid if self.grid.selectedItems() else self.unseated).setFocus()
 
     # --- seating students -------------------------------------------------------
 
