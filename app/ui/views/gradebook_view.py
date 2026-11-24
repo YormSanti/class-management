@@ -83,6 +83,7 @@ class GradebookView(QWidget):
         self.subject_id: int | None = None
         self.sheet: GradeSheet | None = None
         self.pass_mark = PASS_MARK
+        self.by_average = False  # students listed best average first instead of by name
         # Each change is a list of (assignment id, student id, text before, text after).
         self._undo: list[list[tuple[int, int, str, str]]] = []
         self._redo: list[list[tuple[int, int, str, str]]] = []
@@ -127,6 +128,7 @@ class GradebookView(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.horizontalHeader().sectionDoubleClicked.connect(self._header_double_clicked)
+        self.table.horizontalHeader().sectionClicked.connect(self._header_clicked)
         self.table.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.horizontalHeader().customContextMenuRequested.connect(self._show_header_menu)
         self.sheet_page = QWidget()
@@ -365,6 +367,24 @@ class GradebookView(QWidget):
     def average_column(self) -> int:
         return 1 + len(self.sheet.assignments) if self.sheet else 1
 
+    def students_shown(self) -> list:
+        """The sheet's students in the order chosen: by name, or best average first."""
+        if not self.by_average:
+            return list(self.sheet.students)
+        averages = {s.id: self.sheet.average(s.id) for s in self.sheet.students}
+        return sorted(self.sheet.students, key=lambda s: (averages[s.id] is None, -(averages[s.id] or 0)))
+
+    def set_order(self, by_average: bool) -> None:
+        self.by_average = by_average
+        if self.sheet is not None and self.sheet.categories:
+            self._fill_table()
+
+    def _header_clicked(self, column: int) -> None:
+        if column == 0:
+            self.set_order(by_average=False)
+        elif column == self.average_column():
+            self.set_order(by_average=True)
+
     def _fill_table(self) -> None:
         sheet = self.sheet
         table = self.table
@@ -379,7 +399,7 @@ class GradebookView(QWidget):
             item.setToolTip(self._assignment_tip(assignment))
             table.setHorizontalHeaderItem(col, item)
         table.setHorizontalHeaderItem(self.average_column(), QTableWidgetItem("Average"))
-        for row, student in enumerate(sheet.students):
+        for row, student in enumerate(self.students_shown()):
             name = QTableWidgetItem(student.full_name)
             name.setFlags(name.flags() & ~Qt.ItemFlag.ItemIsEditable)
             name.setData(STUDENT_ID, student.id)
@@ -391,6 +411,11 @@ class GradebookView(QWidget):
         head.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         head.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         table.resizeColumnToContents(0)
+        head.setSortIndicatorShown(True)
+        head.setSortIndicator(
+            self.average_column() if self.by_average else 0,
+            Qt.SortOrder.DescendingOrder if self.by_average else Qt.SortOrder.AscendingOrder,
+        )
         del blocker
         self._fill_filter()
         self._apply_search()
@@ -412,7 +437,7 @@ class GradebookView(QWidget):
         if self.sheet is None:
             return
         text = self.search.text()
-        for row, student in enumerate(self.sheet.students):
+        for row, student in enumerate(self.students_shown()):
             self.table.setRowHidden(row, not matches(student, text))
 
     def _apply_filter(self) -> None:

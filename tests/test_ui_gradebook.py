@@ -474,3 +474,20 @@ def test_enter_skips_students_hidden_by_find(window: MainWindow, roster: RosterS
     assert view.table.currentRow() == 2
     view.table._next_row()  # the last one: stays
     assert view.table.currentRow() == 2
+
+
+def test_clicking_average_ranks_students_and_student_puts_names_back(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("6")  # Ada 60 %
+    view.table.item(1, 1).setText("9")  # Bob 90 %
+    view.table.horizontalHeader().sectionClicked.emit(3)
+    assert [view.table.item(r, 0).text() for r in range(2)] == ["Bob Smith", "Ada Lovelace"]
+    view.table.item(1, 1).setText("7")  # edits still reach Ada, now on the second row
+    assert view.grades.sheet(maths).score(test, ada) == 7
+    view.search.setText("ada")
+    assert [view.table.isRowHidden(r) for r in range(2)] == [True, False]
+    view.table.horizontalHeader().sectionClicked.emit(1)  # an assignment: no change
+    assert view.by_average
+    view.table.horizontalHeader().sectionClicked.emit(0)
+    assert [view.table.item(r, 0).text() for r in range(2)] == ["Ada Lovelace", "Bob Smith"]
