@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -31,7 +32,7 @@ SEAT_HEIGHT = 56
 UNDO_LIMIT = 50
 HINT = (
     "Click a student under Not seated, then a seat. Click a seated student, then another seat "
-    "to move them; if it's taken, the two swap."
+    "to move them; if it's taken, the two swap. Delete takes a student out of their seat."
 )
 
 
@@ -133,6 +134,15 @@ class SeatingView(QWidget):
                 shortcut = QShortcut(QKeySequence(key), widget)
                 shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
                 shortcut.activated.connect(act)
+        for key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            unseat = QShortcut(QKeySequence(key), self.grid)
+            unseat.setContext(Qt.ShortcutContext.WidgetShortcut)
+            unseat.activated.connect(
+                lambda: self.grid.currentRow() >= 0
+                and self.unseat_at(*self.seat_at(self.grid.currentRow(), self.grid.currentColumn()))
+            )
+        self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(self._show_seat_menu)
         cancel = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         cancel.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         cancel.activated.connect(lambda: self.pick(None))
@@ -301,6 +311,31 @@ class SeatingView(QWidget):
         self.refresh()
         self.grid.setCurrentCell(*self.cell_of(row, col))
         self.pick(None)
+
+    def unseat_at(self, row: int, col: int) -> None:
+        """Take whoever sits at (row, col) out of their seat."""
+        occupant = self.plan.student_at(row, col) if self.plan else None
+        if occupant is None:
+            return
+        self._remember()
+        self.seating.unseat(self.plan.layout.id, occupant.id)
+        self.refresh()
+        self.grid.setCurrentCell(*self.cell_of(row, col))
+
+    def seat_menu(self, row: int, col: int) -> QMenu | None:
+        """What can be done with the student at (row, col); None for an empty seat."""
+        occupant = self.plan.student_at(row, col) if self.plan else None
+        if occupant is None:
+            return None
+        menu = QMenu(self)
+        menu.addAction(f"&Move {occupant.full_name}…", lambda: self.pick(occupant.id))
+        menu.addAction("&Take out of the seat\tDelete", lambda: self.unseat_at(row, col))
+        return menu
+
+    def _show_seat_menu(self, pos) -> None:
+        index = self.grid.indexAt(pos)
+        if index.isValid() and (menu := self.seat_menu(*self.seat_at(index.row(), index.column()))):
+            menu.exec(self.grid.viewport().mapToGlobal(pos))
 
     def fill(self, shuffle: bool) -> None:
         """Seat the rest by name, or everyone at random."""

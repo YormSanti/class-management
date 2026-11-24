@@ -234,3 +234,28 @@ def test_seat_the_rest_says_who_did_not_fit(window: MainWindow, roster: RosterSe
     monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
     window.seating_view.fill_button.click()
     assert infos == ["There's no free seat for Cy Young. Add seats with Edit…"]
+
+
+def test_a_student_is_taken_out_of_their_seat(window: MainWindow, roster: RosterService):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)
+    view.seating.place(layout, ids["Bob"], 0, 1)
+    view.refresh()
+    view.grid.setCurrentCell(*view.cell_of(0, 0))
+    delete = [x for x in view.grid.findChildren(QShortcut) if x.key() == QKeySequence("Delete")]
+    delete[0].activated.emit()  # offscreen, key presses don't reach shortcuts
+    assert _grid(window)[1] == ["", "Bob Smith", ""]
+    assert "Ada Lovelace" in _unseated(window)
+    view.undo()
+    assert _grid(window)[1] == ["Ada Lovelace", "Bob Smith", ""]
+
+    menu = view.seat_menu(0, 1)
+    assert [a.text() for a in menu.actions()] == ["&Move Bob Smith…", "&Take out of the seat\tDelete"]
+    menu.actions()[0].trigger()
+    assert view.picked == ids["Bob"]
+    view.seat_menu(0, 0).actions()[1].trigger()
+    assert _grid(window)[1] == ["", "Bob Smith", ""]
+    assert view.seat_menu(1, 1) is None  # an empty seat
