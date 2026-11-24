@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QApplication
 
-from app.models import SchoolClass, Subject
+from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.services.roster import RosterService
 from app.ui.main_window import MainWindow
 from tests.test_ui_smoke import qapp, window  # noqa: F401  (fixtures)
@@ -26,3 +26,33 @@ def test_gradebook_asks_for_a_class_then_a_subject(window: MainWindow, roster: R
     window.select_subject(maths)
     assert view.pages.currentWidget() is view.sheet_page
     assert view.subtitle.text() == "Maths · 7B (2026-2027)"
+
+
+def _graded_class(window: MainWindow, roster: RosterService) -> tuple[int, int, int, int]:
+    """7B with Ada and Bob, Maths with Test 1 (/ 10) and Homework (/ 5). Returns (subject, ada, test, homework)."""
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    roster.save_student(Student(class_id, "Bob", "Smith"))
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    grades = window.gradebook_view.grades
+    tests = grades.save_category(Category(maths, "Tests", 100)).id
+    test = grades.save_assignment(Assignment(maths, tests, "Test 1", 10)).id
+    homework = grades.save_assignment(Assignment(maths, tests, "Homework", 5)).id
+    window.select_class(class_id)
+    return maths, ada, test, homework
+
+
+def test_gradebook_shows_scores_and_averages(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    grades = window.gradebook_view.grades
+    grades.enter_score(test, ada, "8")
+    grades.enter_score(homework, ada, "ex")
+    view = window.gradebook_view
+    view.refresh()
+    table = view.table
+    assert table.columnCount() == 4
+    assert table.horizontalHeaderItem(1).text() == "Test 1\n/ 10"
+    assert [table.item(r, 0).text() for r in range(2)] == ["Ada Lovelace", "Bob Smith"]
+    assert [table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80%"]
+    assert [table.item(1, c).text() for c in range(1, 4)] == ["", "", "—"]
+    assert view.summary.text() == "2 assignments · class average 80%"
