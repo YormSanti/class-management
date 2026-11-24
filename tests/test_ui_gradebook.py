@@ -350,3 +350,12 @@ def test_score_changes_can_be_undone_and_redone(window: MainWindow, roster: Rost
     view.table.item(1, 2).setText("4")  # a new change forgets what was undone
     view.redo()
     assert view.table.item(0, 1).text() == "8"
+
+
+def test_replaced_data_forgets_the_score_undo(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("8")
+    window._data_replaced()  # e.g. after Restore
+    view.undo()
+    assert view.table.item(0, 1).text() == "8"
