@@ -35,7 +35,8 @@ SEAT_HEIGHT = 56
 UNDO_LIMIT = 50
 HINT = (
     "Click a student under Not seated, then a seat. Click a seated student, then another seat "
-    "to move them; if it's taken, the two swap. Delete takes a student out of their seat."
+    "to move them; if it's taken, the two swap. Delete takes a student out of their seat; "
+    "right-click a free seat if there's no desk there, e.g. an aisle."
 )
 
 
@@ -340,8 +341,8 @@ class SeatingView(QWidget):
 
     def seat_clicked(self, row: int, col: int) -> None:
         """Seat the student picked here, or pick up whoever sits here."""
-        if self.plan is None:
-            return
+        if self.plan is None or (row, col) in self.plan.gaps:
+            return  # no desk there to sit at
         if self.picked is None:
             occupant = self.plan.student_at(row, col)
             if occupant is not None:
@@ -369,14 +370,26 @@ class SeatingView(QWidget):
         self.grid.setCurrentCell(*self.cell_of(row, col))
 
     def seat_menu(self, row: int, col: int) -> QMenu | None:
-        """What can be done with the student at (row, col); None for an empty seat."""
-        occupant = self.plan.student_at(row, col) if self.plan else None
-        if occupant is None:
+        """What can be done with the seat (row, col) and whoever sits there."""
+        if self.plan is None:
             return None
         menu = QMenu(self)
-        menu.addAction(f"&Move {occupant.full_name}…", lambda: self.pick(occupant.id))
-        menu.addAction("&Take out of the seat\tDelete", lambda: self.unseat_at(row, col))
+        occupant = self.plan.student_at(row, col)
+        if occupant is not None:
+            menu.addAction(f"&Move {occupant.full_name}…", lambda: self.pick(occupant.id))
+            menu.addAction("&Take out of the seat\tDelete", lambda: self.unseat_at(row, col))
+        elif (row, col) in self.plan.gaps:
+            menu.addAction("&Put a desk here", lambda: self.set_desk(row, col, True))
+        else:
+            menu.addAction("&No desk here, e.g. an aisle", lambda: self.set_desk(row, col, False))
         return menu
+
+    def set_desk(self, row: int, col: int, desk: bool) -> None:
+        try:
+            self.seating.set_desk(self.plan.layout.id, row, col, desk)
+        except SeatingError as exc:
+            QMessageBox.warning(self, "Seating chart", str(exc))
+        self.refresh()
 
     def _show_seat_menu(self, pos) -> None:
         index = self.grid.indexAt(pos)
@@ -477,4 +490,7 @@ class SeatingView(QWidget):
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if student:
             item.setData(STUDENT_ID, student.id)
+        elif (row, col) in self.plan.gaps:
+            item.setBackground(style.border(self))
+            item.setToolTip("No desk here; right-click to put one")
         return item

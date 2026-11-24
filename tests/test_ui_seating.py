@@ -258,7 +258,6 @@ def test_a_student_is_taken_out_of_their_seat(window: MainWindow, roster: Roster
     assert view.picked == ids["Bob"]
     view.seat_menu(0, 0).actions()[1].trigger()
     assert _grid(window)[1] == ["", "Bob Smith", ""]
-    assert view.seat_menu(1, 1) is None  # an empty seat
 
 
 def test_a_plan_is_saved_as_pdf(window: MainWindow, roster: RosterService, tmp_path, monkeypatch):
@@ -331,3 +330,22 @@ def test_a_plan_is_copied_under_a_new_name(window: MainWindow, roster: RosterSer
     assert asked == ["Tests (copy)"]
     assert view.layout_combo.currentText() == "Exams (2 × 3)"
     assert _grid(window)[1][0] == "Ada Lovelace"
+
+
+def test_a_desk_is_taken_away_and_put_back(window: MainWindow, roster: RosterService):
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    menu = view.seat_menu(0, 1)
+    assert [a.text() for a in menu.actions()] == ["&No desk here, e.g. an aisle"]
+    menu.actions()[0].trigger()
+    item = view.grid.item(*view.cell_of(0, 1))
+    assert item.toolTip().startswith("No desk here")
+    assert view.summary.text().endswith("5 free seats")
+    view.pick(ids["Ada"])
+    _click_seat(window, 0, 1)  # no desk to sit at
+    assert view.picked == ids["Ada"]
+    view.fill_button.click()
+    assert _grid(window)[1] == ["Ada Lovelace", "", "Bob Smith"]
+    view.seat_menu(0, 1).actions()[0].trigger()  # put the desk back
+    assert view.plan.gaps == set()
+    assert view.grid.item(*view.cell_of(0, 1)).toolTip() == ""
