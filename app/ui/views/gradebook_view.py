@@ -3,6 +3,7 @@
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemDelegate,
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
@@ -39,6 +40,27 @@ def percent_text(value: float | None) -> str:
     return "—" if value is None else f"{value:.0f}%"
 
 
+class ScoreTable(QTableWidget):
+    """Scores are typed down a column, one student after the other: Enter saves and goes
+    to the next student, as in a spreadsheet."""
+
+    def closeEditor(self, editor: QWidget, hint: QAbstractItemDelegate.EndEditHint) -> None:
+        super().closeEditor(editor, hint)
+        if hint == QAbstractItemDelegate.EndEditHint.SubmitModelCache:  # Enter, not Tab or Escape
+            self._next_row()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.state() != self.State.EditingState:
+            self._next_row()
+            return
+        super().keyPressEvent(event)
+
+    def _next_row(self) -> None:
+        row, col = self.currentRow(), self.currentColumn()
+        if 0 <= row < self.rowCount() - 1:
+            self.setCurrentCell(row + 1, col)
+
+
 class GradebookView(QWidget):
     manage_subjects_requested = Signal()  # the class has no subject to grade yet
 
@@ -69,7 +91,7 @@ class GradebookView(QWidget):
         header.addWidget(self.new_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
-        self.table = QTableWidget()
+        self.table = ScoreTable()
         triggers = QAbstractItemView.EditTrigger
         self.table.setEditTriggers(triggers.DoubleClicked | triggers.EditKeyPressed | triggers.AnyKeyPressed)
         self.table.itemChanged.connect(self._score_typed)

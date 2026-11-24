@@ -247,3 +247,23 @@ def test_header_tooltip_describes_the_assignment(window: MainWindow, roster: Ros
         "Tests · out of 10", "0 of 2 scores entered"]  # fmt: skip
     view.table.item(0, 1).setText("7")
     assert view.table.horizontalHeaderItem(1).toolTip().splitlines()[1] == "Class average 70% · 1 of 2 scores entered"
+
+
+def test_enter_saves_a_score_and_goes_to_the_next_student(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    window.show_page("Gradebook")
+    view = window.gradebook_view
+    view.table.setFocus()
+    view.table.setCurrentCell(0, 1)
+    QTest.keyClicks(view.table, "9")  # starts editing with the 9
+    QTest.keyClick(view.table.viewport().findChild(QLineEdit), Qt.Key.Key_Return)
+    QApplication.processEvents()  # the editor is closed by a queued call
+    assert view.grades.sheet(maths).score(test, ada) == 9
+    assert (view.table.currentRow(), view.table.currentColumn()) == (1, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_Up)
+    QTest.keyClick(view.table, Qt.Key.Key_Return)  # not editing: just moves down
+    assert view.table.currentRow() == 1
