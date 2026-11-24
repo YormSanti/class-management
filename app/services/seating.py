@@ -5,6 +5,7 @@ students' active list decides who can be seated; a deactivated student's seat sh
 as free and is given away when someone else is put in it.
 """
 
+import random
 from dataclasses import dataclass, field, replace
 
 from app.models import SeatLayout, Student
@@ -138,3 +139,24 @@ class SeatingService:
     def set_seats(self, layout_id: int, seats: dict[tuple[int, int], int]) -> None:
         """Replace the whole plan, e.g. to undo a change or after filling it."""
         self.seating.set_seats(layout_id, seats)
+
+    def fill(self, layout_id: int, shuffle: bool = False, rng: random.Random | None = None) -> int:
+        """Seat the students without a seat in the free seats, front row first, in name
+        order or shuffled; with `shuffle`, everyone is reseated at random. Students who
+        don't fit stay unseated. Returns how many students were given a seat."""
+        plan = self.plan(layout_id)
+        if plan is None:
+            raise SeatingError("This seating plan no longer exists.")
+        if shuffle:
+            students = list(plan.students)
+            (rng or random.Random()).shuffle(students)
+            seats = {}
+            free = [(r, c) for r in range(plan.layout.rows) for c in range(plan.layout.cols)]
+        else:
+            students = plan.unseated
+            seats = dict(plan.seats)
+            free = plan.free_seats
+        for seat, student in zip(free, students):
+            seats[seat] = student.id
+        self.seating.set_seats(layout_id, seats)
+        return min(len(free), len(students))

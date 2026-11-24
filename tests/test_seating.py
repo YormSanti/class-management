@@ -145,3 +145,35 @@ def test_a_deactivated_students_seat_shows_free_and_can_be_given_away(
     assert plan.seats == {} and (0, 0) in plan.free_seats
     seating.place(layout, bob, 0, 0)
     assert seating.seating.seats(layout) == {(0, 0): bob}
+
+
+def test_fill_seats_the_rest_in_name_order_front_row_first(
+    seating: SeatingService, roster: RosterService, class_id: int
+):
+    layout, ada, bob, cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, bob, 1, 2)
+    assert seating.fill(layout) == 2
+    assert seating.plan(layout).seats == {(1, 2): bob, (0, 0): ada, (0, 1): cy}
+
+
+def test_fill_seats_as_many_as_fit(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, ada, bob, cy = _seated_class(roster, seating, class_id)
+    seating.save_layout(replace(seating.seating.get_layout(layout), rows=1, cols=2))
+    assert seating.fill(layout) == 2
+    assert [s.first_name for s in seating.plan(layout).unseated] == ["Cy"]
+
+
+def test_shuffle_reseats_everyone(seating: SeatingService, roster: RosterService, class_id: int):
+    import random
+
+    layout, ada, bob, cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, ada, 1, 2)
+    assert seating.fill(layout, shuffle=True, rng=random.Random(1)) == 3
+    plan = seating.plan(layout)
+    assert sorted(plan.seats.values()) == sorted([ada, bob, cy])
+    assert set(plan.seats) == {(0, 0), (0, 1), (0, 2)}  # front row first
+    orders = set()
+    for seed in range(10):
+        seating.fill(layout, shuffle=True, rng=random.Random(seed))
+        orders.add(tuple(seating.plan(layout).seats[(0, c)] for c in range(3)))
+    assert len(orders) > 1
