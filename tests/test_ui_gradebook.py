@@ -191,6 +191,7 @@ def test_new_assignment_opens_its_column(window: MainWindow, roster: RosterServi
     assert view.new_button.isEnabled()
     view.new_button.click()
     assert seen["default_max"] == 5  # like the latest assignment, Homework / 5
+    assert seen["default_title"] == ""  # "Homework" has no number to count on
     assert view.table.horizontalHeaderItem(3).text() == "Quiz 3\n/ 5"
     assert (view.table.currentRow(), view.table.currentColumn()) == (0, 3)
 

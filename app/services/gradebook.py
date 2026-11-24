@@ -4,6 +4,7 @@ Each subject has its own gradebook. Assignments belong to a weighted category
 (e.g. Tests 50, Homework 20); weights are relative, so they needn't add up to 100.
 """
 
+import re
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
@@ -41,6 +42,21 @@ def _plural(n: int, word: str, plural: str | None = None) -> str:
 def format_number(value: float) -> str:
     """A score or weight as people write it: 8 not 8.0, 8.5, 8.25."""
     return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def next_title(title: str, taken: list[str]) -> str:
+    """The title after `title` in a series: "Quiz 3" -> "Quiz 4", "Test 2: fractions" ->
+    "Test 3", skipping titles already `taken` (ignoring case). "" when `title` has no number."""
+    m = re.match(r"(.*?\D)?(\d+)", title)
+    if m is None:
+        return ""
+    prefix, number = m.group(1) or "", int(m.group(2))
+    used = {t.casefold() for t in taken}
+    while True:
+        number += 1
+        candidate = f"{prefix}{number}"
+        if candidate.casefold() not in used:
+            return candidate
 
 
 def parse_score(text: str, max_score: float) -> float | str | None:

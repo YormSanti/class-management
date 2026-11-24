@@ -35,6 +35,7 @@ class AssignmentDialog(QDialog):
         *,
         default_category: int | None = None,
         default_max: float = 10,
+        default_title: str = "",
         today: date | None = None,
     ):
         super().__init__(parent)
@@ -45,7 +46,8 @@ class AssignmentDialog(QDialog):
         self._original = assignment
         self.saved: Assignment | None = None
 
-        self.title = QLineEdit(assignment.title if assignment else "")
+        self.title = QLineEdit(assignment.title if assignment else default_title)
+        self.title.selectAll()
         self.title.setPlaceholderText("e.g. Test 1: fractions")
         self.category = QComboBox()
         for category in categories:

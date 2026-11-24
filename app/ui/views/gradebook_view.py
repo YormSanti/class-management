@@ -29,6 +29,7 @@ from app.services.gradebook import (
     GradebookService,
     GradeSheet,
     format_number,
+    next_title,
 )
 from app.services.dashboard import letter_grade
 from app.services.export import write_gradebook_csv
@@ -258,6 +259,7 @@ class GradebookView(QWidget):
             parent=self,
             default_category=latest.category_id if latest else None,
             default_max=latest.max_score if latest else 10,
+            default_title=next_title(latest.title, [a.title for a in self.sheet.assignments]) if latest else "",
         )
         if dialog.exec() and dialog.saved:
             self.refresh()

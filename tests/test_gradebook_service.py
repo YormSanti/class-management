@@ -8,7 +8,7 @@ from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.gradebook import EXEMPT, SUGGESTED_CATEGORIES, GradebookError, GradebookService, format_number, parse_score, weight_shares, weighted_average
+from app.services.gradebook import EXEMPT, SUGGESTED_CATEGORIES, GradebookError, GradebookService, format_number, parse_score, next_title, weight_shares, weighted_average
 from app.services.roster import RosterService
 
 
@@ -256,3 +256,12 @@ def test_many_scores_are_entered_all_or_none(
     assert grades.gradebook.scores(subject_id) == {}
     assert grades.enter_scores([(test, ada, "8"), (test, bob, "ex")]) == 2
     assert grades.gradebook.scores(subject_id) == {(test, ada): 8, (test, bob): None}
+
+
+@pytest.mark.parametrize(
+    "title, taken, expected",
+    [("Quiz 3", [], "Quiz 4"), ("Test 2: fractions", [], "Test 3"), ("HW9", ["hw10"], "HW11"),
+     ("Project", [], ""), ("12", [], "13")],
+)
+def test_next_title_continues_a_series(title, taken, expected):
+    assert next_title(title, taken) == expected
