@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -99,6 +100,12 @@ class GradebookView(QWidget):
         header.addWidget(self.new_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
+        self.category_filter = QComboBox()
+        self.category_filter.setToolTip("Show the assignments of one category only")
+        self.category_filter.currentIndexChanged.connect(lambda _i: self._apply_filter())
+        summary_row = QHBoxLayout()
+        summary_row.addWidget(self.summary, stretch=1)
+        summary_row.addWidget(self.category_filter)
         self.table = ScoreTable()
         triggers = QAbstractItemView.EditTrigger
         self.table.setEditTriggers(triggers.DoubleClicked | triggers.EditKeyPressed | triggers.AnyKeyPressed)
@@ -113,7 +120,7 @@ class GradebookView(QWidget):
         self.sheet_page = QWidget()
         sheet_layout = QVBoxLayout(self.sheet_page)
         sheet_layout.setContentsMargins(0, 0, 0, 0)
-        sheet_layout.addWidget(self.summary)
+        sheet_layout.addLayout(summary_row)
         sheet_layout.addWidget(self.table, stretch=1)
 
         # --- empty states ---
@@ -368,7 +375,24 @@ class GradebookView(QWidget):
         head.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         table.resizeColumnToContents(0)
         del blocker
+        self._fill_filter()
         self.summary.setText(self._summary_text())
+
+    def _fill_filter(self) -> None:
+        """List the categories to filter by, keeping the one chosen if it's still there."""
+        chosen = self.category_filter.currentData()
+        with QSignalBlocker(self.category_filter):
+            self.category_filter.clear()
+            self.category_filter.addItem("All categories", None)
+            for category in self.sheet.categories:
+                self.category_filter.addItem(category.name, category.id)
+            self.category_filter.setCurrentIndex(max(0, self.category_filter.findData(chosen)))
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        chosen = self.category_filter.currentData()
+        for col, assignment in enumerate(self.sheet.assignments if self.sheet else [], start=1):
+            self.table.setColumnHidden(col, chosen is not None and assignment.category_id != chosen)
 
     def _score_text(self, assignment_id: int, student_id: int) -> str:
         sheet = self.sheet

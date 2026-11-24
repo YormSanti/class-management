@@ -417,3 +417,21 @@ def test_empty_cells_of_an_assignment_can_be_filled(window: MainWindow, roster: 
     assert not view.header_menu(1).actions()[1].isEnabled()  # nothing left to fill
     view.undo()
     assert view.table.item(1, 1).text() == ""
+
+
+def test_assignments_can_be_filtered_by_category(window: MainWindow, roster: RosterService):
+    from app.models import Assignment, Category
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    quizzes = view.grades.save_category(Category(maths, "Quizzes", 20)).id
+    view.grades.save_assignment(Assignment(maths, quizzes, "Quiz 1", 5))
+    view.refresh()
+    combo = view.category_filter
+    assert [combo.itemText(i) for i in range(combo.count())] == ["All categories", "Tests", "Quizzes"]
+    combo.setCurrentIndex(2)
+    assert [view.table.isColumnHidden(c) for c in range(5)] == [False, True, True, False, False]
+    view.refresh()  # the choice is kept
+    assert combo.currentText() == "Quizzes" and view.table.isColumnHidden(1)
+    combo.setCurrentIndex(0)
+    assert not any(view.table.isColumnHidden(c) for c in range(5))
