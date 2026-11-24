@@ -106,12 +106,13 @@ class ClassRepository:
         return {r["class_id"]: r["n"] for r in rows}
 
     def totals(self) -> dict[str, int]:
-        """How much the whole data file holds: {"classes", "students", "attendance": count}."""
+        """How much the whole data file holds: {"classes", "students", "attendance", "scores": count}."""
         row = self.conn.execute(
             """
             SELECT (SELECT count(*) FROM classes) AS classes,
                    (SELECT count(*) FROM students) AS students,
-                   (SELECT count(*) FROM attendance) AS attendance
+                   (SELECT count(*) FROM attendance) AS attendance,
+                   (SELECT count(*) FROM scores WHERE score IS NOT NULL) AS scores
             """
         ).fetchone()
         return dict(row)

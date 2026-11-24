@@ -90,6 +90,19 @@ def test_describe_data(roster: RosterService, class_id: int):
     assert roster.describe_data() == "1 class · 2 students · 0 attendance marks"
 
 
+def test_describe_data_counts_scores_once_there_are_any(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    subject = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    category = conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject,)).lastrowid
+    quiz = conn.execute(
+        "INSERT INTO assignments (subject_id, category_id, title, max_score) VALUES (?, ?, 'Quiz', 10)", (subject, category)
+    ).lastrowid
+    conn.execute("INSERT INTO scores (assignment_id, student_id, score) VALUES (?, ?, NULL)", (quiz, ada.id))
+    assert roster.describe_data() == "1 class · 1 student · 0 attendance marks"  # an exemption isn't a score
+    conn.execute("UPDATE scores SET score = 8")
+    assert roster.describe_data() == "1 class · 1 student · 0 attendance marks · 1 score"
+
+
 @pytest.mark.parametrize("typed", ["me", "Me", " myself ", "You"])
 def test_a_subject_taught_by_me_is_taught_by_the_user(roster: RosterService, class_id: int, typed: str):
     subject = roster.save_subject(Subject(class_id=class_id, name="Maths", teacher=typed))
