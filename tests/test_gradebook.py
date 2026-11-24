@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from app.models import Assignment, Category, SchoolClass, Subject
+from app.models import Assignment, Category, SchoolClass, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.services.roster import RosterService
 
@@ -77,3 +77,33 @@ def test_category_in_use_cannot_be_deleted(repo: GradebookRepository, subject_id
         repo.delete_category(tests.id)
     repo.delete_assignment(test.id)
     repo.delete_category(tests.id)
+
+
+def test_scores_are_entered_replaced_exempted_and_cleared(
+    repo: GradebookRepository, roster: RosterService, subject_id: int
+):
+    class_id = roster.get_subject(subject_id).class_id
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    tests = repo.add_category(Category(subject_id, "Tests", 50))
+    test = repo.add_assignment(Assignment(subject_id, tests.id, "Test 1", 10)).id
+    repo.save_score(test, ada, 7)
+    repo.save_score(test, ada, 8.5)
+    assert repo.scores(subject_id) == {(test, ada): 8.5}
+    repo.save_score(test, ada, None)
+    assert repo.scores(subject_id) == {(test, ada): None}
+    assert repo.score_count(test) == 1
+    repo.clear_score(test, ada)
+    assert repo.scores(subject_id) == {}
+
+
+def test_deleting_an_assignment_deletes_its_scores(
+    repo: GradebookRepository, roster: RosterService, subject_id: int
+):
+    class_id = roster.get_subject(subject_id).class_id
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    tests = repo.add_category(Category(subject_id, "Tests", 50))
+    test = repo.add_assignment(Assignment(subject_id, tests.id, "Test 1", 10)).id
+    repo.save_score(test, ada, 7)
+    repo.delete_assignment(test)
+    assert repo.scores(subject_id) == {}
+    assert roster.can_delete_student(ada)

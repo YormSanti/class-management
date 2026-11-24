@@ -118,3 +118,42 @@ class GradebookRepository:
             (subject_id,),
         )
         return {r["category_id"]: r["n"] for r in rows}
+
+    # --- scores --------------------------------------------------------------
+
+    def save_score(self, assignment_id: int, student_id: int, score: float | None) -> None:
+        """Enter or replace a student's score; None marks them exempt."""
+        with transaction(self.conn):
+            self.conn.execute(
+                """
+                INSERT INTO scores (assignment_id, student_id, score) VALUES (?, ?, ?)
+                ON CONFLICT (assignment_id, student_id) DO UPDATE SET score = excluded.score
+                """,
+                (assignment_id, student_id, score),
+            )
+
+    def clear_score(self, assignment_id: int, student_id: int) -> None:
+        """Forget a student's score, as if nothing had been entered."""
+        with transaction(self.conn):
+            self.conn.execute(
+                "DELETE FROM scores WHERE assignment_id = ? AND student_id = ?", (assignment_id, student_id)
+            )
+
+    def scores(self, subject_id: int) -> dict[tuple[int, int], float | None]:
+        """{(assignment id, student id): score} of every score entered in the subject,
+        None for an exempt student."""
+        rows = self.conn.execute(
+            """
+            SELECT sc.assignment_id, sc.student_id, sc.score FROM scores sc
+            JOIN assignments a ON a.id = sc.assignment_id
+            WHERE a.subject_id = ?
+            """,
+            (subject_id,),
+        )
+        return {(r["assignment_id"], r["student_id"]): r["score"] for r in rows}
+
+    def score_count(self, assignment_id: int) -> int:
+        """How many scores (exemptions included) were entered for the assignment."""
+        return self.conn.execute(
+            "SELECT count(*) FROM scores WHERE assignment_id = ?", (assignment_id,)
+        ).fetchone()[0]
