@@ -35,6 +35,7 @@ from app.ui.dialogs.categories_dialog import CategoriesDialog
 ASSIGNMENT_ID = Qt.ItemDataRole.UserRole  # on header items
 STUDENT_ID = Qt.ItemDataRole.UserRole  # on name items
 EXEMPT_TEXT = "ex"
+UNDO_LIMIT = 50
 
 
 def percent_text(value: float | None) -> str:
@@ -72,6 +73,9 @@ class GradebookView(QWidget):
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self.sheet: GradeSheet | None = None
+        # Each change is a list of (assignment id, student id, text before, text after).
+        self._undo: list[list[tuple[int, int, str, str]]] = []
+        self._redo: list[list[tuple[int, int, str, str]]] = []
 
         self.title = style.label("Gradebook", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -146,6 +150,13 @@ class GradebookView(QWidget):
         copy = QShortcut(QKeySequence.StandardKey.Copy, self.table)
         copy.setContext(Qt.ShortcutContext.WidgetShortcut)
         copy.activated.connect(lambda: QApplication.clipboard().setText(self.selection_text()))
+        undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a score being typed keeps its own undo
+        undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        undo.activated.connect(self.undo)
+        for keys in ("Ctrl+Y", "Ctrl+Shift+Z"):  # named: on Windows StandardKey.Redo is Ctrl+Y too
+            redo = QShortcut(QKeySequence(keys), self)
+            redo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            redo.activated.connect(self.redo)
         new = QShortcut(QKeySequence.StandardKey.New, self)
         new.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         new.activated.connect(lambda: self.new_button.isEnabled() and self.new_assignment())
@@ -156,8 +167,11 @@ class GradebookView(QWidget):
     def set_class(self, class_id: int | None) -> None:
         self.class_id = class_id
         self.subject_id = None  # MainWindow picks the subject next
+        self.clear_undo()
 
     def set_subject(self, subject_id: int | None) -> None:
+        if subject_id != self.subject_id:
+            self.clear_undo()
         self.subject_id = subject_id
         self.refresh()
 
@@ -374,11 +388,13 @@ class GradebookView(QWidget):
         assignment_id, student_id = self.assignment_at(item.column()), self.student_at(item.row())
         if assignment_id is None or student_id is None:
             return
+        before = self._score_text(assignment_id, student_id)
         try:
             self.grades.enter_score(assignment_id, student_id, item.text())
         except GradebookError as exc:
             QMessageBox.warning(self, "Gradebook", str(exc))
         self._update_row(item.row())
+        self._remember([(assignment_id, student_id, before)])
 
     def selected_cells(self) -> list[tuple[int, int, int, int]]:
         """(row, column, assignment id, student id) of every selected score cell."""
@@ -394,9 +410,11 @@ class GradebookView(QWidget):
         cells = [c for c in self.selected_cells() if self.table.item(c[0], c[1]).text()]
         if not cells:
             return
+        before = [(a, s, self._score_text(a, s)) for _r, _c, a, s in cells]
         self.grades.enter_scores([(a, s, "") for _r, _c, a, s in cells])
         for row in sorted({c[0] for c in cells}):
             self._update_row(row)
+        self._remember(before)
 
     def selection_text(self) -> str:
         """The selected cells as tab-separated lines for a spreadsheet. With the names in
@@ -440,6 +458,7 @@ class GradebookView(QWidget):
                     continue
                 entries.append((assignment_id, self.student_at(row), value))
                 cells.add(row)
+        before = [(a, s, self._score_text(a, s)) for a, s, _text in entries]
         try:
             self.grades.enter_scores(entries)
         except GradebookError as exc:
@@ -447,12 +466,49 @@ class GradebookView(QWidget):
             return
         for row in sorted(cells):
             self._update_row(row)
+        self._remember(before)
         if left_out:
             QMessageBox.information(
                 self, "Paste scores",
                 f"{left_out} value{'' if left_out == 1 else 's'} didn't fit in the gradebook and "
                 f"{'was' if left_out == 1 else 'were'} left out. Start the paste further up or left.",
             )  # fmt: skip
+
+    # --- undo ----------------------------------------------------------------
+
+    def _remember(self, before: list[tuple[int, int, str]]) -> None:
+        """Keep a change for Ctrl+Z: each cell's text before it and as now saved."""
+        change = [(a, s, old, self._score_text(a, s)) for a, s, old in before]
+        change = [c for c in change if c[2] != c[3]]
+        if change:
+            self._undo = (self._undo + [change])[-UNDO_LIMIT:]
+            self._redo.clear()
+
+    def clear_undo(self) -> None:
+        self._undo.clear()
+        self._redo.clear()
+
+    def undo(self) -> None:
+        self._step(self._undo, self._redo, back=True)
+
+    def redo(self) -> None:
+        self._step(self._redo, self._undo, back=False)
+
+    def _step(self, source: list, target: list, back: bool) -> None:
+        if not source or self.sheet is None:
+            return
+        change = source.pop()
+        try:
+            self.grades.enter_scores([(a, s, old if back else new) for a, s, old, new in change])
+        except GradebookError as exc:  # e.g. the assignment was deleted since
+            QMessageBox.warning(self, "Undo" if back else "Redo", str(exc))
+            self.clear_undo()
+            return
+        target.append(change)
+        self.refresh()
+        what = "Undid" if back else "Redid"
+        n = len(change)
+        self.summary.setText(f"{what} {n} score{'' if n == 1 else 's'} · " + self._summary_text())
 
     def _update_row(self, row: int) -> None:
         """Show a student's scores and average as saved, after a change."""

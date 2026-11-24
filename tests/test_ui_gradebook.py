@@ -328,3 +328,25 @@ def test_selected_cells_are_copied_for_a_spreadsheet(window: MainWindow, roster:
     view.table.selectAll()
     assert view.selection_text() == (
         "Student\tTest 1\tHomework\tAverage\nAda Lovelace\t8\t\t80%\nBob Smith\t\t\t—\n")
+
+
+def test_score_changes_can_be_undone_and_redone(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("8")
+    view.table.setCurrentCell(0, 1)
+    view.paste_scores("5\n6")
+    assert [view.table.item(r, 1).text() for r in range(2)] == ["5", "6"]
+    view.undo()
+    assert [view.table.item(r, 1).text() for r in range(2)] == ["8", ""]
+    assert view.summary.text().startswith("Undid 2 scores")
+    view.undo()
+    assert view.table.item(0, 1).text() == ""
+    view.undo()  # nothing more to undo
+    view.redo()
+    view.redo()
+    assert [view.table.item(r, 1).text() for r in range(2)] == ["5", "6"]
+    view.undo()
+    view.table.item(1, 2).setText("4")  # a new change forgets what was undone
+    view.redo()
+    assert view.table.item(0, 1).text() == "8"
