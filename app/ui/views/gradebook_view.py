@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -29,7 +30,7 @@ from app.services.gradebook import (
     GradeSheet,
     format_number,
 )
-from app.services.roster import RosterService
+from app.services.roster import RosterService, matches
 from app.ui import style
 from app.ui.dialogs.assignment_dialog import AssignmentDialog
 from app.ui.dialogs.categories_dialog import CategoriesDialog
@@ -103,8 +104,14 @@ class GradebookView(QWidget):
         self.category_filter = QComboBox()
         self.category_filter.setToolTip("Show the assignments of one category only")
         self.category_filter.currentIndexChanged.connect(lambda _i: self._apply_filter())
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a student (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(240)
+        self.search.textChanged.connect(lambda _t: self._apply_search())
         summary_row = QHBoxLayout()
         summary_row.addWidget(self.summary, stretch=1)
+        summary_row.addWidget(self.search)
         summary_row.addWidget(self.category_filter)
         self.table = ScoreTable()
         triggers = QAbstractItemView.EditTrigger
@@ -167,6 +174,9 @@ class GradebookView(QWidget):
             redo = QShortcut(QKeySequence(keys), self)
             redo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             redo.activated.connect(self.redo)
+        find = QShortcut(QKeySequence.StandardKey.Find, self)
+        find.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        find.activated.connect(lambda: (self.search.setFocus(), self.search.selectAll()))
         new = QShortcut(QKeySequence.StandardKey.New, self)
         new.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         new.activated.connect(lambda: self.new_button.isEnabled() and self.new_assignment())
@@ -378,6 +388,7 @@ class GradebookView(QWidget):
         table.resizeColumnToContents(0)
         del blocker
         self._fill_filter()
+        self._apply_search()
         self.summary.setText(self._summary_text())
 
     def _fill_filter(self) -> None:
@@ -390,6 +401,14 @@ class GradebookView(QWidget):
                 self.category_filter.addItem(category.name, category.id)
             self.category_filter.setCurrentIndex(max(0, self.category_filter.findData(chosen)))
         self._apply_filter()
+
+    def _apply_search(self) -> None:
+        """Hide the students whose name or number doesn't match what is typed in Find."""
+        if self.sheet is None:
+            return
+        text = self.search.text()
+        for row, student in enumerate(self.sheet.students):
+            self.table.setRowHidden(row, not matches(student, text))
 
     def _apply_filter(self) -> None:
         chosen = self.category_filter.currentData()

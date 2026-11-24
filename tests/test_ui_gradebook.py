@@ -448,3 +448,14 @@ def test_going_to_a_hidden_assignment_shows_every_category(window: MainWindow, r
     view.go_to_assignment(test)
     assert view.category_filter.currentIndex() == 0
     assert not view.table.isColumnHidden(1) and view.table.currentColumn() == 1
+
+
+def test_find_shows_only_matching_students(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.search.setText("smi")
+    assert [view.table.isRowHidden(r) for r in range(2)] == [True, False]
+    view.refresh()  # kept after reloading
+    assert view.table.isRowHidden(0)
+    view.search.clear()
+    assert not view.table.isRowHidden(0)
