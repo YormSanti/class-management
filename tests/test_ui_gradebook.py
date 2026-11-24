@@ -491,3 +491,23 @@ def test_clicking_average_ranks_students_and_student_puts_names_back(window: Mai
     assert view.by_average
     view.table.horizontalHeader().sectionClicked.emit(0)
     assert [view.table.item(r, 0).text() for r in range(2)] == ["Ada Lovelace", "Bob Smith"]
+
+
+def test_gradebook_order_is_remembered(qapp, conn, roster: RosterService, tmp_path):
+    from PySide6.QtCore import QSettings
+
+    from app.config import AppConfig
+    from app.repositories.dashboard_repo import DashboardRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.dashboard import DashboardService
+    from tests.test_ui_smoke import _attendance, _grades
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
+    first.gradebook_view.set_order(by_average=True)
+    first.close()
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.gradebook_view.by_average
+    second.close()

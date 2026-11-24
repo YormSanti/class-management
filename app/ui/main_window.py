@@ -170,6 +170,8 @@ class MainWindow(QMainWindow):
                 self.attendance_view.tabs.setCurrentIndex(tab)
             if self.settings.value("session/attendance_by_number", False, type=bool):
                 self.attendance_view.set_order(by_number=True)
+            if self.settings.value("session/gradebook_by_average", False, type=bool):
+                self.gradebook_view.set_order(by_average=True)
             tab = self._saved_id("classes_tab")  # Students or Subjects
             if tab is not None and 0 <= tab < self.classes_view.tabs.count():
                 self.classes_view.tabs.setCurrentIndex(tab)
@@ -306,6 +308,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
             self.settings.setValue("session/attendance_tab", self.attendance_view.tabs.currentIndex())
             self.settings.setValue("session/attendance_by_number", self.attendance_view.by_number)
+            self.settings.setValue("session/gradebook_by_average", self.gradebook_view.by_average)
             self.settings.setValue("session/classes_tab", self.classes_view.tabs.currentIndex())
             roster_view = self.classes_view.roster_view
             self.settings.setValue("session/roster_show_inactive", roster_view.show_inactive.isChecked())
