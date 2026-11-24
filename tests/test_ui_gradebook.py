@@ -435,3 +435,16 @@ def test_assignments_can_be_filtered_by_category(window: MainWindow, roster: Ros
     assert combo.currentText() == "Quizzes" and view.table.isColumnHidden(1)
     combo.setCurrentIndex(0)
     assert not any(view.table.isColumnHidden(c) for c in range(5))
+
+
+def test_going_to_a_hidden_assignment_shows_every_category(window: MainWindow, roster: RosterService):
+    from app.models import Category
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.grades.save_category(Category(maths, "Quizzes", 20))
+    view.refresh()
+    view.category_filter.setCurrentIndex(2)  # Quizzes: Test 1 is hidden
+    view.go_to_assignment(test)
+    assert view.category_filter.currentIndex() == 0
+    assert not view.table.isColumnHidden(1) and view.table.currentColumn() == 1
