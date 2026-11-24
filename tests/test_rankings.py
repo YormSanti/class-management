@@ -90,3 +90,34 @@ def test_subject_ranking_numbers_places_as_set(roster: RosterService, grades: Gr
 
 def test_ranking_of_a_deleted_subject_is_none(rankings: RankingService):
     assert rankings.subject_ranking(999) is None
+
+
+def test_overall_ranking_is_the_mean_of_subject_averages(
+    roster: RosterService, grades: GradebookService, rankings: RankingService
+):
+    class_id, (ada, ben, cy) = _class(roster, "Ada", "Ben", "Cy")
+    maths, maths_test = _subject(roster, grades, class_id, "Maths")
+    art, art_test = _subject(roster, grades, class_id, "Art")
+    _subject(roster, grades, class_id, "Music")  # nothing scored: not counted
+    grades.enter_scores([(maths_test, ada.id, "6"), (art_test, ada.id, "10"), (maths_test, ben.id, "9")])
+    ranking = rankings.overall_ranking(class_id)
+    assert [(r.place, r.student.first_name, r.average) for r in ranking.ranked] == [(1, "Ben", 90), (2, "Ada", 80)]
+    assert [s.first_name for s in ranking.unranked] == ["Cy"]
+    assert ranking.subjects_counted == {ada.id: 2, ben.id: 1}
+    assert ranking.subjects == 2
+
+
+def test_overall_ranking_leaves_out_inactive_students(
+    roster: RosterService, grades: GradebookService, rankings: RankingService
+):
+    class_id, (ada, ben) = _class(roster, "Ada", "Ben")
+    maths, test = _subject(roster, grades, class_id, "Maths")
+    grades.enter_scores([(test, ada.id, "6"), (test, ben.id, "9")])
+    roster.deactivate_student(ben.id)
+    assert [r.student.first_name for r in rankings.overall_ranking(class_id).ranked] == ["Ada"]
+
+
+def test_overall_ranking_of_a_class_without_subjects_is_empty(roster: RosterService, rankings: RankingService):
+    class_id, _students = _class(roster, "Ada")
+    ranking = rankings.overall_ranking(class_id)
+    assert ranking.ranked == [] and len(ranking.unranked) == 1 and ranking.subjects == 0

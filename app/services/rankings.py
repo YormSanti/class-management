@@ -41,6 +41,10 @@ class Ranking:
 
     ranked: list[RankedStudent] = field(default_factory=list)
     unranked: list[Student] = field(default_factory=list)  # nothing scored yet
+    # Overall rankings only: {student id: subjects their average is made of}, and the
+    # subjects anyone has an average in.
+    subjects_counted: dict[int, int] = field(default_factory=dict)
+    subjects: int = 0
 
 
 def make_ranking(students: list[Student], averages: dict[int, float], method: str = "competition") -> Ranking:
@@ -67,3 +71,20 @@ class RankingService:
             return None
         averages = {s.id: v for s in sheet.students if (v := sheet.average(s.id)) is not None}
         return make_ranking(sheet.students, averages, self.method)
+
+    def overall_ranking(self, class_id: int) -> Ranking:
+        """The class's active students by the mean of their subject averages, as on the
+        dashboard. A subject a student has nothing scored in is left out of their mean."""
+        per_student: dict[int, list[float]] = {}
+        subjects = 0
+        for subject in self.grades.subjects.list_for_class(class_id):
+            sheet = self.grades.sheet(subject.id)
+            averages = {s.id: v for s in sheet.students if (v := sheet.average(s.id)) is not None}
+            subjects += bool(averages)
+            for student_id, average in averages.items():
+                per_student.setdefault(student_id, []).append(average)
+        means = {sid: sum(values) / len(values) for sid, values in per_student.items()}
+        ranking = make_ranking(self.grades.students.list_for_class(class_id), means, self.method)
+        ranking.subjects_counted = {sid: len(values) for sid, values in per_student.items()}
+        ranking.subjects = subjects
+        return ranking
