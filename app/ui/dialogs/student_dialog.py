@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import replace
 
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -23,7 +23,9 @@ class StudentDialog(QDialog):
 
     `same_name`, if given, returns other students with the entered name; the
     teacher is asked before a second student with that name is saved.
-    `suggest_no`, if given, pre-fills the student number of each new student.
+    `suggest_no`, if given, pre-fills the student number of each new student, and
+    is offered as a hint when editing a student without one. `class_name` names the
+    class students are added to in the title.
 
     When adding, "Save and add another" keeps the dialog open for the next
     student. `added` lists every student saved, even if the dialog is then cancelled.
@@ -38,9 +40,13 @@ class StudentDialog(QDialog):
         *,
         same_name: Callable[[Student], list[Student]] | None = None,
         suggest_no: Callable[[], str] | None = None,
+        class_name: str = "",
     ):
         super().__init__(parent)
-        self.setWindowTitle("Edit student" if student else "Add student")
+        if student is not None:
+            self.setWindowTitle(f"Edit student · {student.full_name}")
+        else:
+            self.setWindowTitle(f"Add student to {class_name}" if class_name else "Add student")
         self.setMinimumWidth(400)
         self._save = save
         self._same_name = same_name
@@ -52,10 +58,13 @@ class StudentDialog(QDialog):
 
         self.student_no = QLineEdit((student.student_no or "") if student else self._next_no())
         self.student_no.setPlaceholderText("Optional")
+        if student is not None and not student.student_no and (free := self._next_no()):
+            self.student_no.setPlaceholderText(f"None yet; the next free one is {free}")
         self.first_name = QLineEdit(student.first_name if student else "")
         self.last_name = QLineEdit(student.last_name if student else "")
         self.notes = QPlainTextEdit(student.notes if student else "")
         self.notes.setFixedHeight(80)
+        self.notes.setPlaceholderText("e.g. allergies, glasses, who collects them; the class list can search these")
         self.active = QCheckBox("Active")
         self.active.setChecked(student.active if student else True)
 
@@ -71,6 +80,9 @@ class StudentDialog(QDialog):
                 "Save && add another", QDialogButtonBox.ButtonRole.ActionRole
             )
             self._another_button.clicked.connect(self.save_and_add_another)
+            self._another_button.setToolTip("Save this student and start on the next one (Ctrl+Enter)")
+            for keys in ("Ctrl+Return", "Ctrl+Enter"):  # the main and the number pad Enter
+                QShortcut(QKeySequence(keys), self, activated=self._another_by_key)
         self.first_name.textChanged.connect(self._update_ok)
         self.last_name.textChanged.connect(self._update_ok)
         self._update_ok()
@@ -106,13 +118,18 @@ class StudentDialog(QDialog):
         """Save this student, then clear the form for the next one."""
         if not self._save_form():
             return
-        self.status.setText(f"Added {self.saved.full_name}.")
+        so_far = f" · {len(self.added)} added so far" if len(self.added) > 1 else ""
+        self.status.setText(f"Added {self.saved.full_name}{so_far}.")
         self.status.show()
         self.student_no.setText(self._next_no())
         for field in (self.first_name, self.last_name):
             field.clear()
         self.notes.clear()
         self.first_name.setFocus()
+
+    def _another_by_key(self) -> None:
+        if self._another_button is not None and self._another_button.isEnabled():
+            self.save_and_add_another()
 
     def _save_form(self) -> bool:
         """Validate and save the form. False (with a message shown) if it wasn't saved."""

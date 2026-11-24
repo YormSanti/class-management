@@ -17,10 +17,6 @@ def _from_row(row: sqlite3.Row) -> Student:
     )
 
 
-def _escape_like(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
 class StudentRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -88,13 +84,27 @@ class StudentRepository:
         ).fetchone()
         return bool(row[0])
 
+    def recorded(self, student_id: int) -> dict[str, int]:
+        """What has_records() looks at, counted: {"attendance", "scores", "seating": count};
+        seating counts the plans the student has a seat in."""
+        row = self.conn.execute(
+            """
+            SELECT (SELECT count(*) FROM attendance WHERE student_id = :id) AS attendance,
+                   (SELECT count(*) FROM scores WHERE student_id = :id) AS scores,
+                   (SELECT count(*) FROM seats WHERE student_id = :id) AS seating
+            """,
+            {"id": student_id},
+        ).fetchone()
+        return dict(row)
+
     def get(self, student_id: int) -> Student | None:
         row = self.conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
         return _from_row(row) if row else None
 
     def find_by_student_no(self, class_id: int, student_no: str) -> Student | None:
+        """Ignoring case, so "s007" and "S007" count as the same number."""
         row = self.conn.execute(
-            "SELECT * FROM students WHERE class_id = ? AND student_no = ?",
+            "SELECT * FROM students WHERE class_id = ? AND student_no = ? COLLATE NOCASE",
             (class_id, student_no),
         ).fetchone()
         return _from_row(row) if row else None
@@ -111,28 +121,10 @@ class StudentRepository:
         )
         return [_from_row(r) for r in rows]
 
-    def list_for_class(
-        self, class_id: int, search: str = "", include_inactive: bool = False
-    ) -> list[Student]:
-        """Students in a class sorted by name, optionally filtered by a search term.
-
-        The search matches student number, first name, last name, "first last",
-        "last first" or "last, first".
-        """
+    def list_for_class(self, class_id: int, include_inactive: bool = False) -> list[Student]:
+        """Students in a class sorted by name (the roster service does the searching)."""
         sql = "SELECT * FROM students WHERE class_id = ?"
-        params: list[object] = [class_id]
         if not include_inactive:
             sql += " AND active = 1"
-        if search:
-            pattern = f"%{_escape_like(search)}%"
-            sql += """
-                AND (student_no LIKE ? ESCAPE '\\'
-                     OR first_name LIKE ? ESCAPE '\\'
-                     OR last_name LIKE ? ESCAPE '\\'
-                     OR first_name || ' ' || last_name LIKE ? ESCAPE '\\'
-                     OR last_name || ' ' || first_name LIKE ? ESCAPE '\\'
-                     OR last_name || ', ' || first_name LIKE ? ESCAPE '\\')
-            """
-            params += [pattern] * 6
         sql += " ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE, id"
-        return [_from_row(r) for r in self.conn.execute(sql, params)]
+        return [_from_row(r) for r in self.conn.execute(sql, (class_id,))]

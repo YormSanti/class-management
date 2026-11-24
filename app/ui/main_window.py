@@ -1,12 +1,13 @@
 import sqlite3
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QInputDialog,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -20,9 +21,9 @@ from PySide6.QtWidgets import (
 from app import __version__
 from app.config import LOG_FILENAME, AppConfig, settings_dir
 from app.services.attendance import AttendanceService
-from app.services.backup import copy_database
+from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
-from app.services.roster import RosterError, RosterService
+from app.services.roster import RosterError, RosterService, sister_class_name
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.shortcuts_dialog import ShortcutsDialog
@@ -77,20 +78,26 @@ class MainWindow(QMainWindow):
         self.dashboard_view.history_requested.connect(self.show_attendance_history)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
-        self.settings_view = SettingsView(config, save_config, restore_backup)
+        self.attendance_view.navigate_requested.connect(self.show_page)
+        self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
         self.settings_view.back_up_requested.connect(self.back_up_now)
         self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
+        self.classes_view.roster_view.history_requested.connect(self.show_attendance_history)
+        self.classes_view.roster_view.class_requested.connect(self.select_class)
         self.classes_view.class_selected.connect(self.select_class)
         self.classes_view.subject_selected.connect(self.select_subject)
         self.classes_view.new_class_requested.connect(lambda term: self.new_class(term))
         self.classes_view.new_year_requested.connect(self.start_new_year)
+        self.classes_view.rename_year_requested.connect(self.rename_year)
         self.classes_view.edit_class_requested.connect(self.edit_class)
         self.classes_view.delete_class_requested.connect(self.delete_class)
+        self.classes_view.copy_class_requested.connect(self.copy_class)
         self.classes_view.new_subject_requested.connect(self.new_subject)
+        self.classes_view.copy_subjects_requested.connect(self.copy_subjects)
         self.classes_view.edit_subject_requested.connect(self.edit_subject)
         self.classes_view.delete_subject_requested.connect(self.delete_subject)
         self.pages: list[tuple[str, QWidget]] = [
@@ -152,6 +159,22 @@ class MainWindow(QMainWindow):
             self.select_subject(saved_subject)
         if self.settings is not None:
             self.show_page(str(self.settings.value("session/page", "")))  # last session's page
+            tab = self._saved_id("attendance_tab")  # Day or Month
+            if tab is not None and 0 <= tab < self.attendance_view.tabs.count():
+                self.attendance_view.tabs.setCurrentIndex(tab)
+            if self.settings.value("session/attendance_by_number", False, type=bool):
+                self.attendance_view.set_order(by_number=True)
+            tab = self._saved_id("classes_tab")  # Students or Subjects
+            if tab is not None and 0 <= tab < self.classes_view.tabs.count():
+                self.classes_view.tabs.setCurrentIndex(tab)
+            if self.settings.value("session/roster_show_inactive", False, type=bool):
+                self.classes_view.roster_view.show_inactive.setChecked(True)
+            sort = str(self.settings.value("session/roster_sort", ""))  # e.g. "0 asc"
+            column, _, order = sort.partition(" ")
+            if column.isdigit() and int(column) < self.classes_view.roster_view.model.columnCount():
+                direction = Qt.SortOrder.DescendingOrder if order == "desc" else Qt.SortOrder.AscendingOrder
+                self.classes_view.roster_view.table.sortByColumn(int(column), direction)
+        self._remind_to_back_up()
 
     # --- menus ---------------------------------------------------------------
 
@@ -179,8 +202,9 @@ class MainWindow(QMainWindow):
         """Save a copy of the database wherever the teacher likes, e.g. a USB stick."""
         saved = str(self.settings.value("backup/folder", "")) if self.settings is not None else ""
         folder = Path(saved) if saved and Path(saved).is_dir() else Path.home()
-        # Not "classroom_…": that prefix marks automatic backups, which get pruned.
-        name = f"Classroom backup {date.today().isoformat()}"
+        # Not "classroom_…": that prefix marks automatic backups, which get pruned. The time
+        # keeps a second backup of the day from replacing the first one on the same stick.
+        name = f"Classroom backup {datetime.now():%Y-%m-%d %H-%M}"
         dest = ask_save_path(self, "Back up now", name, "Classroom Manager backups", ".db", folder)
         if dest is None:
             return
@@ -194,7 +218,21 @@ class MainWindow(QMainWindow):
             return
         if self.settings is not None:
             self.settings.setValue("backup/folder", str(dest.parent))  # e.g. the USB stick, next time
+            self.settings.setValue("backup/last", datetime.now().isoformat(timespec="seconds"))
         self.statusBar().showMessage(f"Backup saved to {dest}", 10_000)
+
+    def _remind_to_back_up(self, now: datetime | None = None) -> None:
+        """Suggest Back up now in the status bar if no copy was saved elsewhere lately."""
+        if self.settings is None or not self.roster.list_classes():
+            return  # nothing worth saving yet
+        try:
+            last = datetime.fromisoformat(str(self.settings.value("backup/last", "")))
+        except ValueError:
+            last = None
+        if reminder := manual_backup_reminder(last, now or datetime.now()):
+            self.statusBar().showMessage(
+                f"{reminder} Save a copy, e.g. on a USB stick: File → Back up now (Ctrl+Shift+B)."
+            )
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
@@ -235,7 +273,7 @@ class MainWindow(QMainWindow):
             self.splitter.restoreState(splitter)
 
     def _saved_id(self, key: str) -> int | None:
-        """A class or subject id saved last session, if any."""
+        """A number (e.g. a class or subject id) saved last session, if any."""
         value = self.settings.value(f"session/{key}") if self.settings is not None else None
         try:
             return int(value) if value not in (None, "") else None
@@ -252,6 +290,13 @@ class MainWindow(QMainWindow):
             self.settings.setValue("window/geometry", self.saveGeometry())
             self.settings.setValue("window/splitter", self.splitter.saveState())
             self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
+            self.settings.setValue("session/attendance_tab", self.attendance_view.tabs.currentIndex())
+            self.settings.setValue("session/attendance_by_number", self.attendance_view.by_number)
+            self.settings.setValue("session/classes_tab", self.classes_view.tabs.currentIndex())
+            roster_view = self.classes_view.roster_view
+            self.settings.setValue("session/roster_show_inactive", roster_view.show_inactive.isChecked())
+            order = "desc" if roster_view.proxy.sortOrder() == Qt.SortOrder.DescendingOrder else "asc"
+            self.settings.setValue("session/roster_sort", f"{roster_view.proxy.sortColumn()} {order}")
             self.settings.sync()
         super().closeEvent(event)
 
@@ -333,6 +378,23 @@ class MainWindow(QMainWindow):
         if dialog.exec() and dialog.created:
             self.select_class(dialog.created[0].id)
 
+    def rename_year(self, term: str) -> None:
+        """Ask for a new name for school year `term` and give it to every class in it."""
+        count = len(self.roster.list_classes(term))
+        what = f"the {count} class{'' if count == 1 else 'es'} of {term}" if term else "the classes without a school year"
+        new, ok = QInputDialog.getText(self, "Rename school year", f"New school year for {what}:", text=term)
+        if not ok:
+            return
+        try:
+            changed = self.roster.rename_term(term, new)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Rename school year", str(exc))
+            return
+        if changed:
+            if self.classes_view.year == term:
+                self.classes_view.year = " ".join(new.split())  # keep showing the renamed year
+            self.select_class(self.class_id)
+
     def edit_class(self) -> None:
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
@@ -342,6 +404,28 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec():
             self.select_class(school_class.id)
+
+    def copy_class(self) -> None:
+        """Ask for a name, then set up a class like the current one in the same school year."""
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if school_class is None:
+            return
+        n = len(self.roster.list_subjects(school_class.id))
+        name, ok = QInputDialog.getText(
+            self,
+            "Copy class",
+            f"Name of the new class, which gets the {n} subject{'' if n == 1 else 's'} of "
+            f"{school_class.display_name} but no students:",
+            text=sister_class_name(school_class.name),
+        )
+        if not ok:
+            return
+        try:
+            new_class = self.roster.copy_class(school_class.id, name)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Copy class", str(exc))
+            return
+        self.select_class(new_class.id)
 
     def delete_class(self) -> None:
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
@@ -364,7 +448,8 @@ class MainWindow(QMainWindow):
         except RosterError as exc:
             QMessageBox.information(self, "Delete class", str(exc))
             return
-        self.select_class()
+        same_year = self.roster.list_classes(school_class.term)  # stay in the year being tidied up
+        self.select_class(same_year[0].id if same_year else None)
 
     # --- subjects ------------------------------------------------------------
 
@@ -402,6 +487,39 @@ class MainWindow(QMainWindow):
         if dialog.exec() and dialog.saved:
             self.select_subject(dialog.saved.id)
 
+    def copy_subjects(self) -> None:
+        """Ask which class to copy subjects from, then add the ones this class lacks."""
+        if self.class_id is None:
+            return
+        counts = self.roster.class_counts()
+        order = {term: i for i, term in enumerate(self.roster.list_terms())}  # newest year first
+        sources = sorted(
+            (c for c in self.roster.list_classes() if c.id != self.class_id and counts.get(c.id, (0, 0))[1]),
+            key=lambda c: order.get(c.term, len(order)),
+        )
+        if not sources:
+            QMessageBox.information(self, "Copy subjects", "No other class has subjects yet.")
+            return
+        names = [f"{c.display_name} · {counts[c.id][1]} subject{'' if counts[c.id][1] == 1 else 's'}" for c in sources]
+        name, ok = QInputDialog.getItem(self, "Copy subjects", "Copy the subjects and teachers of:", names, 0, False)
+        if not ok:
+            return
+        source = sources[names.index(name)]
+        try:
+            added = self.roster.copy_subjects(source.id, self.class_id)
+        except RosterError as exc:
+            QMessageBox.warning(self, "Copy subjects", str(exc))
+            return
+        if not added:
+            QMessageBox.information(
+                self, "Copy subjects", f"This class already has every subject of {source.display_name}."
+            )
+            return
+        self.select_subject(added[0].id)
+        self.statusBar().showMessage(
+            f"Added {len(added)} subject{'' if len(added) == 1 else 's'} from {source.display_name}", 5_000
+        )
+
     def edit_subject(self) -> None:
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if subject is None:
@@ -416,7 +534,10 @@ class MainWindow(QMainWindow):
         subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if subject is None:
             return
-        answer = QMessageBox.question(self, "Delete subject", f"Delete the subject {subject.name}?")
+        taught = f" (taught by {subject.teacher})" if subject.teacher else ""
+        answer = QMessageBox.question(
+            self, "Delete subject", f"Delete the subject {subject.name}{taught}?\n\nThis can't be undone."
+        )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:

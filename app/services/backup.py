@@ -14,6 +14,8 @@ BEFORE_RESTORE_SUFFIX = "-before-restore"  # marks the copy of the data made jus
 TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 KEEP_AUTO_BACKUPS = 10  # the newest ones, whatever their date
 KEEP_DAILY_BACKUPS = 30  # plus the last one of each of this many days
+REQUIRED_TABLES = {"classes", "students", "attendance"}  # in the data of every version
+REMIND_AFTER_DAYS = 30  # suggest "Back up now" when no copy was saved elsewhere for this long
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +53,17 @@ def copy_database(src: Path, dest: Path) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def manual_backup_reminder(last: datetime | None, now: datetime) -> str | None:
+    """A nudge to save a copy elsewhere (automatic backups sit on the same disk as the
+    data), or None while the last manual backup is recent enough."""
+    if last is None:
+        return "Your data has never been backed up elsewhere."
+    days = (now - last).days
+    if days < REMIND_AFTER_DAYS:
+        return None
+    return f"Your data was last backed up elsewhere {days} days ago."
 
 
 def list_auto_backups(backup_dir: Path) -> list[Path]:
@@ -136,17 +149,23 @@ def restore_backup(backup: Path, conn: sqlite3.Connection, db_path: Path, backup
 
     The current data is first saved as a new automatic backup, returned, so the restore
     can itself be undone. Nothing is pruned, so the backup being restored stays put.
-    Raises BackupError if the backup is damaged or from a newer version of the app.
+    Raises BackupError if the backup is damaged, from a newer version of the app or
+    not the app's data at all (e.g. another program's SQLite file).
     """
     if problems := find_problems(backup):
         raise BackupError(f"This backup is damaged and can't be restored:\n{problems[0]}")
     check = sqlite3.connect(backup.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         version = check.execute("PRAGMA user_version").fetchone()[0]
+        tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     finally:
         check.close()
     if version > SCHEMA_VERSION:
         raise BackupError("This backup was made by a newer version of the app.")
+    # Every version of the app numbers its data and has these tables; another program's
+    # SQLite file would otherwise replace the data with nothing the app can use.
+    if version < 1 or not REQUIRED_TABLES <= tables:
+        raise BackupError("This file isn't Classroom Manager data, so it can't be restored.")
 
     stamp = datetime.now().strftime(TIMESTAMP_FORMAT)
     safety = backup_dir / f"{AUTO_BACKUP_PREFIX}{stamp}{BEFORE_RESTORE_SUFFIX}.db"

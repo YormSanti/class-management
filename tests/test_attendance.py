@@ -12,8 +12,10 @@ from app.services.attendance import (
     AttendanceError,
     AttendanceService,
     RegisterRow,
+    check_day,
     day_warning,
     school_day,
+    school_days,
 )
 from app.services.roster import RosterService
 
@@ -79,6 +81,21 @@ def test_note_needs_a_status(attendance, roster, klass):
     ada = _student(roster, klass, "Ada", "Lovelace")
     with pytest.raises(AttendanceError):
         attendance.set_note(ada, DAY, "Bus late")
+
+
+def test_note_is_checked_like_a_mark(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, DAY, A)
+    other_class = roster.save_class(SchoolClass(name="8C"), "Science").id
+    science = roster.list_subjects(other_class)[0].id
+    with pytest.raises(AttendanceError, match="doesn't belong"):
+        attendance.set_note(ada, DAY, "Bus late", subject_id=science)
+
+    roster.deactivate_student(ada)
+    with pytest.raises(AttendanceError, match="inactive"):
+        attendance.set_note(ada, DAY, "Bus late")
+    roster.reactivate_student(ada)
+    assert attendance.day_register(klass, DAY).rows[0].note == ""
 
 
 def test_daily_and_subject_registers_are_separate(attendance, roster, klass):
@@ -164,9 +181,11 @@ def test_recent_counts_cover_last_30_days_of_the_same_register(attendance, roste
     attendance.mark(ada, date.fromordinal(DAY.toordinal() - 30), A)  # outside the window
     attendance.mark(ada, date.fromordinal(DAY.toordinal() - 1), A, subject_id=maths)  # other register
     attendance.mark(ada, date.fromordinal(DAY.toordinal() + 1), A)  # after the day shown
+    attendance.mark(ada, date.fromordinal(DAY.toordinal() - 2), P)
 
     row = attendance.day_register(klass, DAY).rows[0]
-    assert row.recent == {"absent": 3}
+    assert row.recent == {"absent": 3, "present": 1}
+    assert row.absent_streak == 1
     assert row.recent_text == "3 absences"
     assert row.recent_tone == "danger"
 
@@ -178,6 +197,32 @@ def test_recent_text_and_tone():
     assert row.recent_text == "1 absence · 3 late · 2 excused"
     assert row.recent_tone == "warn"
     assert RegisterRow(student, None, recent={"late": 2}).recent_tone == ""
+    row = RegisterRow(student, None, recent={"absent": 2}, absent_streak=2)
+    assert row.recent_text == "2 absences (2 in a row)"
+    assert row.recent_tone == "warn"
+    assert RegisterRow(student, None, recent={"absent": 2}, absent_streak=1).recent_text == "2 absences"
+
+
+def test_absent_streak_counts_registers_missed_in_a_row(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    days = [school_day(DAY, -n) for n in range(5, -1, -1)]  # Fri 30 Oct .. Fri 6 Nov
+    for day in days[:2]:
+        attendance.mark(ada, day, A)
+    attendance.mark(ada, days[2], P)
+    for day in days[3:5]:
+        attendance.mark(ada, day, A)
+    for day in days:
+        attendance.mark(grace, day, P)  # the register was taken every day
+
+    def streak(student_id, day=DAY):
+        return next(r for r in attendance.day_register(klass, day).rows if r.student.id == student_id).absent_streak
+
+    assert streak(ada) == 2  # not marked yet today: the run so far still shows
+    attendance.mark(ada, DAY, A)
+    assert streak(ada) == 3
+    assert streak(ada, days[2]) == 0
+    assert streak(grace) == 0
 
 
 def test_month_register_lists_weekdays_and_marked_weekends(attendance, roster, klass):
@@ -321,4 +366,138 @@ def test_note_suggestions_are_the_class_notes_newest_first(attendance, roster, k
         attendance.mark(student, day, L)
         attendance.set_note(student, day, note)
     attendance.mark(ada, date(2026, 10, 6), P)  # no note
-    assert attendance.note_suggestions(klass) == ["Bus late", "Dentist"]
+    assert attendance.note_suggestions(klass) == [
+        "Bus late", "Dentist", "Sick", "Doctor's appointment", "Family reason", "School trip"
+    ]  # then the common reasons not written yet ("bus late" is)
+
+
+def test_copy_from_daily_marks_students_away_all_day(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    alan = _student(roster, klass, "Alan", "Turing")
+    kay = _student(roster, klass, "Kay", "Mauchly")
+    maths = roster.list_subjects(klass)[0].id
+    attendance.mark(ada, DAY, A)
+    attendance.set_note(ada, DAY, "Flu")
+    attendance.mark(grace, DAY, E)
+    attendance.mark(alan, DAY, L)
+    attendance.mark(kay, DAY, A)
+    attendance.mark(kay, DAY, P, subject_id=maths)  # already marked in the lesson: kept
+
+    assert attendance.copy_from_daily(klass, DAY, maths) == 2
+    rows = {r.student.id: r for r in attendance.day_register(klass, DAY, maths).rows}
+    assert (rows[ada].status, rows[ada].note) == (A, "Flu")
+    assert rows[grace].status is E
+    assert rows[alan].status is None  # late for registration says nothing about the lesson
+    assert rows[kay].status is P
+    assert attendance.copy_from_daily(klass, DAY, maths) == 0
+
+    with pytest.raises(AttendanceError):
+        attendance.copy_from_daily(klass, DAY, None)
+
+
+def test_school_days_leave_out_weekends():
+    assert school_days(DAY, date(2026, 11, 10)) == [DAY, date(2026, 11, 9), date(2026, 11, 10)]
+    assert school_days(date(2026, 11, 7), date(2026, 11, 8)) == []
+    assert school_days(DAY, date(2026, 11, 5)) == []
+
+
+def test_mark_days_marks_each_school_day(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    maths = roster.list_subjects(klass)[0].id
+    tuesday = date(2026, 11, 10)
+    attendance.mark(ada, date(2026, 11, 9), P)
+    attendance.set_note(ada, date(2026, 11, 9), "Came in late morning")
+
+    changed = attendance.mark_days(ada, DAY, tuesday, E, " Sick note ")
+    assert changed == [DAY, tuesday]  # Monday was marked already: left alone
+    history = {r.date: r for r in attendance.student_history(ada).records}
+    assert set(history) == {DAY, date(2026, 11, 9), tuesday}  # not the weekend
+    assert (history[DAY].status, history[DAY].note) == (E, "Sick note")
+    assert history[date(2026, 11, 9)].status is P
+    assert attendance.student_history(ada, maths).records == []  # one register at a time
+
+    changed = attendance.mark_days(ada, DAY, tuesday, E, replace_marks=True)
+    assert changed == [date(2026, 11, 9)]
+    monday = attendance.student_history(ada).records[1]
+    assert (monday.status, monday.note) == (E, "Came in late morning")  # no new note: kept
+
+
+def test_mark_days_refuses_bad_periods(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    with pytest.raises(AttendanceError, match="before the first"):
+        attendance.mark_days(ada, DAY, date(2026, 11, 5), A)
+    with pytest.raises(AttendanceError, match="weekend"):
+        attendance.mark_days(ada, date(2026, 11, 7), date(2026, 11, 8), A)
+    with pytest.raises(AttendanceError, match="at most"):
+        attendance.mark_days(ada, date(2026, 9, 1), date(2026, 12, 31), A)
+    roster.deactivate_student(ada)
+    with pytest.raises(AttendanceError, match="inactive"):
+        attendance.mark_days(ada, DAY, DAY, A)
+
+
+def test_days_with_a_mistyped_year_are_refused(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    today = date(2026, 11, 6)
+    check_day(date(2027, 11, 6), today)  # a year ahead is still fine
+    with pytest.raises(AttendanceError, match="Check the year"):
+        check_day(date(2027, 11, 8), today)
+    with pytest.raises(AttendanceError, match="Check the year"):
+        check_day(date(1926, 11, 6), today)
+    with pytest.raises(AttendanceError):
+        attendance.mark(ada, date(1926, 11, 6), P)
+    with pytest.raises(AttendanceError):
+        attendance.mark_unmarked(klass, date(2126, 11, 6))
+    with pytest.raises(AttendanceError):
+        attendance.mark_days(ada, date(1999, 12, 31), DAY, P)
+    assert attendance.student_history(ada).records == []
+
+
+def test_notes_are_kept_short(attendance, roster, klass):
+    from app.services.attendance import NOTE_MAX
+
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    attendance.mark(ada, DAY, A)
+    attendance.set_note(ada, DAY, "x" * NOTE_MAX + "   ")  # spaces around don't count
+    with pytest.raises(AttendanceError, match="at most"):
+        attendance.set_note(ada, DAY, "x" * (NOTE_MAX + 1))
+    with pytest.raises(AttendanceError, match="at most"):
+        attendance.mark_days(ada, DAY, DAY, E, "x" * (NOTE_MAX + 1), replace_marks=True)
+    assert attendance.student_history(ada).records[0].note == "x" * NOTE_MAX
+
+
+def test_month_register_counts_days_not_marked(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    attendance.mark(ada, DAY, P)
+    attendance.mark(ada, date(2026, 11, 5), P)
+    attendance.mark(grace, DAY, A)
+    month = attendance.month_register(klass, 2026, 11)
+    rows = {r.student.id: r for r in month.rows}
+    assert month.unmarked(rows[ada]) == 0
+    assert month.unmarked(rows[grace]) == 1  # the 5th
+
+
+def test_history_finds_the_current_and_longest_absence_runs(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    marks = [A, A, A, P, A, A, L, A]  # oldest first, on consecutive school days
+    for n, status in enumerate(marks):
+        attendance.mark(ada, school_day(date(2026, 10, 1), n), status)
+    assert attendance.student_history(ada).absence_runs() == (1, 3)
+    attendance.mark(ada, school_day(date(2026, 10, 1), len(marks)), A)
+    attendance.mark(ada, school_day(date(2026, 10, 1), len(marks) + 1), A)
+    assert attendance.student_history(ada).absence_runs() == (3, 3)
+    attendance.mark(ada, school_day(date(2026, 10, 1), len(marks) + 2), P)
+    assert attendance.student_history(ada).absence_runs() == (0, 3)
+
+
+def test_week_progress_counts_marks_from_monday_to_friday(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    grace = _student(roster, klass, "Grace", "Hopper")
+    attendance.mark(ada, date(2026, 11, 2), P)
+    attendance.mark(grace, date(2026, 11, 2), A)
+    attendance.mark(ada, date(2026, 11, 4), L)
+    attendance.mark(ada, date(2026, 11, 9), P)  # next week
+    assert attendance.week_progress(klass, date(2026, 11, 5)) == [
+        (date(2026, 11, 2), 2), (date(2026, 11, 3), 0), (date(2026, 11, 4), 1), (date(2026, 11, 5), 0), (DAY, 0)
+    ]

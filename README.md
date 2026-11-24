@@ -32,9 +32,42 @@ Problems are logged to `classroom.log` in the settings folder (next to `config.j
 ## Keyboard
 
 **Help → Keyboard shortcuts** (F1) lists them all. The main ones: Ctrl+1 … Ctrl+7 switch
-pages, F5 reloads the page, Ctrl+Shift+B backs up. On the Attendance page, P, L, A and E
-mark the selected student and move to the next, N writes a note, H shows their history,
-Alt+← / Alt+→ change the day, Alt+Home goes to today and Ctrl+Z undoes.
+pages, F5 reloads the page, Ctrl+Shift+B backs up.
+
+On the Attendance page's Day tab:
+
+- P, L, A and E (or 1 to 4; Space for present) mark the selected student and move to the next.
+- Delete clears a mark, N writes a note (↑ ↓ go to the next note), U goes to the next student not marked yet.
+- D marks the student for several days at once, e.g. a sick note; H shows their history.
+- Ctrl+Enter marks the rest present, Ctrl+Shift+C copies the day's absences for the school office.
+- Ctrl+F finds a student, Alt+← / Alt+→ change the day, Alt+Home goes to today.
+- Ctrl+Z undoes and Ctrl+Y redoes.
+
+On the Month tab the same letters mark the selected cell, and Alt+← / Alt+→ (or Page Up /
+Page Down) change the month. Right-clicking a student on the Day tab lists what can be done.
+
+On the Manage classes page:
+
+- In the class list, Ctrl+N adds a student, Enter or F2 edits one and Delete deletes a
+  student added by mistake (one with anything recorded is deactivated instead).
+- Ctrl+V adds the students copied from a spreadsheet, a CSV file or a typed list, after a
+  preview; Ctrl+C copies the students shown. In the Add student dialog, Ctrl+Enter saves
+  and starts on the next student.
+- F2 edits the selected class or subject and Delete deletes it, while nothing is recorded
+  in it. Right-clicking a student, class or subject lists what can be done.
+
+## Classes and students
+
+A pasted list can have one student per line (`Ada Lovelace`, `Lovelace, Ada` or
+`LOVELACE Ada`, optionally after a number or a bullet) or columns separated by tabs,
+semicolons or commas: first and last name; number, first and last name; or number, first
+and last name and notes. The preview points out lines it can't read, names listed twice and
+numbers already used before anything is added.
+
+**Copy…** under Classes sets up another class of the same school year with the same
+subjects, and **Export year…** saves the students of every class of a school year in one
+CSV file, e.g. for the school office. The class list's search ignores accents, so "Jose"
+finds "José".
 
 ## Test
 

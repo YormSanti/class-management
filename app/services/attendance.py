@@ -12,12 +12,26 @@ from app.models import AttendanceRecord, AttendanceStatus, Student
 from app.repositories.attendance_repo import AttendanceRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
-from app.services.dashboard import ABSENCE_LIMIT, ATTENTION_WINDOW_DAYS, LATE_LIMIT, attendance_rate
+from app.services.dashboard import (
+    ABSENCE_LIMIT,
+    ATTENTION_WINDOW_DAYS,
+    LATE_LIMIT,
+    STREAK_LIMIT,
+    absent_streak,
+    attendance_rate,
+)
 
 PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 UNMARKED = "unmarked"
 RECENT_DAYS = ATTENTION_WINDOW_DAYS  # the same window as "Needs attention" on the dashboard
 NOTE_SUGGESTIONS = 50
+COMMON_NOTES = ("Sick", "Doctor's appointment", "Family reason", "School trip", "Bus late")
+NOTE_MAX = 200  # characters: a reason, not a report
+MAX_DAYS_AT_ONCE = 70  # school days marked in one go: about a term
+LOW_RATE = 90.0  # percent: an attendance rate under this is worth a look
+STREAK_SHOWN = STREAK_LIMIT  # absent in this many registers in a row is worth pointing out
+EARLIEST_DAY = date(2000, 1, 1)  # before this, the year was surely mistyped
+DAYS_AHEAD = 366  # marks further ahead than a year are surely a mistyped year
 
 
 class AttendanceError(ValueError):
@@ -38,6 +52,26 @@ def school_day(day: date, step: int) -> date:
     return day
 
 
+def _checked_note(note: str) -> str:
+    note = note.strip()
+    if len(note) > NOTE_MAX:
+        raise AttendanceError(f"A note can be at most {NOTE_MAX} characters; this one has {len(note)}.")
+    return note
+
+
+def school_days(start: date, end: date) -> list[date]:
+    """The weekdays from `start` to `end`, both included."""
+    days = (start + timedelta(days=n) for n in range((end - start).days + 1))
+    return [day for day in days if day.weekday() < 5]
+
+
+def check_day(day: date, today: date | None = None) -> None:
+    """Refuse a day whose year was surely mistyped: before 2000 or over a year ahead."""
+    today = today or date.today()
+    if day < EARLIEST_DAY or day > today + timedelta(days=DAYS_AHEAD):
+        raise AttendanceError(f"{day.day} {day:%B} {day.year} can't be right. Check the year.")
+
+
 def day_warning(day: date, today: date) -> str | None:
     """Why marking `day` may be a mistake: it hasn't happened yet, or it's a weekend."""
     if day > today:
@@ -55,13 +89,16 @@ class RegisterRow:
     status: AttendanceStatus | None
     note: str = ""
     recent: dict[str, int] = field(default_factory=dict)  # status -> days, in the last RECENT_DAYS
+    absent_streak: int = 0  # registers taken in a row, up to the day, in which the student was absent
+    previous: tuple[date, AttendanceStatus] | None = None  # the latest mark before the day, in RECENT_DAYS
 
     @property
     def recent_text(self) -> str:
-        """e.g. "3 absences · 1 late"; "" when the student was always present."""
+        """e.g. "3 absences (2 in a row) · 1 late"; "" when the student was always present."""
         parts = []
         if n := self.recent.get(ABSENT, 0):
-            parts.append(_plural(n, "absence"))
+            streak = f" ({self.absent_streak} in a row)" if self.absent_streak >= STREAK_SHOWN else ""
+            parts.append(_plural(n, "absence") + streak)
         if n := self.recent.get(LATE, 0):
             parts.append(f"{n} late")
         if n := self.recent.get(EXCUSED, 0):
@@ -73,7 +110,7 @@ class RegisterRow:
         """"danger" or "warn" at the dashboard's limits, otherwise ""."""
         if self.recent.get(ABSENT, 0) >= ABSENCE_LIMIT:
             return "danger"
-        if self.recent.get(LATE, 0) >= LATE_LIMIT:
+        if self.recent.get(LATE, 0) >= LATE_LIMIT or self.absent_streak >= STREAK_SHOWN:
             return "warn"
         return ""
 
@@ -130,6 +167,15 @@ class MonthRegister:
         marked = {day for row in self.rows for day in row.statuses}
         return [day for day in self.days if day in marked]
 
+    def not_taken(self, today: date) -> list[date]:
+        """School days up to `today` on which no student is marked: forgotten, or holidays."""
+        marked = set(self.recorded_days)
+        return [day for day in self.days if day <= today and day.weekday() < 5 and day not in marked]
+
+    def unmarked(self, row: MonthRow) -> int:
+        """Days the register was taken on which this student has no mark."""
+        return sum(1 for day in self.recorded_days if day not in row.statuses)
+
     def absent_on(self, day: date) -> int:
         return sum(1 for row in self.rows if row.statuses.get(day) is AttendanceStatus.ABSENT)
 
@@ -166,6 +212,25 @@ class StudentHistory:
     def not_present(self) -> list[AttendanceRecord]:
         """The days the student was absent, late or excused."""
         return [r for r in self.records if r.status is not AttendanceStatus.PRESENT]
+
+    def by_month(self) -> list[tuple[date, dict[str, int]]]:
+        """(first day of the month, {status: days}) for each month with marks, newest first."""
+        months: dict[date, dict[str, int]] = {}
+        for record in self.records:
+            counts = months.setdefault(record.date.replace(day=1), {s.value: 0 for s in AttendanceStatus})
+            counts[record.status.value] += 1
+        return sorted(months.items(), reverse=True)
+
+    def absence_runs(self) -> tuple[int, int]:
+        """(current, longest): marks in a row that are absences, the current run ending
+        with the newest mark."""
+        current = longest = run = 0
+        for n, record in enumerate(self.records):  # newest first
+            run = run + 1 if record.status is AttendanceStatus.ABSENT else 0
+            longest = max(longest, run)
+            if run == n + 1:
+                current = run
+        return current, longest
 
 
 @dataclass
@@ -205,9 +270,14 @@ class AttendanceService:
         """Every active student with their status on `day`, sorted by name."""
         self._check_subject(class_id, subject_id)
         records = {r.student_id: r for r in self.attendance.for_period(class_id, day, day, subject_id)}
-        recent = self.attendance.counts_by_student(
-            class_id, day - timedelta(days=RECENT_DAYS - 1), day, subject_id
-        )
+        window = self.attendance.for_period(class_id, day - timedelta(days=RECENT_DAYS - 1), day, subject_id)
+        recent: dict[int, dict[str, int]] = {}
+        marks: dict[int, dict[date, AttendanceStatus]] = {}
+        for r in window:
+            counts = recent.setdefault(r.student_id, {})
+            counts[r.status.value] = counts.get(r.status.value, 0) + 1
+            marks.setdefault(r.student_id, {})[r.date] = r.status
+        taken = sorted({r.date for r in window}, reverse=True)
         rows = []
         for student in self.students.list_for_class(class_id):
             record = records.get(student.id)
@@ -217,6 +287,8 @@ class AttendanceService:
                     status=record.status if record else None,
                     note=record.note if record else "",
                     recent=recent.get(student.id, {}),
+                    absent_streak=absent_streak(marks.get(student.id, {}), taken),
+                    previous=max(((d, st) for d, st in marks.get(student.id, {}).items() if d < day), default=None),
                 )
             )
         return DayRegister(class_id, day, subject_id, rows)
@@ -263,6 +335,16 @@ class AttendanceService:
             rows.append(PeriodRow(student, counts, recorded - sum(counts.values())))
         return PeriodSummary(class_id, start, end, subject_id, recorded, rows)
 
+    def week_progress(self, class_id: int, day: date, subject_id: int | None = None) -> list[tuple[date, int]]:
+        """(day, students marked) for Monday to Friday of the week of `day`."""
+        self._check_subject(class_id, subject_id)
+        monday = day - timedelta(days=day.weekday())
+        records = self.attendance.for_period(class_id, monday, monday + timedelta(days=4), subject_id)
+        marked: dict[date, int] = {}
+        for r in records:
+            marked[r.date] = marked.get(r.date, 0) + 1
+        return [(d, marked.get(d, 0)) for d in (monday + timedelta(days=n) for n in range(5))]
+
     def student_history(self, student_id: int, subject_id: int | None = None) -> StudentHistory:
         student = self.students.get(student_id)
         if student is None:
@@ -271,8 +353,11 @@ class AttendanceService:
         return StudentHistory(student, self.attendance.for_student(student_id, subject_id))
 
     def note_suggestions(self, class_id: int) -> list[str]:
-        """Notes already written in this class, newest first, to offer while typing one."""
-        return self.attendance.recent_notes(class_id, NOTE_SUGGESTIONS)
+        """Notes already written in this class, newest first, to offer while typing one,
+        then the common reasons not written yet, so a new class has some to start with."""
+        written = self.attendance.recent_notes(class_id, NOTE_SUGGESTIONS)
+        known = {note.casefold() for note in written}
+        return written + [note for note in COMMON_NOTES if note.casefold() not in known]
 
     # --- marking -------------------------------------------------------------
 
@@ -280,6 +365,7 @@ class AttendanceService:
         self, student_id: int, day: date, status: AttendanceStatus, subject_id: int | None = None
     ) -> None:
         """Set the student's status for the day, keeping any note already written."""
+        check_day(day)
         self._check_student(student_id, subject_id)
         existing = self.attendance.get(student_id, day, subject_id)
         record = (
@@ -298,10 +384,50 @@ class AttendanceService:
         self.attendance.delete(student_id, day, subject_id)
 
     def set_note(self, student_id: int, day: date, note: str, subject_id: int | None = None) -> None:
+        """Write the note of the student's mark for the day; the same checks as mark()."""
+        self._check_student(student_id, subject_id)
         existing = self.attendance.get(student_id, day, subject_id)
         if existing is None:
             raise AttendanceError("Mark the student before adding a note.")
-        self.attendance.save(replace(existing, note=note.strip()))
+        self.attendance.save(replace(existing, note=_checked_note(note)))
+
+    def mark_days(
+        self,
+        student_id: int,
+        start: date,
+        end: date,
+        status: AttendanceStatus,
+        note: str = "",
+        subject_id: int | None = None,
+        replace_marks: bool = False,
+    ) -> list[date]:
+        """Mark the student on every school day from `start` to `end`, e.g. for a sick note.
+
+        Days the student is already marked are left alone unless `replace_marks`; a
+        replaced mark keeps its note when no new one is given. Returns the days changed.
+        """
+        if end < start:
+            raise AttendanceError("The last day is before the first.")
+        check_day(start)
+        check_day(end)
+        days = school_days(start, end)
+        if not days:
+            raise AttendanceError("There are no school days between these dates, only a weekend.")
+        if len(days) > MAX_DAYS_AT_ONCE:
+            raise AttendanceError(
+                f"That is {len(days)} school days. Mark at most {MAX_DAYS_AT_ONCE} at once, about a term."
+            )
+        self._check_student(student_id, subject_id)
+        status, note = AttendanceStatus(status), _checked_note(note)
+        records = []
+        for day in days:
+            existing = self.attendance.get(student_id, day, subject_id)
+            if existing is None:
+                records.append(AttendanceRecord(student_id, day, status, note, subject_id))
+            elif replace_marks and (existing.status, existing.note) != (status, note or existing.note):
+                records.append(replace(existing, status=status, note=note or existing.note))
+        self.attendance.save_many(records)
+        return [r.date for r in records]
 
     def mark_unmarked(
         self,
@@ -311,6 +437,7 @@ class AttendanceService:
         status: AttendanceStatus = AttendanceStatus.PRESENT,
     ) -> int:
         """Give every student who is not marked yet `status`; returns how many."""
+        check_day(day)
         register = self.day_register(class_id, day, subject_id)
         records = [
             AttendanceRecord(row.student.id, day, AttendanceStatus(status), subject_id=subject_id)
@@ -319,6 +446,30 @@ class AttendanceService:
         ]
         self.attendance.save_many(records)
         return len(records)
+
+    def copy_from_daily(self, class_id: int, day: date, subject_id: int) -> int:
+        """Mark students who are away all day in this subject's register too; returns how many.
+
+        Students absent or excused in the daily register get the same status and note,
+        when they aren't marked in the subject yet. Late isn't copied: being late for
+        registration says nothing about a lesson later in the day.
+        """
+        check_day(day)
+        records = self.daily_to_copy(class_id, day, subject_id)
+        self.attendance.save_many(records)
+        return len(records)
+
+    def daily_to_copy(self, class_id: int, day: date, subject_id: int) -> list[AttendanceRecord]:
+        """The marks copy_from_daily() would add, without adding them."""
+        if subject_id is None:
+            raise AttendanceError("Pick a subject register to copy the daily register into.")
+        daily = {row.student.id: row for row in self.day_register(class_id, day).rows}
+        records = []
+        for row in self.day_register(class_id, day, subject_id).rows:
+            source = daily.get(row.student.id)
+            if row.status is None and source and source.status in (AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED):
+                records.append(AttendanceRecord(row.student.id, day, source.status, source.note, subject_id))
+        return records
 
     def clear_day(self, class_id: int, day: date, subject_id: int | None = None) -> int:
         """Remove the whole register for the day, notes included; returns how many."""

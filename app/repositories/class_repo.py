@@ -39,6 +39,27 @@ class ClassRepository:
             self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 
+    def recorded(self, class_id: int) -> dict[str, int]:
+        """How much is recorded for the class's students and subjects, i.e. what stops
+        delete() from removing it: {"attendance", "scores", "assignments", "categories",
+        "seating": count}. Seating counts its layouts and others its students sit in."""
+        row = self.conn.execute(
+            """
+            WITH st AS (SELECT id FROM students WHERE class_id = :c),
+                 sub AS (SELECT id FROM subjects WHERE class_id = :c)
+            SELECT
+              (SELECT count(*) FROM attendance WHERE student_id IN st OR subject_id IN sub) AS attendance,
+              (SELECT count(*) FROM scores WHERE student_id IN st
+                  OR assignment_id IN (SELECT id FROM assignments WHERE subject_id IN sub)) AS scores,
+              (SELECT count(*) FROM assignments WHERE subject_id IN sub) AS assignments,
+              (SELECT count(*) FROM categories WHERE subject_id IN sub) AS categories,
+              (SELECT count(*) FROM seat_layouts WHERE class_id = :c
+                  OR id IN (SELECT layout_id FROM seats WHERE student_id IN st)) AS seating
+            """,
+            {"c": class_id},
+        ).fetchone()
+        return dict(row)
+
     def get(self, class_id: int) -> SchoolClass | None:
         row = self.conn.execute("SELECT * FROM classes WHERE id = ?", (class_id,)).fetchone()
         return _from_row(row) if row else None
@@ -59,6 +80,12 @@ class ClassRepository:
         rows = self.conn.execute("SELECT DISTINCT term FROM classes WHERE term <> '' ORDER BY term DESC")
         return [r["term"] for r in rows]
 
+    def rename_term(self, old: str, new: str) -> int:
+        """Give every class of school year `old` the year `new`; returns how many changed."""
+        with transaction(self.conn):
+            cur = self.conn.execute("UPDATE classes SET term = ? WHERE term = ?", (new, old))
+        return cur.rowcount
+
     def counts(self) -> dict[int, tuple[int, int]]:
         """{class id: (active students, subjects)} for every class, in one query."""
         rows = self.conn.execute(
@@ -70,3 +97,19 @@ class ClassRepository:
             """
         )
         return {r["id"]: (r["students"], r["subjects"]) for r in rows}
+
+    def inactive_counts(self) -> dict[int, int]:
+        """{class id: inactive students}, for the classes that have any."""
+        rows = self.conn.execute("SELECT class_id, count(*) AS n FROM students WHERE active = 0 GROUP BY class_id")
+        return {r["class_id"]: r["n"] for r in rows}
+
+    def totals(self) -> dict[str, int]:
+        """How much the whole data file holds: {"classes", "students", "attendance": count}."""
+        row = self.conn.execute(
+            """
+            SELECT (SELECT count(*) FROM classes) AS classes,
+                   (SELECT count(*) FROM students) AS students,
+                   (SELECT count(*) FROM attendance) AS attendance
+            """
+        ).fetchone()
+        return dict(row)

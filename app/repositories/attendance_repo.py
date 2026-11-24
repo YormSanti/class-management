@@ -5,7 +5,6 @@ lessons. Every query takes the register explicitly, so the two never mix.
 """
 
 import sqlite3
-from collections import defaultdict
 from datetime import date
 
 from app.db.connection import transaction
@@ -109,25 +108,6 @@ class AttendanceRepository:
             (student_id, subject_id),
         )
         return [_from_row(r) for r in rows]
-
-    def counts_by_student(
-        self, class_id: int, start: date, end: date, subject_id: int | None
-    ) -> dict[int, dict[str, int]]:
-        """{student_id: {status: count}} for days in [start, end]."""
-        rows = self.conn.execute(
-            """
-            SELECT a.student_id, a.status, count(*) AS n FROM attendance a
-            JOIN students s ON s.id = a.student_id
-            WHERE s.class_id = ? AND s.active = 1 AND a.date BETWEEN ? AND ?
-              AND coalesce(a.subject_id, 0) = coalesce(?, 0)
-            GROUP BY a.student_id, a.status
-            """,
-            (class_id, start.isoformat(), end.isoformat(), subject_id),
-        )
-        result: dict[int, dict[str, int]] = defaultdict(dict)
-        for r in rows:
-            result[r["student_id"]][r["status"]] = r["n"]
-        return dict(result)
 
     def recent_notes(self, class_id: int, limit: int) -> list[str]:
         """Distinct notes written for the class's students, in any register, newest first."""

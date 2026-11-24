@@ -470,12 +470,13 @@ class DashboardView(QWidget):
             sub.setText("Nothing missing")
 
     def _show_today(self, today: date, s: DashboardSummary) -> None:
-        status = today_register(today, s.today_counts, s.active_students)
+        status = today_register(today, s.today_counts, s.active_students, s.absent_today)
         self.today_label.setVisible(status is not None)
         if status is not None:
             text, tone = status
+            text = html.escape(text, quote=False)  # names may hold < or &
             if tone == "warn":  # not finished: offer to open it
-                text = f'{html.escape(text, quote=False)} <a href="take">Take attendance now</a>'
+                text = f'{text} <a href="take">Take attendance now</a>'
             self.today_label.setText(text)
             style.set_color(self.today_label, style.color(self, tone))
 

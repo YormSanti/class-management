@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from app.models import SchoolClass
 from app.services.roster import RosterError, RosterService, example_school_year, move_up, next_term
 
-_COPY, _CLASS, _STUDENTS, _NEW_NAME = range(4)
+_COPY, _CLASS, _STUDENTS, _SUBJECTS, _NEW_NAME = range(5)
 
 
 class NewYearDialog(QDialog):
@@ -53,8 +53,8 @@ class NewYearDialog(QDialog):
         self.new_term = QLineEdit()
         self.new_term.setPlaceholderText(f"e.g. {next_term(example_school_year(date.today()))}")
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(("Copy", "Class", "Students", "New name"))
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(("Copy", "Class", "Students", "Subjects", "New name"))
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setEditTriggers(
@@ -131,9 +131,12 @@ class NewYearDialog(QDialog):
                 for col, text in (
                     (_CLASS, school_class.name),
                     (_STUDENTS, str(counts.get(school_class.id, (0, 0))[0])),
+                    (_SUBJECTS, str(counts.get(school_class.id, (0, 0))[1])),
                 ):
                     item = QTableWidgetItem(text)
                     item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                    if col == _SUBJECTS:  # these are copied, so say which
+                        item.setToolTip(", ".join(s.name for s in self.roster.list_subjects(school_class.id)))
                     self.table.setItem(row, col, item)
                 self.table.setItem(row, _NEW_NAME, QTableWidgetItem(school_class.name))
         self._update_tick_all()

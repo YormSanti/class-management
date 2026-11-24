@@ -7,13 +7,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
+    QGridLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from app.services.attendance import school_days
 from app.ui import style
 
 
@@ -23,12 +24,16 @@ def _qdate(day: date) -> QDate:
 
 def preset_periods(today: date) -> dict[str, tuple[date, date]]:
     """Common periods ending around `today`: {button text: (first day, last day)}."""
+    week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     last_month_end = month_start - timedelta(days=1)
     return {
+        "This week": (week_start, week_start + timedelta(days=4)),
+        "Last week": (week_start - timedelta(days=7), week_start - timedelta(days=3)),
+        "Last 30 days": (today - timedelta(days=29), today),
         "This month": (month_start, today.replace(day=calendar.monthrange(today.year, today.month)[1])),
         "Last month": (last_month_end.replace(day=1), last_month_end),
-        "Last 30 days": (today - timedelta(days=29), today),
+        "This year": (date(today.year, 1, 1), date(today.year, 12, 31)),
     }
 
 
@@ -53,22 +58,25 @@ class PeriodDialog(QDialog):
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export…")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export CSV…")
         self.buttons.accepted.connect(self.accept)
+        self.as_pdf = False  # the PDF button was pressed rather than the CSV one
+        self.pdf_button = self.buttons.addButton("Save PDF…", QDialogButtonBox.ButtonRole.ActionRole)
+        self.pdf_button.setAutoDefault(False)
+        self.pdf_button.clicked.connect(self._accept_pdf)
         self.buttons.rejected.connect(self.reject)
 
-        presets = QHBoxLayout()
+        presets = QGridLayout()  # three to a row
         self.preset_buttons: dict[str, QPushButton] = {}
         self._presets = preset_periods(today or date.today())
-        for text in self._presets:
+        for n, text in enumerate(self._presets):
             button = QPushButton(text)
             button.setAutoDefault(False)
             # A bound method, not a lambda holding `self`: such a cycle lets Python's garbage
             # collector delete a parentless dialog at a random moment later, crashing Qt.
             button.clicked.connect(self._use_preset)
-            presets.addWidget(button)
+            presets.addWidget(button, n // 3, n % 3)
             self.preset_buttons[text] = button
-        presets.addStretch()
 
         form = QFormLayout()
         form.addRow("&From", self.start_edit)
@@ -82,6 +90,10 @@ class PeriodDialog(QDialog):
         layout.addWidget(self.problem)
         layout.addWidget(self.buttons)
         self._update_ok()
+
+    def _accept_pdf(self) -> None:
+        self.as_pdf = True
+        self.accept()
 
     def _use_preset(self) -> None:
         self.set_period(*self._presets[self.sender().text()])
@@ -99,8 +111,13 @@ class PeriodDialog(QDialog):
         return self.end_edit.date().toPython()
 
     def _update_ok(self) -> None:
+        """Say how many school days the dates cover, or that they are the wrong way round."""
         ok = self.start <= self.end
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
-        self.problem.setText("" if ok else "The last day is before the first.")
-        self.problem.setVisible(not ok)
-        style.set_color(self.problem, style.color(self, "danger"))
+        self.pdf_button.setEnabled(ok)
+        if ok:
+            days = len(school_days(self.start, self.end))
+            self.problem.setText(f"{days} school day{'' if days == 1 else 's'}, weekends left out")
+        else:
+            self.problem.setText("The last day is before the first.")
+        style.set_color(self.problem, style.color(self, "accent" if ok else "danger"))
