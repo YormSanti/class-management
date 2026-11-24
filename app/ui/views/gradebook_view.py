@@ -273,6 +273,7 @@ class GradebookView(QWidget):
         for col, assignment in enumerate(sheet.assignments, start=1):
             item = QTableWidgetItem(f"{assignment.title}\n/ {format_number(assignment.max_score)}")
             item.setData(ASSIGNMENT_ID, assignment.id)
+            item.setToolTip(self._assignment_tip(assignment))
             table.setHorizontalHeaderItem(col, item)
         table.setHorizontalHeaderItem(self.average_column(), QTableWidgetItem("Average"))
         for row, student in enumerate(sheet.students):
@@ -302,6 +303,20 @@ class GradebookView(QWidget):
         item = QTableWidgetItem(self._score_text(assignment_id, student_id))
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         return item
+
+    def _assignment_tip(self, assignment) -> str:
+        """e.g. "Tests · 3 Oct 2026 · out of 20 / Class average 72% · 24 of 25 scores entered"."""
+        sheet = self.sheet
+        category = next((c.name for c in sheet.categories if c.id == assignment.category_id), "")
+        first = [category]
+        if assignment.date:
+            first.append(f"{assignment.date.day} {assignment.date:%b %Y}")
+        first.append(f"out of {format_number(assignment.max_score)}")
+        second = []
+        if (average := sheet.assignment_average(assignment.id)) is not None:
+            second.append(f"Class average {percent_text(average)}")
+        second.append(f"{sheet.entered(assignment.id)} of {len(sheet.students)} scores entered")
+        return " · ".join(first) + "\n" + " · ".join(second) + "\nDouble-click to edit, right-click for more"
 
     def _average_item(self, student_id: int) -> QTableWidgetItem:
         item = QTableWidgetItem(percent_text(self.sheet.average(student_id)))
@@ -341,6 +356,8 @@ class GradebookView(QWidget):
             for col, assignment in enumerate(self.sheet.assignments, start=1):
                 self.table.item(row, col).setText(self._score_text(assignment.id, student_id))
             self.table.item(row, self.average_column()).setText(percent_text(self.sheet.average(student_id)))
+            for col, assignment in enumerate(self.sheet.assignments, start=1):
+                self.table.horizontalHeaderItem(col).setToolTip(self._assignment_tip(assignment))
         self.summary.setText(self._summary_text())
 
     def _summary_text(self) -> str:

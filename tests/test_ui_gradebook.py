@@ -238,3 +238,12 @@ def test_header_menu_deletes_an_assignment_after_asking(window: MainWindow, rost
     menu.actions()[1].trigger()
     assert view.table.columnCount() == 3
     assert view.table.horizontalHeaderItem(1).text() == "Homework\n/ 5"
+
+
+def test_header_tooltip_describes_the_assignment(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    assert view.table.horizontalHeaderItem(1).toolTip().splitlines()[:2] == [
+        "Tests · out of 10", "0 of 2 scores entered"]  # fmt: skip
+    view.table.item(0, 1).setText("7")
+    assert view.table.horizontalHeaderItem(1).toolTip().splitlines()[1] == "Class average 70% · 1 of 2 scores entered"
