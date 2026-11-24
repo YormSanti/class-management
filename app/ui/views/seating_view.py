@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QTableWidget,
@@ -18,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.roster import RosterService
-from app.services.seating import SeatingPlan, SeatingService
+from app.models import SeatLayout
+from app.services.seating import SeatingError, SeatingPlan, SeatingService
 from app.ui import style
 from app.ui.dialogs.layout_dialog import LayoutDialog
 
@@ -50,10 +52,18 @@ class SeatingView(QWidget):
         self.new_button = QPushButton("&New plan…")
         self.new_button.setObjectName("Primary")
         self.new_button.clicked.connect(self.new_layout)
+        self.edit_button = QPushButton("&Edit…")
+        self.edit_button.setToolTip("Rename the plan or change the rows and seats of the room")
+        self.edit_button.clicked.connect(self.edit_layout)
+        self.delete_button = QPushButton("&Delete")
+        self.delete_button.setToolTip("Delete the plan shown")
+        self.delete_button.clicked.connect(self.delete_layout)
         header = QHBoxLayout()
         header.addLayout(titles, stretch=1)
         header.addWidget(plan_label, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.layout_combo, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.edit_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.delete_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.new_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         # --- the room ---
@@ -139,7 +149,8 @@ class SeatingView(QWidget):
             for x in layouts:
                 self.layout_combo.addItem(f"{x.name} ({x.rows} × {x.cols})", x.id)
             self.layout_combo.setCurrentIndex(self.layout_combo.findData(self.layout_id))
-        self.layout_combo.setEnabled(bool(layouts))
+        for widget in (self.layout_combo, self.edit_button, self.delete_button):
+            widget.setEnabled(bool(layouts))
         self.new_button.setEnabled(self.class_id is not None)
         self.plan = self.seating.plan(self.layout_id) if self.layout_id is not None else None
         if self.class_id is None:
@@ -172,6 +183,39 @@ class SeatingView(QWidget):
         dialog = LayoutDialog(self.seating.save_layout, self.class_id, parent=self, default_name=name)
         if dialog.exec() and dialog.saved:
             self.layout_id = dialog.saved.id
+            self.refresh()
+
+    def edit_layout(self) -> None:
+        if self.plan is None:
+            return
+        dialog = LayoutDialog(self._save_resized, self.class_id, self.plan.layout, parent=self)
+        if dialog.exec():
+            self.refresh()
+
+    def _save_resized(self, layout: SeatLayout) -> SeatLayout:
+        """Save an edited layout, after asking if the smaller room leaves students without a seat."""
+        losing = self.seating.seated_outside(layout.id, layout.rows, layout.cols)
+        if losing:
+            names = ", ".join(s.full_name for s in losing)
+            answer = QMessageBox.question(
+                self,
+                "Edit seating plan",
+                f"The smaller room has no seat for {names}. Make it smaller anyway? "
+                "They will be listed under Not seated.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                raise SeatingError("Choose more rows or seats, or Cancel to keep the room as it is.")
+        return self.seating.save_layout(layout)
+
+    def delete_layout(self) -> None:
+        if self.plan is None:
+            return
+        answer = QMessageBox.question(
+            self, "Delete seating plan", f"Delete the seating plan {self.plan.layout.name}?\n\nThis can't be undone."
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.seating.delete_layout(self.plan.layout.id)
+            self.layout_id = None
             self.refresh()
 
     # --- the room --------------------------------------------------------------

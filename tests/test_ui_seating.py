@@ -83,3 +83,56 @@ def test_seating_lists_the_class_plans(window: MainWindow, roster: RosterService
     assert view.layout_id == layout  # still the plan shown
     view.layout_combo.setCurrentIndex(0)
     assert (view.grid.rowCount(), view.grid.columnCount()) == (3, 4)
+
+
+def test_shrinking_the_room_asks_before_unseating_students(window: MainWindow, roster: RosterService, monkeypatch):
+    from dataclasses import replace
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services.seating import SeatingError
+    from app.ui.views import seating_view
+
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Bob"], 1, 2)
+    view.refresh()
+    asked, answers = [], [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes]
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: asked.append(a[2]) or answers.pop(0))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    results = []
+
+    class FakeDialog:
+        def __init__(self, save, class_id, layout=None, parent=None, default_name=""):
+            try:
+                self.saved = save(replace(layout, rows=1))
+                results.append("saved")
+            except SeatingError:
+                results.append("kept")
+
+        def exec(self):
+            return results[-1] == "saved"
+
+    monkeypatch.setattr(seating_view, "LayoutDialog", FakeDialog)
+    view.edit_button.click()
+    assert results == ["kept"] and "no seat for Bob Smith" in asked[0]
+    assert view.grid.rowCount() == 2
+    view.edit_button.click()
+    assert results == ["kept", "saved"]
+    assert view.grid.rowCount() == 1
+    assert "Bob Smith" in _unseated(window)
+
+
+def test_a_plan_is_deleted_after_asking(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    class_id, layout, _ids = _seated_class(window, roster)
+    view = window.seating_view
+    answers = [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes]
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: answers.pop(0))
+    view.delete_button.click()
+    assert view.layout_id == layout
+    view.delete_button.click()
+    assert view.seating.list_layouts(class_id) == []
+    assert "No seating plan yet" in view.empty_label.text()
+    assert not view.edit_button.isEnabled() and not view.delete_button.isEnabled()
