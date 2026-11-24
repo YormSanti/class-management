@@ -163,7 +163,22 @@ def test_needs_attention_uses_most_serious_reason(service, roster, conn, class_i
 
     items = service.summary(class_id, TODAY).attention
     assert [(i.student.first_name, i.kind) for i in items] == [("Maya", "absent"), ("Jonas", "late")]
-    assert items[0].reason == "3 absences in 30 days"
+    assert items[0].reason == "3 absences in 30 days, the last 3 in a row"
+
+
+def test_needs_attention_points_out_a_run_of_absences(service, roster, conn, class_id):
+    kim = _student(roster, class_id, "Kim", "Lee")
+    other = _student(roster, class_id, "Other", "Student")
+    days = [TODAY - timedelta(days=n) for n in (0, 1, 2)]  # Fri, Thu, Wed
+    for day in days:
+        _mark(conn, other, day, "present")
+    _mark(conn, kim, days[2], "present")
+    _mark(conn, kim, days[1], "absent")
+    _mark(conn, kim, days[0], "absent")
+    items = service.summary(class_id, TODAY).attention
+    assert [(i.student.first_name, i.kind, i.reason) for i in items] == [
+        ("Kim", "absent", "Absent the last 2 registers in a row")
+    ]
 
 
 def test_inactive_students_are_left_out(service, roster, conn, class_id, maths):
@@ -259,6 +274,19 @@ def test_today_register_status():
     assert today_register(friday, {"present": 23, "absent": 1, "late": 1}, 25) == (
         "Today's register is done: 23 present · 1 late · 1 absent.", "accent",
     )
+    assert today_register(friday, {"present": 23, "absent": 2}, 25, ["Ada Lovelace", "Kim Lee"])[0] == (
+        "Today's register is done: 23 present · 2 absent (Ada Lovelace, Kim Lee)."
+    )
+    many = [f"S{n}" for n in range(6)]
+    assert today_register(friday, {"present": 19, "absent": 6}, 25, many)[0].endswith("6 absent.")
+
+
+def test_summary_names_who_is_absent_today(service, roster, conn, class_id):
+    ada = _student(roster, class_id, "Ada", "Lovelace")
+    kim = _student(roster, class_id, "Kim", "Adams")
+    _mark(conn, ada, TODAY, "absent")
+    _mark(conn, kim, TODAY - timedelta(days=1), "absent")
+    assert service.summary(class_id, TODAY).absent_today == ["Ada Lovelace"]
 
 
 def test_summary_has_todays_daily_register(service, roster, conn, class_id, maths):

@@ -1,5 +1,5 @@
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QTableWidget,
@@ -15,7 +17,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.export import write_year_roster_csv
 from app.services.roster import RosterService
+from app.ui.files import ask_save_path
 from app.ui.views.roster_view import RosterView
 
 ALL_YEARS = "\0all"  # year-filter value meaning "show every school year"
@@ -57,9 +61,12 @@ class ClassesView(QWidget):
     subject_selected = Signal(int)
     new_class_requested = Signal(str)  # school year to suggest for the new class
     new_year_requested = Signal(str)  # school year to copy classes from
+    rename_year_requested = Signal(str)  # school year to rename ("" = classes without one)
     edit_class_requested = Signal()
+    copy_class_requested = Signal()
     delete_class_requested = Signal()
     new_subject_requested = Signal()
+    copy_subjects_requested = Signal()
     edit_subject_requested = Signal()
     delete_subject_requested = Signal()
 
@@ -83,6 +90,14 @@ class ClassesView(QWidget):
         self.new_year_button.clicked.connect(
             lambda: self.new_year_requested.emit("" if self.year == ALL_YEARS else self.year or "")
         )
+        self.rename_year_button = QPushButton("Rename year…")
+        self.rename_year_button.setToolTip("Change the school year of every class in it, e.g. to fix a typo")
+        self.rename_year_button.clicked.connect(self._rename_year)
+        self.export_year_button = QPushButton("Export year…")
+        self.export_year_button.setToolTip("Save the students of every class shown in one CSV file, e.g. for the office")
+        self.export_year_button.clicked.connect(self.export_year)
+        year_row.addWidget(self.export_year_button)
+        year_row.addWidget(self.rename_year_button)
         year_row.addWidget(self.new_year_button)
 
         # --- classes ---
@@ -91,6 +106,8 @@ class ClassesView(QWidget):
         self.class_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.class_table.itemSelectionChanged.connect(self._on_class_clicked)
         self.class_table.doubleClicked.connect(lambda _index: self.edit_class_requested.emit())
+        self.class_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.class_table.customContextMenuRequested.connect(self._show_class_menu)
         new_class = QPushButton("New class…")
         new_class.clicked.connect(
             lambda: self.new_class_requested.emit("" if self.year == ALL_YEARS else self.year or "")
@@ -99,9 +116,13 @@ class ClassesView(QWidget):
         self.edit_class_button.clicked.connect(self.edit_class_requested)
         self.delete_class_button = QPushButton("Delete")
         self.delete_class_button.clicked.connect(self.delete_class_requested)
+        self.copy_class_button = QPushButton("Copy…")
+        self.copy_class_button.setToolTip("A new class in the same school year with this class's subjects, e.g. 7C like 7B")
+        self.copy_class_button.clicked.connect(self.copy_class_requested)
 
         class_buttons = QHBoxLayout()
         class_buttons.addWidget(new_class)
+        class_buttons.addWidget(self.copy_class_button)
         class_buttons.addStretch()
         class_buttons.addWidget(self.edit_class_button)
         class_buttons.addWidget(self.delete_class_button)
@@ -114,8 +135,13 @@ class ClassesView(QWidget):
         self.subject_table = _table(("Subject", "Teacher"))
         self.subject_table.itemSelectionChanged.connect(self._on_subject_clicked)
         self.subject_table.doubleClicked.connect(lambda _index: self.edit_subject_requested.emit())
+        self.subject_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.subject_table.customContextMenuRequested.connect(self._show_subject_menu)
         self.new_subject_button = QPushButton("Add subject…")
         self.new_subject_button.clicked.connect(self.new_subject_requested)
+        self.copy_subjects_button = QPushButton("Copy from class…")
+        self.copy_subjects_button.setToolTip("Add the subjects and teachers of another class")
+        self.copy_subjects_button.clicked.connect(self.copy_subjects_requested)
         self.edit_subject_button = QPushButton("Edit…")
         self.edit_subject_button.clicked.connect(self.edit_subject_requested)
         self.delete_subject_button = QPushButton("Delete")
@@ -126,6 +152,7 @@ class ClassesView(QWidget):
 
         subject_buttons = QHBoxLayout()
         subject_buttons.addWidget(self.new_subject_button)
+        subject_buttons.addWidget(self.copy_subjects_button)
         subject_buttons.addStretch()
         subject_buttons.addWidget(self.edit_subject_button)
         subject_buttons.addWidget(self.delete_subject_button)
@@ -157,6 +184,16 @@ class ClassesView(QWidget):
         layout.addWidget(intro)
         layout.addLayout(year_row)
         layout.addLayout(columns, stretch=1)
+
+        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.class_table, activated=self._delete_class_by_key)
+        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+        remove = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.subject_table, activated=self._delete_subject_by_key)
+        remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+        # F2 edits, as in a file manager (Enter is taken by the class list beside them).
+        edit = QShortcut(QKeySequence(Qt.Key.Key_F2), self.class_table, activated=self._edit_class_by_key)
+        edit.setContext(Qt.ShortcutContext.WidgetShortcut)
+        edit = QShortcut(QKeySequence(Qt.Key.Key_F2), self.subject_table, activated=self._edit_subject_by_key)
+        edit.setContext(Qt.ShortcutContext.WidgetShortcut)
 
         self.refresh()
 
@@ -197,9 +234,12 @@ class ClassesView(QWidget):
             self.year_combo.setCurrentIndex(max(0, self.year_combo.findData(self.year)))
 
         self.new_year_button.setEnabled(bool(classes))
+        self.export_year_button.setEnabled(bool(classes))
+        self.rename_year_button.setEnabled(self._year_to_rename() is not None)
         shown = classes if self.year == ALL_YEARS else [c for c in classes if c.term == self.year]
         self.class_table.setColumnHidden(1, self.year != ALL_YEARS)
         counts = self.roster.class_counts()
+        inactive = self.roster.inactive_counts()
         with QSignalBlocker(self.class_table):
             self.class_table.setRowCount(0)
             for school_class in shown:
@@ -208,12 +248,22 @@ class ClassesView(QWidget):
                 students, subjects = counts.get(school_class.id, (0, 0))
                 self.class_table.setItem(row, 0, _item(school_class.name, school_class.id))
                 self.class_table.setItem(row, 1, _item(school_class.term))
-                self.class_table.setItem(row, 2, _item(str(students), align_right=True))
-                self.class_table.setItem(row, 3, _item(str(subjects), align_right=True))
+                students_item = _item(str(students), align_right=True)
+                tip = f"{students} active student{'' if students == 1 else 's'}"
+                if n := inactive.get(school_class.id, 0):
+                    tip += f" · {n} inactive, kept for their records"
+                students_item.setToolTip(tip)
+                self.class_table.setItem(row, 2, students_item)
+                subjects_item = _item(str(subjects), align_right=True)
+                if subjects:
+                    names = [s.name for s in self.roster.list_subjects(school_class.id)]
+                    subjects_item.setToolTip(", ".join(names))
+                self.class_table.setItem(row, 3, subjects_item)
                 if school_class.id == self.class_id:
                     self.class_table.selectRow(row)
         has_class = self.class_id is not None
         self.edit_class_button.setEnabled(has_class)
+        self.copy_class_button.setEnabled(has_class)
         self.delete_class_button.setEnabled(has_class)
         self._refresh_subjects()
         if self.roster_view.class_id == self.class_id:  # set_class() hands a new class over itself
@@ -245,6 +295,97 @@ class ClassesView(QWidget):
         has_subject = self.subject_id is not None and bool(subjects)
         self.edit_subject_button.setEnabled(has_subject)
         self.delete_subject_button.setEnabled(has_subject)
+
+    def _delete_class_by_key(self) -> None:
+        if self.delete_class_button.isEnabled():
+            self.delete_class_requested.emit()  # the main window asks first
+
+    def _show_class_menu(self, pos) -> None:
+        row = self.class_table.rowAt(pos.y())
+        if row < 0:
+            return
+        self.class_table.selectRow(row)  # makes it the current class
+        menu = self.class_menu()
+        menu.exec(self.class_table.viewport().mapToGlobal(pos))
+        menu.deleteLater()  # a new one is made for each right-click
+
+    def class_menu(self) -> QMenu:
+        """What can be done with the current class, for a right-click on its row."""
+        menu = QMenu(self)
+        edit = menu.addAction("Edit…\tF2", self.edit_class_requested.emit)
+        edit.setEnabled(self.edit_class_button.isEnabled())
+        menu.addAction("Copy…", self.copy_class_requested.emit)
+        delete = menu.addAction("Delete…\tDelete", self.delete_class_requested.emit)
+        delete.setEnabled(self.delete_class_button.isEnabled())
+        menu.addSeparator()
+        menu.addAction("Subjects", lambda: self.tabs.setCurrentWidget(self.subject_box))
+        menu.addAction("Students", lambda: self.tabs.setCurrentWidget(self.roster_view))
+        return menu
+
+    def _show_subject_menu(self, pos) -> None:
+        row = self.subject_table.rowAt(pos.y())
+        if row >= 0:
+            self.subject_table.selectRow(row)  # makes it the current subject
+        menu = self.subject_menu()
+        menu.exec(self.subject_table.viewport().mapToGlobal(pos))
+        menu.deleteLater()
+
+    def subject_menu(self) -> QMenu:
+        """What can be done with the current subject, or in the empty list, for a right-click."""
+        menu = QMenu(self)
+        menu.addAction("Add subject…", self.new_subject_requested.emit)
+        menu.addAction("Copy from class…", self.copy_subjects_requested.emit)
+        menu.addSeparator()
+        edit = menu.addAction("Edit…\tF2", self.edit_subject_requested.emit)
+        edit.setEnabled(self.edit_subject_button.isEnabled())
+        delete = menu.addAction("Delete…\tDelete", self.delete_subject_requested.emit)
+        delete.setEnabled(self.delete_subject_button.isEnabled())
+        return menu
+
+    def _edit_class_by_key(self) -> None:
+        if self.edit_class_button.isEnabled():
+            self.edit_class_requested.emit()
+
+    def _edit_subject_by_key(self) -> None:
+        if self.edit_subject_button.isEnabled():
+            self.edit_subject_requested.emit()
+
+    def _delete_subject_by_key(self) -> None:
+        if self.delete_subject_button.isEnabled():
+            self.delete_subject_requested.emit()  # the main window asks first
+
+    def export_year(self) -> None:
+        """Save the active students of every class shown, class by class, in one CSV."""
+        classes = self.roster.list_classes(None if self.year == ALL_YEARS else self.year or "")
+        if not classes:
+            return
+        name = {ALL_YEARS: "All years", "": "No school year"}.get(self.year, self.year)
+        path = ask_save_path(self, "Export year", f"{name} students", "CSV files", ".csv")
+        if path is None:
+            return
+        rows = [(c.display_name if self.year == ALL_YEARS else c.name, self.roster.list_students(c.id))
+                for c in classes]  # fmt: skip
+        try:
+            write_year_roster_csv(path, rows)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export year", f"The file could not be saved:\n{exc}")
+            return
+        n = sum(len(students) for _name, students in rows)
+        QMessageBox.information(
+            self, "Export year",
+            f"Saved {n} student{'' if n == 1 else 's'} of {len(classes)} class{'' if len(classes) == 1 else 'es'} to\n{path}",
+        )  # fmt: skip
+
+    def _year_to_rename(self) -> str | None:
+        """The school year shown, or the current class's while all years are shown."""
+        if self.year != ALL_YEARS:
+            return self.year if self.roster.list_classes(self.year or "") else None
+        current = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        return current.term if current is not None else None
+
+    def _rename_year(self) -> None:
+        if (year := self._year_to_rename()) is not None:
+            self.rename_year_requested.emit(year)
 
     def _selected_id(self, table: QTableWidget) -> int | None:
         rows = table.selectionModel().selectedRows()

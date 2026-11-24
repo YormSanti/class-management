@@ -33,6 +33,22 @@ class SubjectRepository:
         with transaction(self.conn):
             self.conn.execute("DELETE FROM subjects WHERE id = ?", (subject_id,))
 
+    def recorded(self, subject_id: int) -> dict[str, int]:
+        """What stops delete() from removing the subject: {"attendance", "scores",
+        "assignments", "categories": count}."""
+        row = self.conn.execute(
+            """
+            SELECT
+              (SELECT count(*) FROM attendance WHERE subject_id = :s) AS attendance,
+              (SELECT count(*) FROM scores
+                  WHERE assignment_id IN (SELECT id FROM assignments WHERE subject_id = :s)) AS scores,
+              (SELECT count(*) FROM assignments WHERE subject_id = :s) AS assignments,
+              (SELECT count(*) FROM categories WHERE subject_id = :s) AS categories
+            """,
+            {"s": subject_id},
+        ).fetchone()
+        return dict(row)
+
     def get(self, subject_id: int) -> Subject | None:
         row = self.conn.execute("SELECT * FROM subjects WHERE id = ?", (subject_id,)).fetchone()
         return _from_row(row) if row else None

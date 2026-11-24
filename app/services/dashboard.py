@@ -21,6 +21,8 @@ RECENT_ASSIGNMENTS = 5
 ATTENTION_WINDOW_DAYS = 30
 ABSENCE_LIMIT = 3
 LATE_LIMIT = 3
+NAMED_ABSENT = 5  # absent students named in "Today's register is done"
+STREAK_LIMIT = 2  # absent in this many daily registers in a row
 MISSING_LIMIT = 2
 LOW_AVERAGE = 60.0
 
@@ -62,6 +64,7 @@ class DashboardSummary:
     grade_distribution: dict[str, int] = field(default_factory=dict)
     subjects: list[SubjectSummary] = field(default_factory=list)
     today_counts: dict[str, int] = field(default_factory=dict)  # today's daily register, status -> students
+    absent_today: list[str] = field(default_factory=list)  # names, in the daily register
 
 
 def letter_grade(percent: float) -> str:
@@ -105,9 +108,11 @@ def overall_averages(by_subject: dict[tuple[int, int], float]) -> dict[int, floa
     return {sid: sum(values) / len(values) for sid, values in per_student.items()}
 
 
-def today_register(today: date, counts: dict[str, int], active: int) -> tuple[str, str] | None:
+def today_register(
+    today: date, counts: dict[str, int], active: int, absent: list[str] | None = None
+) -> tuple[str, str] | None:
     """(text, tone) about today's daily register, tone "warn" or "accent"; None on
-    weekends or without students."""
+    weekends or without students. A done register names the absent students, when few."""
     if today.weekday() >= 5 or not active:
         return None
     marked = sum(counts.values())
@@ -115,8 +120,30 @@ def today_register(today: date, counts: dict[str, int], active: int) -> tuple[st
         return "Today's register hasn't been taken yet.", "warn"
     if marked < active:
         return f"Today's register: {marked} of {active} students marked.", "warn"
-    parts = [f"{counts[s]} {s}" for s in (PRESENT, LATE, ABSENT, EXCUSED) if counts.get(s)]
+    parts = []
+    for status in (PRESENT, LATE, ABSENT, EXCUSED):
+        if counts.get(status):
+            part = f"{counts[status]} {status}"
+            if status == ABSENT and absent and len(absent) <= NAMED_ABSENT:
+                part += f" ({', '.join(absent)})"
+            parts.append(part)
     return "Today's register is done: " + " · ".join(parts) + ".", "accent"
+
+
+def absent_streak(marks: dict[date, str], taken: list[date]) -> int:
+    """How many of the registers taken, newest first, the student missed in a row.
+
+    A register in which the student isn't marked (yet) neither counts nor breaks the run,
+    so the run of the days before shows while today's register is still being taken.
+    """
+    streak = 0
+    for day in taken:
+        status = marks.get(day)
+        if status == ABSENT:
+            streak += 1
+        elif status is not None:
+            break
+    return streak
 
 
 def _sum_counts(days: list[dict[str, int]]) -> dict[str, int]:
@@ -193,7 +220,12 @@ class DashboardService:
             grade_distribution=distribution,
             subjects=subject_summaries,
             today_counts=by_date.get(today, {}),
+            absent_today=self._absent_on(class_id, today),
         )
+
+    def _absent_on(self, class_id: int, day: date) -> list[str]:
+        marks = self.dashboard.daily_marks(class_id, day, day)
+        return [s.full_name for s in self.students.list_for_class(class_id) if marks.get(s.id, {}).get(day) == ABSENT]
 
     def _needs_attention(
         self,
@@ -205,19 +237,29 @@ class DashboardService:
         """One item per student, using the most serious reason. Most serious first."""
         window_start = today - timedelta(days=ATTENTION_WINDOW_DAYS - 1)
         attendance = self.dashboard.attendance_by_student(class_id, window_start, today)
+        marks = self.dashboard.daily_marks(class_id, window_start, today)
+        taken = sorted({day for days in marks.values() for day in days}, reverse=True)
         window = f"in {ATTENTION_WINDOW_DAYS} days"
 
         items: list[tuple[int, AttentionItem]] = []
         for student in self.students.list_for_class(class_id):
             counts = attendance.get(student.id, {})
+            streak = absent_streak(marks.get(student.id, {}), taken)
+            absences = counts.get(ABSENT, 0)
+            absent_reason = f"{_plural(absences, 'absence')} {window}"
+            if streak >= STREAK_LIMIT:  # a run is the thing to follow up
+                absent_reason = (
+                    f"{absent_reason}, the last {streak} in a row"
+                    if absences >= ABSENCE_LIMIT
+                    else f"Absent the last {streak} registers in a row"
+                )
             low = low_subjects.get(student.id, [])
             if len(low) == 1:
                 grades_reason = f"{low[0][0]} average is {low[0][1]:.0f}%"
             else:
                 grades_reason = f"Below {LOW_AVERAGE:.0f}% in {len(low)} subjects"
             checks = [
-                ("absent", counts.get(ABSENT, 0) >= ABSENCE_LIMIT,
-                 f"{_plural(counts.get(ABSENT, 0), 'absence')} {window}"),
+                ("absent", absences >= ABSENCE_LIMIT or streak >= STREAK_LIMIT, absent_reason),
                 ("grades", bool(low), grades_reason),
                 ("missing", missing.get(student.id, 0) >= MISSING_LIMIT,
                  f"{_plural(missing.get(student.id, 0), 'missing assignment')}"),

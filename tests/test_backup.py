@@ -174,3 +174,36 @@ def test_the_copy_made_before_a_restore_is_marked(db_path: Path, conn: sqlite3.C
     assert is_before_restore(safety) and not is_before_restore(old)
     assert backup_time(safety) is not None
     assert list_auto_backups(backups)[0] == safety  # the newest
+
+
+def test_restore_backup_refuses_files_that_are_not_app_data(
+    db_path: Path, conn: sqlite3.Connection, tmp_path: Path
+):
+    from app.services.backup import BackupError, restore_backup
+
+    with transaction(conn):
+        conn.execute("INSERT INTO classes (name) VALUES ('7B')")
+    other_app = tmp_path / "photos.db"
+    other = sqlite3.connect(other_app)
+    other.execute("CREATE TABLE photos (id INTEGER PRIMARY KEY, path TEXT)")
+    other.execute("PRAGMA user_version = 1")
+    other.close()
+    empty = tmp_path / "empty.db"
+    empty.write_bytes(b"")
+
+    for path in (other_app, empty):
+        with pytest.raises(BackupError, match="isn't Classroom Manager data"):
+            restore_backup(path, conn, db_path, tmp_path / "backups")
+    assert [r[0] for r in conn.execute("SELECT name FROM classes")] == ["7B"]  # untouched
+    assert not (tmp_path / "backups").exists()  # refused before saving a copy
+
+
+def test_manual_backup_reminder():
+    from app.services.backup import manual_backup_reminder
+
+    now = datetime(2026, 11, 22, 9, 0)
+    assert manual_backup_reminder(None, now) == "Your data has never been backed up elsewhere."
+    assert manual_backup_reminder(now - timedelta(days=29, hours=23), now) is None
+    assert manual_backup_reminder(now - timedelta(days=45), now) == (
+        "Your data was last backed up elsewhere 45 days ago."
+    )
