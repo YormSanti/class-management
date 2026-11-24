@@ -558,3 +558,10 @@ def test_lowering_a_maximum_below_scores_says_they_are_bonus(window: MainWindow,
     monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
     view.edit_assignment(test)
     assert infos == ["1 score is now above the maximum of 8 and counts as bonus points."]
+
+
+def test_keyboard_shortcuts_list_the_gradebook_keys():
+    from app.ui.dialogs.shortcuts_dialog import SHORTCUTS
+
+    gradebook = {keys for where, keys, _what in SHORTCUTS if where == "Gradebook"}
+    assert {"Enter", "Delete", "Ctrl+Z", "Ctrl+N", "Ctrl+F"} <= gradebook
