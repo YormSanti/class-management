@@ -65,3 +65,15 @@ def test_rankings_list_students_best_first_then_those_unscored(window: MainWindo
     ]
     assert view.summary.text() == "3 students ranked · 1 with nothing scored yet, listed last"
     assert view.table.item(3, 1).toolTip() == "Nothing scored yet"
+
+
+def test_rankings_follow_scores_entered_in_the_gradebook(window: MainWindow, roster: RosterService):
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.show_page("Gradebook")
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7"), (test, ids["Bob"], "9")])
+    window.show_page("Rankings")
+    assert [row[1] for row in _rows(window)][:2] == ["Bob Smith", "Ada Lovelace"]
+    window.show_page("Gradebook")
+    window.gradebook_view.grades.enter_score(test, ids["Ada"], "10")
+    window.show_page("Rankings")
+    assert [row[1] for row in _rows(window)][:2] == ["Ada Lovelace", "Bob Smith"]

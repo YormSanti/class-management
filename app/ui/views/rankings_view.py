@@ -101,6 +101,11 @@ class RankingsView(QWidget):
         self.subject_id = subject_id
         self.refresh()
 
+    def showEvent(self, event) -> None:
+        # Scores may have been entered in the gradebook meanwhile.
+        super().showEvent(event)
+        self.refresh()
+
     def refresh(self) -> None:
         """Rank the students again from the database."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
