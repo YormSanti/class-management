@@ -30,6 +30,7 @@ from app.services.gradebook import (
     GradeSheet,
     format_number,
 )
+from app.services.dashboard import letter_grade
 from app.services.export import write_gradebook_csv
 from app.services.roster import RosterService, matches
 from app.ui import style
@@ -522,7 +523,7 @@ class GradebookView(QWidget):
     def _show_average(self, item: QTableWidgetItem, student_id: int) -> None:
         """The student's average, in the danger colour under the pass mark."""
         average = self.sheet.average(student_id)
-        item.setText(percent_text(average))
+        item.setText("—" if average is None else f"{percent_text(average)} {letter_grade(average)}")
         percents = self.sheet.category_percents(student_id)
         lines = [
             f"{c.name} (weight {format_number(c.weight)}): {percent_text(percents.get(c.id))}"

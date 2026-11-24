@@ -58,7 +58,7 @@ def test_gradebook_shows_scores_and_averages(window: MainWindow, roster: RosterS
     assert table.columnCount() == 4
     assert table.horizontalHeaderItem(1).text() == "Test 1\n/ 10"
     assert [table.item(r, 0).text() for r in range(2)] == ["Ada Lovelace", "Bob Smith"]
-    assert [table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80%"]
+    assert [table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80% B"]
     assert [table.item(1, c).text() for c in range(1, 4)] == ["", "", "—"]
     assert view.summary.text() == "2 assignments · class average 80%"
 
@@ -71,7 +71,7 @@ def test_typing_a_score_saves_it_and_updates_the_average(window: MainWindow, ros
     view.table.item(0, 1).setText("7,5")
     assert view.grades.sheet(maths).score(test, ada) == 7.5
     assert view.table.item(0, 1).text() == "7.5"
-    assert view.table.item(0, 3).text() == "75%"
+    assert view.table.item(0, 3).text() == "75% C"
     view.table.item(0, 2).setText("EX")
     assert view.table.item(0, 2).text() == "ex"
 
@@ -302,8 +302,8 @@ def test_pasted_block_of_scores_is_entered(window: MainWindow, roster: RosterSer
 
     view.table.setCurrentCell(0, 1)
     view.paste_scores("8\tx\r\n6\t3\r\n")
-    assert [view.table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80%"]
-    assert [view.table.item(1, c).text() for c in range(1, 4)] == ["6", "3", "60%"]
+    assert [view.table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80% B"]
+    assert [view.table.item(1, c).text() for c in range(1, 4)] == ["6", "3", "60% D"]
     assert messages == []
 
     view.paste_scores("1\n2\n3")  # one student too many
@@ -327,7 +327,7 @@ def test_selected_cells_are_copied_for_a_spreadsheet(window: MainWindow, roster:
     assert view.selection_text() == "8\n\n"
     view.table.selectAll()
     assert view.selection_text() == (
-        "Student\tTest 1\tHomework\tAverage\nAda Lovelace\t8\t\t80%\nBob Smith\t\t\t—\n")
+        "Student\tTest 1\tHomework\tAverage\nAda Lovelace\t8\t\t80% B\nBob Smith\t\t\t—\n")
 
 
 def test_score_changes_can_be_undone_and_redone(window: MainWindow, roster: RosterService):
@@ -368,7 +368,7 @@ def test_failing_average_is_shown_in_the_danger_colour(window: MainWindow, roste
     view = window.gradebook_view
     view.table.item(0, 1).setText("4")
     average = view.table.item(0, 3)
-    assert average.text() == "40%"
+    assert average.text() == "40% F"
     assert average.foreground().color() == style.color(view, "danger")
     assert average.toolTip() == "Under the pass mark of 60%\nTests (weight 100): 40%"
     view.table.item(0, 1).setText("6")
