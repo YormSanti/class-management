@@ -4,10 +4,10 @@ Each subject has its own gradebook. Assignments belong to a weighted category
 (e.g. Tests 50, Homework 20); weights are relative, so they needn't add up to 100.
 """
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
-from app.models import Assignment, Category
+from app.models import Assignment, Category, Student, Subject
 from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
@@ -100,6 +100,48 @@ def weighted_average(
     if not total:
         return None
     return sum(percents[c] * w for c, w in weights.items()) / total
+
+
+@dataclass
+class GradeSheet:
+    """One subject's gradebook for its class's active students."""
+
+    subject: Subject
+    categories: list[Category]
+    assignments: list[Assignment]
+    students: list[Student]
+    scores: dict[tuple[int, int], float | None] = field(default_factory=dict)  # (assignment, student)
+
+    def is_entered(self, assignment_id: int, student_id: int) -> bool:
+        return (assignment_id, student_id) in self.scores
+
+    def score(self, assignment_id: int, student_id: int) -> float | None:
+        """The points, or None when exempt or not entered (see is_entered)."""
+        return self.scores.get((assignment_id, student_id))
+
+    def student_scores(self, student_id: int) -> dict[int, float | None]:
+        return {a: v for (a, s), v in self.scores.items() if s == student_id}
+
+    def average(self, student_id: int) -> float | None:
+        return weighted_average(self.categories, self.assignments, self.student_scores(student_id))
+
+    def category_percents(self, student_id: int) -> dict[int, float]:
+        return category_percents(self.assignments, self.student_scores(student_id))
+
+    def entered(self, assignment_id: int) -> int:
+        """How many of the students listed have a score (or exemption) for the assignment."""
+        return sum(self.is_entered(assignment_id, s.id) for s in self.students)
+
+    def assignment_average(self, assignment_id: int) -> float | None:
+        """The listed students' mean percent on the assignment; exempt ones left out."""
+        assignment = next(a for a in self.assignments if a.id == assignment_id)
+        points = [v for s in self.students if (v := self.score(assignment_id, s.id)) is not None]
+        return 100 * sum(points) / len(points) / assignment.max_score if points else None
+
+    def class_average(self) -> float | None:
+        """The mean of the students' averages, of those who have one."""
+        averages = [v for s in self.students if (v := self.average(s.id)) is not None]
+        return sum(averages) / len(averages) if averages else None
 
 
 class GradebookService:
@@ -210,3 +252,15 @@ class GradebookService:
         else:
             self.gradebook.save_score(assignment_id, student_id, None if value == EXEMPT else value)
         return value
+
+    def sheet(self, subject_id: int) -> GradeSheet | None:
+        """Everything the gradebook page shows for a subject; None if it no longer exists."""
+        subject = self.subjects.get(subject_id)
+        if subject is None:
+            return None
+        students = self.students.list_for_class(subject.class_id)
+        listed = {s.id for s in students}
+        scores = {key: v for key, v in self.gradebook.scores(subject_id).items() if key[1] in listed}
+        return GradeSheet(
+            subject, self.gradebook.categories(subject_id), self.gradebook.assignments(subject_id), students, scores
+        )

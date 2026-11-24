@@ -180,3 +180,34 @@ def test_average_leaves_out_exempt_unentered_and_unweighted_work():
     assert weighted_average(categories, assignments, {10: 15, 11: None}) == pytest.approx(75)  # Tests only
     assert weighted_average(categories, assignments, {30: 10}) is None  # weight 0 doesn't count
     assert weighted_average(categories, assignments, {}) is None
+
+
+def test_sheet_lists_active_students_with_their_averages(
+    grades: GradebookService, roster: RosterService, class_id, subject_id, tests_id
+):
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace")).id
+    bob = roster.save_student(Student(class_id, "Bob", "Smith")).id
+    gone = roster.save_student(Student(class_id, "Cy", "Old")).id
+    t1 = grades.save_assignment(Assignment(subject_id, tests_id, "Test 1", 10)).id
+    t2 = grades.save_assignment(Assignment(subject_id, tests_id, "Test 2", 10)).id
+    grades.enter_score(t1, ada, "8")
+    grades.enter_score(t2, ada, "ex")
+    grades.enter_score(t1, bob, "6")
+    grades.enter_score(t1, gone, "1")
+    roster.deactivate_student(gone)
+
+    sheet = grades.sheet(subject_id)
+    assert [s.first_name for s in sheet.students] == ["Ada", "Bob"]
+    assert [a.title for a in sheet.assignments] == ["Test 1", "Test 2"]
+    assert sheet.is_entered(t2, ada) and sheet.score(t2, ada) is None
+    assert not sheet.is_entered(t2, bob)
+    assert sheet.average(ada) == pytest.approx(80)
+    assert sheet.category_percents(bob) == {tests_id: pytest.approx(60)}
+    assert sheet.entered(t1) == 2 and sheet.entered(t2) == 1
+    assert sheet.assignment_average(t1) == pytest.approx(70)  # the inactive student is left out
+    assert sheet.assignment_average(t2) is None
+    assert sheet.class_average() == pytest.approx(70)
+
+
+def test_sheet_of_a_deleted_subject_is_none(grades: GradebookService):
+    assert grades.sheet(999) is None
