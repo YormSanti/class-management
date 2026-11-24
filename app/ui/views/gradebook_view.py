@@ -219,6 +219,11 @@ class GradebookView(QWidget):
         self.subject_id = subject_id
         self.refresh()
 
+    def showEvent(self, event) -> None:
+        # Students may have been added, moved or deactivated on other pages meanwhile.
+        super().showEvent(event)
+        self.refresh()
+
     def refresh(self) -> None:
         """Read the current subject's gradebook from the database again."""
         self.sheet = self.grades.sheet(self.subject_id) if self.subject_id is not None else None

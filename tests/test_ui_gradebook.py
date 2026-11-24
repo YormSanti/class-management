@@ -571,3 +571,13 @@ def test_gradebook_names_its_keys_under_the_table(window: MainWindow, roster: Ro
     _graded_class(window, roster)
     hint = window.gradebook_view.keys_hint.text()
     assert "Enter goes to the next student" in hint and "F1 lists every key" in hint
+
+
+def test_gradebook_lists_students_added_on_another_page(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    window.show_page("Gradebook")
+    assert window.gradebook_view.table.rowCount() == 2
+    window.show_page("Manage classes")
+    roster.save_student(Student(roster.get_subject(maths).class_id, "Cy", "Young"))
+    window.show_page("Gradebook")
+    assert window.gradebook_view.table.rowCount() == 3
