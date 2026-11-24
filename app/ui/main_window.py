@@ -20,12 +20,16 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.config import LOG_FILENAME, AppConfig, settings_dir
+from app.repositories.class_repo import ClassRepository
+from app.repositories.seating_repo import SeatingRepository
+from app.repositories.student_repo import StudentRepository
 from app.services.attendance import AttendanceService
 from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
 from app.services.gradebook import GradebookService
 from app.services.rankings import RankingService
 from app.services.roster import RosterError, RosterService, sister_class_name
+from app.services.seating import SeatingService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.shortcuts_dialog import ShortcutsDialog
@@ -35,8 +39,8 @@ from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.gradebook_view import GradebookView
-from app.ui.views.placeholder_view import PlaceholderView
 from app.ui.views.rankings_view import RankingsView
+from app.ui.views.seating_view import SeatingView
 from app.ui.views.settings_view import SettingsView
 
 BOTTOM_PAGES = ("Settings",)  # pinned to the bottom of the sidebar
@@ -61,10 +65,12 @@ class MainWindow(QMainWindow):
         settings: QSettings | None = None,
         save_config: Callable[[AppConfig], None] | None = None,
         restore_backup: Callable[[Path], Path] | None = None,
+        seating: SeatingService | None = None,
     ):
         """`settings` keeps window state between sessions; None remembers nothing.
         `save_config` writes changes made on the Settings page; None keeps them for this session.
-        `restore_backup` replaces the data with a backup's (see SettingsView); None hides Restore."""
+        `restore_backup` replaces the data with a backup's (see SettingsView); None hides Restore.
+        `seating` defaults to one on the roster's database."""
         super().__init__()
         self.roster = roster
         self.config = config
@@ -94,6 +100,10 @@ class MainWindow(QMainWindow):
         self.rankings_view.manage_subjects_requested.connect(self.show_subjects)
         self.rankings_view.navigate_requested.connect(self.show_page)
         self.rankings_view.subject_selected.connect(self.select_subject)
+        if seating is None:
+            conn = roster.classes.conn
+            seating = SeatingService(SeatingRepository(conn), StudentRepository(conn), ClassRepository(conn))
+        self.seating_view = SeatingView(seating, roster)
         self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
@@ -120,7 +130,7 @@ class MainWindow(QMainWindow):
             ("Attendance", self.attendance_view),
             ("Gradebook", self.gradebook_view),
             ("Rankings", self.rankings_view),
-            ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
+            ("Seating", self.seating_view),
             ("Manage classes", self.classes_view),
             ("Settings", self.settings_view),
         ]

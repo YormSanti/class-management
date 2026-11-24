@@ -28,6 +28,7 @@ from app.repositories.attendance_repo import AttendanceRepository
 from app.repositories.class_repo import ClassRepository
 from app.repositories.dashboard_repo import DashboardRepository
 from app.repositories.gradebook_repo import GradebookRepository
+from app.repositories.seating_repo import SeatingRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
 from app.services.attendance import AttendanceService
@@ -35,6 +36,7 @@ from app.services.backup import auto_backup, restore_backup
 from app.services.dashboard import DashboardService
 from app.services.gradebook import GradebookService
 from app.services.roster import RosterService
+from app.services.seating import SeatingService
 from app.ui.dialogs.setup_dialog import SetupDialog
 from app.ui.main_window import MainWindow
 from app.ui.theme import apply_theme
@@ -200,6 +202,7 @@ def main() -> int:
         settings,
         save_config,
         restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+        seating=SeatingService(SeatingRepository(conn), students, roster.classes),
     )
     window.show()
     try:
