@@ -46,6 +46,11 @@ On the Attendance page's Day tab:
 On the Month tab the same letters mark the selected cell, and Alt+← / Alt+→ (or Page Up /
 Page Down) change the month. Right-clicking a student on the Day tab lists what can be done.
 
+On the Gradebook page, type a score in a cell and press Enter to go to the next student.
+Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to and from a spreadsheet,
+Ctrl+Z undoes, Ctrl+F finds a student and Ctrl+N adds an assignment. Double-click a column
+header to edit the assignment; right-click it to fill its empty cells or delete it.
+
 On the Manage classes page:
 
 - In the class list, Ctrl+N adds a student, Enter or F2 edits one and Delete deletes a
@@ -68,6 +73,25 @@ numbers already used before anything is added.
 subjects, and **Export year…** saves the students of every class of a school year in one
 CSV file, e.g. for the school office. The class list's search ignores accents, so "Jose"
 finds "José".
+
+## Grades
+
+Every subject of a class has its own gradebook. Assignments belong to a category with a
+weight, e.g. Tests 50 and Homework 20; weights are compared with each other, so they
+needn't add up to 100. A new subject is offered Tests, Quizzes, Homework and Participation
+to start with, or **Categories…** sets up your own.
+
+A score can be typed as points (`8`, `8,5`), a percentage of the maximum (`85%`) or `ex`
+for an exempt student. A student's average is each category's points scored over points
+possible, counted by its weight; categories with nothing scored yet, exempt students and
+empty cells are left out, while a 0 counts. Points above the maximum are bonus points.
+Averages under the pass mark (60% unless changed under **Settings → Grades**) are shown
+in red, here and on the dashboard. Clicking **Average** lists the best average first, and
+**Export…** saves the scores, category percents, averages and letter grades as CSV.
+An empty cell of a dated assignment counts as missing work on the dashboard once the date
+has passed; an exempt one doesn't.
+
+New school year, **Copy…** and Copy subjects bring each subject's categories along.
 
 ## Test
 
