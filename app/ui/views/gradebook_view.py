@@ -1,11 +1,12 @@
 """The gradebook of the current subject: students down the side, assignments across."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QTableWidget,
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.services.gradebook import GradebookService, GradeSheet, format_number
+from app.services.gradebook import GradebookError, GradebookService, GradeSheet, format_number
 from app.services.roster import RosterService
 from app.ui import style
 
@@ -50,7 +51,9 @@ class GradebookView(QWidget):
 
         self.summary = style.label("", 0.95, muted=True)
         self.table = QTableWidget()
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        triggers = QAbstractItemView.EditTrigger
+        self.table.setEditTriggers(triggers.DoubleClicked | triggers.EditKeyPressed | triggers.AnyKeyPressed)
+        self.table.itemChanged.connect(self._score_typed)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ContiguousSelection)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(30)
@@ -138,6 +141,7 @@ class GradebookView(QWidget):
     def _fill_table(self) -> None:
         sheet = self.sheet
         table = self.table
+        blocker = QSignalBlocker(table)  # filling in isn't typing
         table.clear()
         table.setRowCount(len(sheet.students))
         table.setColumnCount(len(sheet.assignments) + 2)
@@ -149,20 +153,17 @@ class GradebookView(QWidget):
         table.setHorizontalHeaderItem(self.average_column(), QTableWidgetItem("Average"))
         for row, student in enumerate(sheet.students):
             name = QTableWidgetItem(student.full_name)
+            name.setFlags(name.flags() & ~Qt.ItemFlag.ItemIsEditable)
             name.setData(STUDENT_ID, student.id)
             table.setItem(row, 0, name)
             for col, assignment in enumerate(sheet.assignments, start=1):
                 table.setItem(row, col, self._score_item(assignment.id, student.id))
-            average = QTableWidgetItem(percent_text(sheet.average(student.id)))
-            average.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            font = average.font()
-            font.setBold(True)
-            average.setFont(font)
-            table.setItem(row, self.average_column(), average)
+            table.setItem(row, self.average_column(), self._average_item(student.id))
         head = table.horizontalHeader()
         head.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         head.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         table.resizeColumnToContents(0)
+        del blocker
         self.summary.setText(self._summary_text())
 
     def _score_item(self, assignment_id: int, student_id: int) -> QTableWidgetItem:
@@ -176,6 +177,45 @@ class GradebookView(QWidget):
         item = QTableWidgetItem(text)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         return item
+
+    def _average_item(self, student_id: int) -> QTableWidgetItem:
+        item = QTableWidgetItem(percent_text(self.sheet.average(student_id)))
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        return item
+
+    def assignment_at(self, column: int) -> int | None:
+        """The id of the assignment in `column`, None for the name and average columns."""
+        item = self.table.horizontalHeaderItem(column)
+        return item.data(ASSIGNMENT_ID) if item is not None and 0 < column < self.average_column() else None
+
+    def student_at(self, row: int) -> int | None:
+        item = self.table.item(row, 0)
+        return item.data(STUDENT_ID) if item is not None else None
+
+    def _score_typed(self, item: QTableWidgetItem) -> None:
+        """Save what was typed in a score cell, or say why it can't be and put the old score back."""
+        assignment_id, student_id = self.assignment_at(item.column()), self.student_at(item.row())
+        if assignment_id is None or student_id is None:
+            return
+        try:
+            self.grades.enter_score(assignment_id, student_id, item.text())
+        except GradebookError as exc:
+            QMessageBox.warning(self, "Gradebook", str(exc))
+        self._update_row(item.row())
+
+    def _update_row(self, row: int) -> None:
+        """Show a student's scores and average as saved, after a change."""
+        self.sheet = self.grades.sheet(self.subject_id)
+        student_id = self.student_at(row)
+        with QSignalBlocker(self.table):
+            for col, assignment in enumerate(self.sheet.assignments, start=1):
+                self.table.setItem(row, col, self._score_item(assignment.id, student_id))
+            self.table.setItem(row, self.average_column(), self._average_item(student_id))
+        self.summary.setText(self._summary_text())
 
     def _summary_text(self) -> str:
         sheet = self.sheet

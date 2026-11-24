@@ -56,3 +56,25 @@ def test_gradebook_shows_scores_and_averages(window: MainWindow, roster: RosterS
     assert [table.item(0, c).text() for c in range(1, 4)] == ["8", "ex", "80%"]
     assert [table.item(1, c).text() for c in range(1, 4)] == ["", "", "—"]
     assert view.summary.text() == "2 assignments · class average 80%"
+
+
+def test_typing_a_score_saves_it_and_updates_the_average(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("7,5")
+    assert view.grades.sheet(maths).score(test, ada) == 7.5
+    assert view.table.item(0, 1).text() == "7.5"
+    assert view.table.item(0, 3).text() == "75%"
+    view.table.item(0, 2).setText("EX")
+    assert view.table.item(0, 2).text() == "ex"
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
+    view.table.item(0, 1).setText("seven")
+    assert "isn't a score" in warnings[0]
+    assert view.table.item(0, 1).text() == "7.5"  # the saved score is back
+    view.table.item(0, 1).setText("")
+    assert not view.grades.sheet(maths).is_entered(test, ada)
+    assert view.table.item(0, 3).text() == "—"
