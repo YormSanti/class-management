@@ -1,6 +1,14 @@
+import sqlite3
+
 import pytest
 
-from app.services.rankings import rank_places
+from app.models import Assignment, Category, SchoolClass, Student, Subject
+from app.repositories.gradebook_repo import GradebookRepository
+from app.repositories.student_repo import StudentRepository
+from app.repositories.subject_repo import SubjectRepository
+from app.services.gradebook import GradebookService
+from app.services.rankings import RankingService, rank_places
+from app.services.roster import RosterService
 
 
 def test_competition_places_skip_after_a_tie():
@@ -31,3 +39,54 @@ def test_nothing_to_rank():
 def test_unknown_method_is_refused():
     with pytest.raises(ValueError):
         rank_places([1], "olympic")
+
+
+@pytest.fixture
+def grades(conn: sqlite3.Connection) -> GradebookService:
+    return GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+
+
+@pytest.fixture
+def rankings(grades: GradebookService) -> RankingService:
+    return RankingService(grades)
+
+
+def _class(roster: RosterService, *names: str) -> tuple[int, list[Student]]:
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    return class_id, [roster.save_student(Student(class_id, first, "Pupil")) for first in names]
+
+
+def _subject(roster: RosterService, grades: GradebookService, class_id: int, name: str) -> tuple[int, int]:
+    """A subject with one Tests category and a test out of 10; returns (subject id, test id)."""
+    subject_id = roster.save_subject(Subject(class_id=class_id, name=name)).id
+    tests = grades.save_category(Category(subject_id, "Tests", 50))
+    test = grades.save_assignment(Assignment(subject_id, tests.id, "Test 1", 10))
+    return subject_id, test.id
+
+
+def test_subject_ranking_lists_best_average_first(
+    roster: RosterService, grades: GradebookService, rankings: RankingService
+):
+    class_id, (ada, ben, cy, dee) = _class(roster, "Ada", "Ben", "Cy", "Dee")
+    maths, test = _subject(roster, grades, class_id, "Maths")
+    grades.enter_scores([(test, ada.id, "7"), (test, ben.id, "9"), (test, cy.id, "7"), (test, dee.id, "ex")])
+    ranking = rankings.subject_ranking(maths)
+    assert [(r.place, r.student.first_name, r.average, r.shared) for r in ranking.ranked] == [
+        (1, "Ben", 90, False),
+        (2, "Ada", 70, True),
+        (2, "Cy", 70, True),
+    ]
+    assert [s.first_name for s in ranking.unranked] == ["Dee"]
+
+
+def test_subject_ranking_numbers_places_as_set(roster: RosterService, grades: GradebookService, rankings: RankingService):
+    class_id, (ada, ben, cy) = _class(roster, "Ada", "Ben", "Cy")
+    maths, test = _subject(roster, grades, class_id, "Maths")
+    grades.enter_scores([(test, ada.id, "9"), (test, ben.id, "9"), (test, cy.id, "5")])
+    assert [r.place for r in rankings.subject_ranking(maths).ranked] == [1, 1, 3]
+    rankings.method = "dense"
+    assert [r.place for r in rankings.subject_ranking(maths).ranked] == [1, 1, 2]
+
+
+def test_ranking_of_a_deleted_subject_is_none(rankings: RankingService):
+    assert rankings.subject_ranking(999) is None
