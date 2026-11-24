@@ -381,12 +381,17 @@ class GradebookView(QWidget):
         """The student's average, in the danger colour under the pass mark."""
         average = self.sheet.average(student_id)
         item.setText(percent_text(average))
+        percents = self.sheet.category_percents(student_id)
+        lines = [
+            f"{c.name} (weight {format_number(c.weight)}): {percent_text(percents.get(c.id))}"
+            for c in self.sheet.categories
+        ]
         if average is not None and average < self.pass_mark:
             item.setForeground(style.color(self, "danger"))
-            item.setToolTip(f"Under the pass mark of {format_number(self.pass_mark)}%")
+            lines.insert(0, f"Under the pass mark of {format_number(self.pass_mark)}%")
         else:
             item.setData(Qt.ItemDataRole.ForegroundRole, None)
-            item.setToolTip("")
+        item.setToolTip("\n".join(lines) if percents else "Nothing scored yet")
 
     def assignment_at(self, column: int) -> int | None:
         """The id of the assignment in `column`, None for the name and average columns."""
