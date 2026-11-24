@@ -1,9 +1,10 @@
 """Rankings: the current class's students in order of their averages."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -21,6 +22,7 @@ from app.services.roster import RosterService
 from app.ui import style
 
 COLUMNS = ("Place", "Student", "Average", "Grade")
+OVERALL = -1  # the "All subjects" choice of Rank by
 
 
 def average_text(value: float) -> str:
@@ -28,9 +30,22 @@ def average_text(value: float) -> str:
     return f"{value:.1f}%"
 
 
+def overall_tip(counted: int, subjects: int) -> str:
+    """What an overall average is made of: `counted` of the `subjects` with scores."""
+    if subjects == 1:
+        return "The average in the only subject with scores"
+    if counted == subjects:
+        return f"The mean of the averages in all {subjects} subjects with scores"
+    return (
+        f"The mean of the averages in {counted} of the {subjects} subjects with scores; "
+        "nothing is scored in the others yet"
+    )
+
+
 class RankingsView(QWidget):
     manage_subjects_requested = Signal()  # the class has no subject to rank by yet
     navigate_requested = Signal(str)  # a page name, e.g. "Gradebook"
+    subject_selected = Signal(int)  # picked under Rank by: make it the current subject
 
     def __init__(self, rankings: RankingService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -39,6 +54,7 @@ class RankingsView(QWidget):
         self.class_id: int | None = None
         self.subject_id: int | None = None
         self.ranking: Ranking | None = None
+        self.overall = False  # ranked by all subjects instead of the current one
 
         self.title = style.label("Rankings", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -48,6 +64,13 @@ class RankingsView(QWidget):
         titles.addWidget(self.subtitle)
         header = QHBoxLayout()
         header.addLayout(titles, stretch=1)
+        self.scope = QComboBox()
+        self.scope.setToolTip("Rank by the average of all subjects, or of one subject")
+        self.scope.currentIndexChanged.connect(self._scope_picked)
+        rank_by = QLabel("&Rank by")
+        rank_by.setBuddy(self.scope)
+        header.addWidget(rank_by, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.scope, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
         self.table = QTableWidget(0, len(COLUMNS))
@@ -109,13 +132,50 @@ class RankingsView(QWidget):
     def refresh(self) -> None:
         """Rank the students again from the database."""
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
-        subject = self.roster.get_subject(self.subject_id) if self.subject_id is not None else None
         if school_class is None:
             self.class_id = None
-        self.ranking = self.rankings.subject_ranking(subject.id) if subject and school_class else None
-        context = [x for x in (subject and subject.name, school_class and school_class.display_name) if x]
+        subjects = self.roster.list_subjects(school_class.id) if school_class else []
+        subject = next((x for x in subjects if x.id == self.subject_id), None)
+        self._fill_scope(subjects)
+        if not subjects:
+            self.ranking = None
+        elif self.overall:
+            self.ranking = self.rankings.overall_ranking(school_class.id)
+        else:
+            self.ranking = self.rankings.subject_ranking(subject.id) if subject else None
+        scope = "All subjects" if self.overall else subject and subject.name
+        context = [x for x in (scope if subjects else None, school_class and school_class.display_name) if x]
         self.subtitle.setText(" · ".join(context))
         self._show_state(subject.name if subject else "")
+
+    def set_overall(self, overall: bool) -> None:
+        """Rank by all subjects, or by the current one."""
+        self.overall = overall
+        self.refresh()
+
+    def _fill_scope(self, subjects: list) -> None:
+        with QSignalBlocker(self.scope):
+            self.scope.clear()
+            if subjects:
+                self.scope.addItem("All subjects", OVERALL)
+                for subject in subjects:
+                    self.scope.addItem(subject.name, subject.id)
+            index = self.scope.findData(OVERALL if self.overall else self.subject_id)
+            self.scope.setCurrentIndex(max(index, 0) if subjects else -1)
+        self.scope.setEnabled(bool(subjects))
+
+    def _scope_picked(self, index: int) -> None:
+        picked = self.scope.itemData(index)
+        if picked is None:
+            return
+        if picked == OVERALL:
+            self.set_overall(True)
+        else:
+            self.overall = False
+            if picked == self.subject_id:
+                self.refresh()
+            else:
+                self.subject_selected.emit(picked)  # MainWindow calls set_subject back
 
     def _show_state(self, subject_name: str) -> None:
         if self.class_id is None:
@@ -127,8 +187,9 @@ class RankingsView(QWidget):
                 "Add a subject",
             )
         elif not self.ranking.ranked:
+            where = "any subject" if self.overall else subject_name
             self._empty(
-                f"<h2>Nothing scored in {subject_name} yet</h2><p>Students are ranked once "
+                f"<h2>Nothing scored in {where} yet</h2><p>Students are ranked once "
                 "the gradebook has scores to make their averages from.</p>",
                 "Open the gradebook",
             )
@@ -158,6 +219,9 @@ class RankingsView(QWidget):
         for row, ranked in enumerate(ranking.ranked):
             self._set_row(row, str(ranked.place), ranked.student.full_name,
                           average_text(ranked.average), letter_grade(ranked.average))
+            if self.overall:
+                counted = ranking.subjects_counted.get(ranked.student.id, 0)
+                table.item(row, 2).setToolTip(overall_tip(counted, ranking.subjects))
         muted = self.palette().color(QPalette.ColorRole.PlaceholderText)
         for row, student in enumerate(ranking.unranked, start=len(ranking.ranked)):
             self._set_row(row, "—", student.full_name, "—", "")

@@ -77,3 +77,69 @@ def test_rankings_follow_scores_entered_in_the_gradebook(window: MainWindow, ros
     window.gradebook_view.grades.enter_score(test, ids["Ada"], "10")
     window.show_page("Rankings")
     assert [row[1] for row in _rows(window)][:2] == ["Ada Lovelace", "Bob Smith"]
+
+
+def test_rank_by_all_subjects_or_one(window: MainWindow, roster: RosterService):
+    class_id, test, ids = _ranked_class(window, roster)
+    grades = window.gradebook_view.grades
+    art = roster.save_subject(Subject(class_id=class_id, name="Art")).id
+    drawing = grades.save_assignment(Assignment(art, grades.save_category(Category(art, "Work", 1)).id, "Drawing", 10)).id
+    grades.enter_scores([(test, ids["Ada"], "6"), (test, ids["Bob"], "9"), (drawing, ids["Ada"], "10")])
+    window.select_class(class_id)
+    window.show_page("Rankings")
+    view = window.rankings_view
+    assert [view.scope.itemText(i) for i in range(view.scope.count())] == ["All subjects", "Art", "Maths"]
+    assert view.scope.currentText() == "Maths"  # the current subject
+    assert [row[1] for row in _rows(window)] == ["Bob Smith", "Ada Lovelace", "Dee Ward", "Cy Young"]
+
+    view.scope.setCurrentIndex(view.scope.findText("All subjects"))
+    assert view.overall
+    assert view.subtitle.text() == "All subjects · 7B (2026-2027)"
+    assert _rows(window)[:2] == [["1", "Bob Smith", "90.0%", "A"], ["2", "Ada Lovelace", "80.0%", "B"]]
+    assert "all 2 subjects" in view.table.item(1, 2).toolTip()
+    assert "1 of the 2 subjects" in view.table.item(0, 2).toolTip()
+
+    view.scope.setCurrentIndex(view.scope.findText("Art"))
+    assert not view.overall
+    assert window.subject_id == art  # Art is now the current subject everywhere
+    assert "Art" in window.windowTitle()
+    assert view.scope.currentText() == "Art"
+    assert [row[1] for row in _rows(window)] == ["Ada Lovelace", "Bob Smith", "Dee Ward", "Cy Young"]
+
+
+def test_rank_by_all_subjects_is_kept_when_the_subject_changes(window: MainWindow, roster: RosterService):
+    class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_score(test, ids["Ada"], "6")
+    view = window.rankings_view
+    view.set_overall(True)
+    roster.save_subject(Subject(class_id=class_id, name="Art"))
+    window.select_class(class_id)
+    assert view.overall and view.scope.currentText() == "All subjects"
+
+
+def test_rank_by_is_off_without_subjects(window: MainWindow, roster: RosterService):
+    window.select_class(roster.save_class(SchoolClass(name="7B", term="2026-2027")).id)
+    view = window.rankings_view
+    view.set_overall(True)
+    assert not view.scope.isEnabled() and view.scope.count() == 0
+    assert "No subject yet" in view.empty_label.text()
+
+
+def test_rank_by_all_subjects_is_remembered(qapp, conn, roster: RosterService, tmp_path):
+    from PySide6.QtCore import QSettings
+
+    from app.config import AppConfig
+    from app.repositories.dashboard_repo import DashboardRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.dashboard import DashboardService
+    from tests.test_ui_smoke import _attendance, _grades
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
+    first.rankings_view.set_overall(True)
+    first.close()
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.rankings_view.overall
+    second.close()
