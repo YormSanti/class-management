@@ -383,7 +383,7 @@ def ranking_tsv(ranking: Ranking, overall: bool = False) -> str:
 
 def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None) -> str:
     """A printable seating plan: the desks as the teacher sees them, the front of the
-    room at the bottom, then the students without a seat."""
+    room at the bottom, then the students without a seat. A spot with no desk is blank."""
     printed = printed or date.today()
     layout = plan.layout
     width = f"{100 / layout.cols:.1f}%"
@@ -392,6 +392,9 @@ def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None
     for row in reversed(range(layout.rows)):
         cells = []
         for col in range(layout.cols):
+            if (row, col) in plan.gaps:  # no desk: no box
+                cells.append(f'<td style="width: {width};">&nbsp;</td>')
+                continue
             student = plan.student_at(row, col)
             name = f"{html.escape(student.first_name)}<br>{html.escape(student.last_name)}" if student else "&nbsp;"
             cells.append(f"<td {seat}>{name}</td>")

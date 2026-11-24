@@ -342,3 +342,15 @@ def test_seating_plan_html_shows_the_room_front_at_the_bottom():
     assert "2 of 3 students seated · printed 24 November 2026" in page
     assert page.index("&lt;Smith&gt;") < page.index("Lovelace") < page.index("Front of the room")
     assert "<b>Not seated:</b> Cy Young" in page
+
+
+def test_seating_plan_html_leaves_spots_without_a_desk_blank():
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_plan_html
+    from app.services.seating import SeatingPlan
+
+    ada = Student(1, "Ada", "Lovelace", id=1)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 1, 3, id=1), [ada], {(0, 0): 1}, gaps={(0, 1)})
+    page = seating_plan_html(plan, "7B · Tests")
+    assert page.count("border: 1px solid") == 2  # Ada's desk and the free one
+    assert page.count('<td style="width: 33.3%;">&nbsp;</td>') == 1
