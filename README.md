@@ -53,6 +53,10 @@ header to edit the assignment; right-click it to fill its empty cells or delete 
 
 On the Rankings page, Alt+R chooses what to rank by: all subjects or one of them.
 
+On the Seating page, click a student, then a seat (or select them and press Enter or
+Space). Esc puts the student down again, Delete takes a student out of their seat, and
+Ctrl+Z / Ctrl+Y undo and redo any change to the plan.
+
 On the Manage classes page:
 
 - In the class list, Ctrl+N adds a student, Enter or F2 edits one and Delete deletes a
@@ -106,6 +110,22 @@ Averages are shown to one decimal, and students whose averages look the same sha
 place, marked `2=`. Whether the next place is then 4th or 3rd is set under
 **Settings → Rankings**. Averages under the pass mark are shown in red, and **Export…**
 saves the ranking as CSV.
+
+## Seating
+
+A class can keep several seating plans, e.g. one for tests and one for group work. Each
+plan is a room of up to 12 rows of up to 12 seats, shown as the teacher sees it from the
+front: row 1, the front row, is at the bottom.
+
+Click a student under **Not seated**, then a seat. Click a seated student, then another
+seat to move them; if that seat is taken, the two swap. **Seat the rest** puts everyone
+not seated yet in the free seats by name, front row first, and **Shuffle** seats the
+whole class at random; Ctrl+Z undoes either. **Edit…** renames the plan or changes the
+room, asking first if a smaller room would leave someone without a seat, and **Save
+PDF…** saves the plan to print, e.g. for a substitute teacher.
+
+A student who is deactivated leaves their seat free. A class with seating plans can't be
+deleted until its plans are.
 
 ## Test
 
