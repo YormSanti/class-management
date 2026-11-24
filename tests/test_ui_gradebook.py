@@ -459,3 +459,18 @@ def test_find_shows_only_matching_students(window: MainWindow, roster: RosterSer
     assert view.table.isRowHidden(0)
     view.search.clear()
     assert not view.table.isRowHidden(0)
+
+
+def test_enter_skips_students_hidden_by_find(window: MainWindow, roster: RosterService):
+    from app.models import Student
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    roster.save_student(Student(roster.get_subject(maths).class_id, "Dan", "Zed"))
+    view = window.gradebook_view
+    view.refresh()
+    view.search.setText("a")  # Ada Lovelace and Dan Zed, not Bob Smith between them
+    view.table.setCurrentCell(0, 1)
+    view.table._next_row()
+    assert view.table.currentRow() == 2
+    view.table._next_row()  # the last one: stays
+    assert view.table.currentRow() == 2

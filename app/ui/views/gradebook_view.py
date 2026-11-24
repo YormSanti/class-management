@@ -62,9 +62,14 @@ class ScoreTable(QTableWidget):
         super().keyPressEvent(event)
 
     def _next_row(self) -> None:
+        """Go down to the next student shown, skipping those Find hides."""
         row, col = self.currentRow(), self.currentColumn()
-        if 0 <= row < self.rowCount() - 1:
-            self.setCurrentCell(row + 1, col)
+        if row < 0:
+            return
+        for below in range(row + 1, self.rowCount()):
+            if not self.isRowHidden(below):
+                self.setCurrentCell(below, col)
+                return
 
 
 class GradebookView(QWidget):
