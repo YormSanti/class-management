@@ -15,16 +15,22 @@ from app.config import AppConfig  # noqa: E402
 from app.models import SchoolClass, Student, Subject  # noqa: E402
 from app.repositories.attendance_repo import AttendanceRepository  # noqa: E402
 from app.repositories.dashboard_repo import DashboardRepository  # noqa: E402
+from app.repositories.gradebook_repo import GradebookRepository  # noqa: E402
 from app.repositories.student_repo import StudentRepository  # noqa: E402
 from app.repositories.subject_repo import SubjectRepository  # noqa: E402
 from app.services.attendance import AttendanceService  # noqa: E402
 from app.services.dashboard import DashboardService  # noqa: E402
+from app.services.gradebook import GradebookService  # noqa: E402
 from app.services.roster import RosterService  # noqa: E402
 from app.ui.main_window import MainWindow  # noqa: E402
 
 
 def _attendance(conn: sqlite3.Connection) -> AttendanceService:
     return AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+
+
+def _grades(conn: sqlite3.Connection) -> GradebookService:
+    return GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +43,7 @@ def window(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ) -> Iterator[MainWindow]:
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path))
     window.show()
     yield window
     window.close()
@@ -441,7 +447,7 @@ def test_window_size_and_splitter_are_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show()
     # Restoring keeps the window on screen, and the offscreen screen is only 800x600.
     first.resize(first.minimumSizeHint().width(), 520)
@@ -450,7 +456,7 @@ def test_window_size_and_splitter_are_remembered(
     size, sizes = first.size(), first.splitter.sizes()
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     second.show()
     qapp.processEvents()
     assert second.size() == size and size.height() == 520
@@ -465,17 +471,17 @@ def test_last_page_is_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show_page("Settings")
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.stack.currentWidget() is second.settings_view
     assert second.nav_bottom.selectedItems()
     second.close()
 
     settings.setValue("session/page", "No such page")  # e.g. a page renamed in a later version
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert third.stack.currentWidget() is third.dashboard_view
     third.close()
 
@@ -486,17 +492,17 @@ def test_attendance_tab_is_remembered(qapp: QApplication, conn: sqlite3.Connecti
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
     roster.save_class(SchoolClass(name="7B"))
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show_page("Attendance")
     first.attendance_view.tabs.setCurrentWidget(first.attendance_view.month_view)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.attendance_view.tabs.currentWidget() is second.attendance_view.month_view
     second.close()
 
     settings.setValue("session/attendance_tab", 9)
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert third.attendance_view.tabs.currentIndex() == 0
     third.close()
 
@@ -506,12 +512,12 @@ def test_show_inactive_is_remembered(qapp: QApplication, conn: sqlite3.Connectio
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert not first.classes_view.roster_view.show_inactive.isChecked()
     first.classes_view.roster_view.show_inactive.setChecked(True)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.classes_view.roster_view.show_inactive.isChecked()
     second.close()
 
@@ -523,11 +529,11 @@ def test_manage_classes_tab_is_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show_subjects()
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.classes_view.tabs.currentWidget() is second.classes_view.subject_box
     second.close()
 
@@ -537,17 +543,17 @@ def test_class_list_sort_is_remembered(qapp: QApplication, conn: sqlite3.Connect
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.classes_view.roster_view.table.sortByColumn(0, Qt.SortOrder.DescendingOrder)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     proxy = second.classes_view.roster_view.proxy
     assert (proxy.sortColumn(), proxy.sortOrder()) == (0, Qt.SortOrder.DescendingOrder)
     second.close()
 
     settings.setValue("session/roster_sort", "99 asc")
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert third.classes_view.roster_view.proxy.sortColumn() == 1  # last name, as usual
     third.close()
 
@@ -563,17 +569,17 @@ def test_class_and_subject_are_remembered(
     class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027"), "Art").id
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
 
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.select_class(class_id)
     first.select_subject(science)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert (second.class_id, second.subject_id) == (class_id, science)
     second.close()
 
     roster.delete_class(class_id)  # a deleted class falls back to the first one
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert roster.get_class(third.class_id).name == "7A"
     third.close()
 
@@ -590,7 +596,7 @@ def test_back_up_now_copies_the_database(
 
     roster.save_class(SchoolClass(name="7B"))
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=db_path.parent))
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=db_path.parent))
     usb = tmp_path / "usb"
     usb.mkdir()
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(usb / "before trip"), ""))
@@ -904,7 +910,7 @@ def test_settings_page_saves_ranking_method(
     path = tmp_path / "config.json"
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     window = MainWindow(
-        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+        roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
     )
     try:
         view = window.settings_view
@@ -928,7 +934,7 @@ def test_settings_page_keeps_old_choice_when_saving_fails(
     warnings = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=fail)
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), save_config=fail)
     try:
         view = window.settings_view
         view.ranking_buttons["dense"].click()
@@ -1005,7 +1011,7 @@ def test_settings_page_restores_a_backup(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     window = MainWindow(
-        roster, dashboard, _attendance(conn), config,
+        roster, dashboard, _attendance(conn), _grades(conn), config,
         restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
     )  # fmt: skip
     questions, infos = [], []
@@ -1036,7 +1042,7 @@ def _window_saving_config(conn, roster, tmp_path, path):
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     return MainWindow(
-        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+        roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
     )
 
 
@@ -1711,14 +1717,14 @@ def test_back_up_now_remembers_the_folder(
         return str(usb / "copy"), ""
 
     monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.back_up_now()
     first.close()
     assert (usb / "copy.db").exists()
     assert Path(asked[0]).parent == Path.home()
     assert re.fullmatch(r"Classroom backup \d{4}-\d\d-\d\d \d\d-\d\d\.db", Path(asked[0]).name)
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     second.back_up_now()
     second.close()
     assert Path(asked[1]).parent == usb
@@ -1887,7 +1893,7 @@ def test_window_lengths_in_labels_follow_the_settings(
     monkeypatch.setattr(attendance_view, "RECENT_DAYS", 14)
     monkeypatch.setattr(dashboard_view, "CHART_DAYS", 5)
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path))
     try:
         assert window.attendance_view.table.horizontalHeaderItem(4).text() == "Last 14 days"
         labels = [w.text() for w in window.dashboard_view.findChildren(QLabel)]
@@ -1988,7 +1994,7 @@ def test_settings_page_restores_a_backup_from_any_file(
     config = AppConfig(data_dir=tmp_path)
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     window = MainWindow(
-        roster, dashboard, _attendance(conn), config,
+        roster, dashboard, _attendance(conn), _grades(conn), config,
         restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
     )  # fmt: skip
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
@@ -2271,7 +2277,7 @@ def test_status_bar_reminds_to_back_up_elsewhere(
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
 
     def open_window() -> MainWindow:
-        return MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+        return MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
 
     empty = open_window()  # nothing to back up yet
     assert empty.statusBar().currentMessage().startswith("Data file:")
@@ -2503,7 +2509,7 @@ def test_attendance_sorts_by_number_and_remembers_it(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     view = _attendance_page(first, roster)
     for row, no in zip(view.register.rows, ("10", "2")):  # Hopper 10, Lovelace 2
         row.student.student_no = no
@@ -2516,7 +2522,7 @@ def test_attendance_sorts_by_number_and_remembers_it(
     view.table.horizontalHeader().sectionClicked.emit(0)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.attendance_view.by_number
     second.close()
 

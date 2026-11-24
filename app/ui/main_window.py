@@ -23,6 +23,7 @@ from app.config import LOG_FILENAME, AppConfig, settings_dir
 from app.services.attendance import AttendanceService
 from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
+from app.services.gradebook import GradebookService
 from app.services.roster import RosterError, RosterService, sister_class_name
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
@@ -32,6 +33,7 @@ from app.ui.files import ask_save_path
 from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
+from app.ui.views.gradebook_view import GradebookView
 from app.ui.views.placeholder_view import PlaceholderView
 from app.ui.views.settings_view import SettingsView
 
@@ -52,6 +54,7 @@ class MainWindow(QMainWindow):
         roster: RosterService,
         dashboard: DashboardService,
         attendance: AttendanceService,
+        grades: GradebookService,
         config: AppConfig,
         settings: QSettings | None = None,
         save_config: Callable[[AppConfig], None] | None = None,
@@ -79,6 +82,8 @@ class MainWindow(QMainWindow):
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
         self.attendance_view.navigate_requested.connect(self.show_page)
+        self.gradebook_view = GradebookView(grades, roster)
+        self.gradebook_view.manage_subjects_requested.connect(self.show_subjects)
         self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
@@ -103,7 +108,7 @@ class MainWindow(QMainWindow):
         self.pages: list[tuple[str, QWidget]] = [
             ("Dashboard", self.dashboard_view),
             ("Attendance", self.attendance_view),
-            ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
+            ("Gradebook", self.gradebook_view),
             ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
             ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
             ("Manage classes", self.classes_view),
