@@ -276,3 +276,43 @@ def test_a_plan_is_saved_as_pdf(window: MainWindow, roster: RosterService, tmp_p
     assert asked[0].endswith("7B (2026-2027) Tests seating.pdf")
     assert target.read_bytes().startswith(b"%PDF")
     assert infos[0].startswith("Saved the seating plan to")
+
+
+def test_each_class_keeps_the_plan_shown_in_it(window: MainWindow, roster: RosterService):
+    class_id, tests, _ids = _seated_class(window, roster)
+    view = window.seating_view
+    groups = view.seating.save_layout(SeatLayout(class_id, "Group work", 3, 4)).id
+    view.show_layout(tests)
+    assert view.layout_id == tests
+    other = roster.save_class(SchoolClass(name="7C", term="2026-2027")).id
+    window.select_class(other)
+    assert view.layout_id is None
+    view.show_layout(groups)  # not a plan of 7C
+    assert view.layout_id is None
+    window.select_class(class_id)
+    assert view.layout_id == tests
+
+
+def test_the_plan_shown_is_remembered(qapp, conn, roster: RosterService, tmp_path):
+    from PySide6.QtCore import QSettings
+
+    from app.config import AppConfig
+    from app.repositories.dashboard_repo import DashboardRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.dashboard import DashboardService
+    from tests.test_ui_smoke import _attendance, _grades
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    first.select_class(class_id)
+    seating = first.seating_view.seating
+    seating.save_layout(SeatLayout(class_id, "A plan", 2, 2))
+    tests = seating.save_layout(SeatLayout(class_id, "Tests", 2, 2)).id
+    first.seating_view.show_layout(tests)
+    first.close()
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
+    assert second.seating_view.layout_id == tests
+    second.close()

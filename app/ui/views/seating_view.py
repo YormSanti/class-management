@@ -47,6 +47,7 @@ class SeatingView(QWidget):
         self.layout_id: int | None = None
         self.plan: SeatingPlan | None = None
         self.picked: int | None = None  # the student clicked, waiting for a seat
+        self._last_layout: dict[int, int] = {}  # class id -> plan shown in it this session
         # Who sat where before each change, as (layout id, {(row, col): student id}).
         self._undo: list[tuple[int, dict[tuple[int, int], int]]] = []
         self._redo: list[tuple[int, dict[tuple[int, int], int]]] = []
@@ -190,10 +191,16 @@ class SeatingView(QWidget):
 
     def set_class(self, class_id: int | None) -> None:
         if class_id != self.class_id:
-            self.layout_id = None
+            self.layout_id = self._last_layout.get(class_id) if class_id is not None else None
             self.clear_undo()
         self.class_id = class_id
         self.refresh()
+
+    def show_layout(self, layout_id: int) -> None:
+        """Show plan `layout_id`, if it is one of the current class's."""
+        if layout_id in [x.id for x in self.seating.list_layouts(self.class_id or 0)]:
+            self.layout_id = layout_id
+            self.refresh()
 
     def showEvent(self, event) -> None:
         # Students may have been added or deactivated meanwhile.
@@ -210,6 +217,8 @@ class SeatingView(QWidget):
         layouts = self.seating.list_layouts(self.class_id) if self.class_id is not None else []
         if self.layout_id not in [x.id for x in layouts]:
             self.layout_id = layouts[0].id if layouts else None
+        if self.class_id is not None and self.layout_id is not None:
+            self._last_layout[self.class_id] = self.layout_id
         with QSignalBlocker(self.layout_combo):
             self.layout_combo.clear()
             for x in layouts:
