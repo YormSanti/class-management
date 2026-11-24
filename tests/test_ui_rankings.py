@@ -143,3 +143,29 @@ def test_rank_by_all_subjects_is_remembered(qapp, conn, roster: RosterService, t
     second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.rankings_view.overall
     second.close()
+
+
+def test_rankings_number_shared_places_as_settings_say(window: MainWindow, roster: RosterService):
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_scores(
+        [(test, ids["Ada"], "9"), (test, ids["Bob"], "9"), (test, ids["Cy"], "5")]
+    )
+    window.show_page("Rankings")
+    assert [row[0] for row in _rows(window)][:3] == ["1", "1", "3"]
+    window.settings_view.ranking_buttons["dense"].click()
+    assert [row[0] for row in _rows(window)][:3] == ["1", "1", "2"]
+
+
+def test_rankings_start_with_the_saved_method(qapp, conn, roster: RosterService, tmp_path):
+    from app.config import AppConfig
+    from app.repositories.dashboard_repo import DashboardRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.dashboard import DashboardService
+    from tests.test_ui_smoke import _attendance, _grades
+
+    dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    config = AppConfig(data_dir=tmp_path, ranking_method="dense")
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), config)
+    assert window.rankings_view.rankings.method == "dense"
+    window.close()

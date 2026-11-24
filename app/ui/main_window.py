@@ -255,7 +255,11 @@ class MainWindow(QMainWindow):
     def _config_changed(self, changed: AppConfig) -> None:
         """A setting was changed on the Settings page."""
         pass_mark_changed = changed.pass_mark != self.config.pass_mark
+        method_changed = changed.ranking_method != self.config.ranking_method
         self.config = changed
+        if method_changed:
+            self.rankings_view.rankings.method = changed.ranking_method
+            self.rankings_view.refresh()
         if pass_mark_changed:
             self.gradebook_view.pass_mark = changed.pass_mark
             self.gradebook_view.refresh()
