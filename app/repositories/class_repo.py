@@ -35,6 +35,14 @@ class ClassRepository:
         attendance or grades of its students or subjects, still reference them.
         """
         with transaction(self.conn):
+            # Seating plans nobody sits in are setup too; one with students seated stops the delete.
+            self.conn.execute(
+                """
+                DELETE FROM seat_layouts WHERE class_id = ? AND NOT EXISTS
+                    (SELECT 1 FROM seats WHERE layout_id = seat_layouts.id AND student_id IS NOT NULL)
+                """,
+                (class_id,),
+            )
             self.conn.execute("DELETE FROM students WHERE class_id = ?", (class_id,))
             # Grade categories are setup, not records; one with assignments still stops the delete.
             self.conn.execute(
@@ -45,7 +53,8 @@ class ClassRepository:
 
     def recorded(self, class_id: int) -> dict[str, int]:
         """How much is recorded for the class's students and subjects, i.e. what stops
-        delete() from removing it: {"attendance", "scores", "assignments", "seating": count}. Seating counts its layouts and others its students sit in."""
+        delete() from removing it: {"attendance", "scores", "assignments", "seating": count}. Seating counts the plans,
+        its own or another class's, that its students or anyone sits in; empty plans are setup."""
         row = self.conn.execute(
             """
             WITH st AS (SELECT id FROM students WHERE class_id = :c),
@@ -55,8 +64,9 @@ class ClassRepository:
               (SELECT count(*) FROM scores WHERE student_id IN st
                   OR assignment_id IN (SELECT id FROM assignments WHERE subject_id IN sub)) AS scores,
               (SELECT count(*) FROM assignments WHERE subject_id IN sub) AS assignments,
-              (SELECT count(*) FROM seat_layouts WHERE class_id = :c
-                  OR id IN (SELECT layout_id FROM seats WHERE student_id IN st)) AS seating
+              (SELECT count(DISTINCT layout_id) FROM seats WHERE student_id IN st
+                  OR (student_id IS NOT NULL
+                      AND layout_id IN (SELECT id FROM seat_layouts WHERE class_id = :c))) AS seating
             """,
             {"c": class_id},
         ).fetchone()

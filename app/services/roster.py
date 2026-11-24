@@ -446,8 +446,8 @@ class RosterService:
 
     def delete_class(self, class_id: int) -> None:
         """Delete a class with its students and subjects, but only while nothing is
-        recorded for them: no attendance, assignments, grades or seating. Grade categories
-        are setup and go with their subjects.
+        recorded for them: no attendance, assignments, grades or students seated. Grade
+        categories and seating plans nobody sits in are setup and go with the class.
 
         This is for undoing a mistake, e.g. a class created in the wrong school year.
         """

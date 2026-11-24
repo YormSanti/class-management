@@ -830,3 +830,25 @@ def test_copied_subjects_bring_their_grade_categories(roster, conn):
     other = roster.save_class(SchoolClass(name="7D", term="2025-2026")).id
     roster.copy_subjects(seventh, other)
     assert categories(other) == [("Tests", 60), ("Homework", 40)]
+
+
+def test_class_with_only_empty_seating_plans_can_be_deleted(conn, roster: RosterService):
+    from app.models import SeatLayout
+    from app.repositories.class_repo import ClassRepository
+    from app.repositories.seating_repo import SeatingRepository
+
+    seating = SeatingRepository(conn)
+    class_id = roster.save_class(SchoolClass(name="8A")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    empty = seating.add_layout(SeatLayout(class_id, "Tests", 2, 2)).id
+    seating.set_gap(empty, 0, 1, True)  # an aisle is setup too
+    used = seating.add_layout(SeatLayout(class_id, "Group work", 2, 2)).id
+    seating.set_seats(used, {(0, 0): ada.id})
+    assert ClassRepository(conn).recorded(class_id)["seating"] == 1
+    with pytest.raises(RosterError, match="1 seating plan"):
+        roster.delete_class(class_id)
+    assert len(seating.layouts(class_id)) == 2  # nothing deleted
+    seating.set_seats(used, {})
+    roster.delete_class(class_id)
+    assert roster.get_class(class_id) is None
+    assert seating.layouts(class_id) == []

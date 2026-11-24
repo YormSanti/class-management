@@ -124,8 +124,8 @@ whole class at random; Ctrl+Z undoes either. **Edit…** renames the plan or cha
 room, asking first if a smaller room would leave someone without a seat, and **Save
 PDF…** saves the plan to print, e.g. for a substitute teacher.
 
-A student who is deactivated leaves their seat free. A class with seating plans can't be
-deleted until its plans are.
+A student who is deactivated leaves their seat free. Deleting a class deletes its seating
+plans while nobody is seated in them; clear a plan first to delete a class set up by mistake.
 
 ## Test
 
