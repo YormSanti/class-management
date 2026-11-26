@@ -1137,7 +1137,9 @@ class AttendanceView(QWidget):
             self.attendance.set_note(row.student.id, self.day, text, self.subject_id)
         except AttendanceError as exc:
             self._forget()
+            self._row_widgets[i][1].setText(row.note)  # show the note that is saved, not the one refused
             QMessageBox.information(self, "Attendance", str(exc))
+            return
         row.note = text  # editingFinished can fire twice (Return, then losing focus)
 
     def mark_rest_present(self) -> None:

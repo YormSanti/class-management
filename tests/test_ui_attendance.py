@@ -178,3 +178,29 @@ def test_a_first_day_past_the_last_moves_the_last_along(qapp: QApplication):
     assert period.problem.text() == "The last day is before the first."
     marks.deleteLater()
     period.deleteLater()
+
+
+def test_a_note_that_cant_be_saved_isnt_left_showing(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services.attendance import AttendanceError
+
+    view = _page(window, roster)
+    buttons, note = view._row_widgets[0]
+    buttons.buttons[AttendanceStatus.ABSENT].click()
+    note.setText("Dentist")
+    note.editingFinished.emit()
+
+    def refuse(*_args):
+        raise AttendanceError("Grace Hopper is inactive. Reactivate them to take attendance.")
+
+    told = []
+    monkeypatch.setattr(view.attendance, "set_note", refuse)
+    monkeypatch.setattr(QMessageBox, "information", lambda _parent, _title, text: told.append(text))
+    note.setText("Sick")
+    note.editingFinished.emit()
+    assert told == ["Grace Hopper is inactive. Reactivate them to take attendance."]
+    assert note.text() == "Dentist" and view.register.rows[0].note == "Dentist"
+    assert view.undo_button.toolTip().startswith("Undo: note for Grace Hopper")  # the saved note, not the refused one
