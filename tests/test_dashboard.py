@@ -218,6 +218,17 @@ def test_recent_assignments_newest_first(service, roster, conn, class_id, maths)
     assert titles == ["New", "Old", "Undated"]
 
 
+def test_recent_assignments_leave_out_work_not_due_yet(service, roster, conn, class_id, maths):
+    _student(roster, class_id, "Ada")
+    cat = _category(conn, maths, "Tests", 1)
+    _assignment(conn, maths, cat, "Next week's test", 10, TODAY + timedelta(days=7))
+    _assignment(conn, maths, cat, "Today's quiz", 10, TODAY)
+    titles = [a.title for a in service.summary(class_id, TODAY).recent_assignments]
+    assert titles == ["Today's quiz"]
+    later = service.summary(class_id, TODAY + timedelta(days=7)).recent_assignments
+    assert [a.title for a in later] == ["Next week's test", "Today's quiz"]
+
+
 def test_each_subject_counts_equally(service, roster, conn, class_id, maths):
     ada = _student(roster, class_id, "Ada")
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id

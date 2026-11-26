@@ -217,7 +217,7 @@ class DashboardService:
             missing_total=sum(missing.values()),
             attendance_days=[DayAttendance(d, chart_counts.get(d, {})) for d in chart_dates],
             attention=self._needs_attention(class_id, today, low_subjects, missing),
-            recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS),
+            recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS, today),
             grade_distribution=distribution,
             subjects=subject_summaries,
             today_counts=by_date.get(today, {}),

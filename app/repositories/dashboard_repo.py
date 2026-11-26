@@ -157,8 +157,9 @@ class DashboardRepository:
         )
         return {r["student_id"]: r["n"] for r in rows}
 
-    def recent_assignments(self, class_id: int, limit: int) -> list[AssignmentStats]:
-        """Newest assignments first; undated ones come last."""
+    def recent_assignments(self, class_id: int, limit: int, on_or_before: date) -> list[AssignmentStats]:
+        """Newest assignments first; undated ones come last. Assignments dated after
+        `on_or_before`, e.g. next week's test, aren't recent and are left out."""
         rows = self.conn.execute(
             """
             SELECT a.id, a.title, sub.name AS subject, c.name AS category, a.date, a.max_score,
@@ -169,12 +170,12 @@ class DashboardRepository:
             JOIN categories c ON c.id = a.category_id
             LEFT JOIN scores sc ON sc.assignment_id = a.id AND sc.score IS NOT NULL
             LEFT JOIN students s ON s.id = sc.student_id AND s.active = 1
-            WHERE sub.class_id = ?
+            WHERE sub.class_id = ? AND (a.date IS NULL OR a.date <= ?)
             GROUP BY a.id
             ORDER BY a.date IS NULL, a.date DESC, a.id DESC
             LIMIT ?
             """,
-            (class_id, limit),
+            (class_id, on_or_before.isoformat(), limit),
         )
         return [
             AssignmentStats(
