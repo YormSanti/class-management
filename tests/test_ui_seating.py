@@ -188,6 +188,19 @@ def test_escape_puts_the_picked_student_down(window: MainWindow, roster: RosterS
     assert view.picked is None and view.hint.text() == HINT
 
 
+def test_leaving_the_page_puts_the_picked_student_down(window: MainWindow, roster: RosterService):
+    from app.ui.views.seating_view import HINT
+
+    _class_id, _layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    window.show_page("Seating")
+    view.pick(ids["Bob"])
+    window.show_page("Dashboard")
+    window.show_page("Seating")
+    assert view.picked is None
+    assert view.hint.text() == HINT  # not still asking for a seat for Bob
+
+
 def test_seat_the_rest_shuffle_clear_and_undo(window: MainWindow, roster: RosterService):
     _class_id, layout, ids = _seated_class(window, roster)
     view = window.seating_view

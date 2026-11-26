@@ -226,7 +226,7 @@ class SeatingView(QWidget):
 
     def refresh(self) -> None:
         """Read the current plan from the database again."""
-        self.picked = None
+        self.pick(None)
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             self.class_id = None
