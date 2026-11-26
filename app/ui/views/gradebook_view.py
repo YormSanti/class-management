@@ -329,6 +329,7 @@ class GradebookView(QWidget):
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.grades.delete_assignment(assignment_id)
+            self._forget_assignment(assignment_id)
             self.refresh()
 
     def fill_empty(self, assignment_id: int, text: str) -> int:
@@ -703,6 +704,12 @@ class GradebookView(QWidget):
         if change:
             self._undo = (self._undo + [change])[-UNDO_LIMIT:]
             self._redo.clear()
+
+    def _forget_assignment(self, assignment_id: int) -> None:
+        """Take a deleted assignment's scores out of undo and redo, keeping the other changes."""
+        for stack in (self._undo, self._redo):
+            kept = [[c for c in change if c[0] != assignment_id] for change in stack]
+            stack[:] = [change for change in kept if change]
 
     def clear_undo(self) -> None:
         self._undo.clear()

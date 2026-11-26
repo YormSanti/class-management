@@ -479,6 +479,26 @@ def test_score_changes_can_be_undone_and_redone(window: MainWindow, roster: Rost
     assert view.table.item(0, 1).text() == "8"
 
 
+def test_deleting_an_assignment_keeps_the_undo_of_other_scores(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 2).setText("4")  # Homework
+    view.table.item(0, 1).setText("8")  # Test 1
+    view.table.setCurrentCell(0, 1)
+    view.paste_scores("9\t3")  # both
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    view.delete_assignment(test)
+    view.undo()  # the paste, now only its Homework score
+    assert view.grades.sheet(maths).score(homework, ada) == 4
+    view.undo()  # typing 8 in Test 1 is gone with it; next is the 4 in Homework
+    assert not view.grades.sheet(maths).is_entered(homework, ada)
+    assert warnings == []
+
+
 def test_replaced_data_forgets_the_score_undo(window: MainWindow, roster: RosterService):
     maths, ada, test, homework = _graded_class(window, roster)
     view = window.gradebook_view
