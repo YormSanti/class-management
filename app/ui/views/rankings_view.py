@@ -291,6 +291,9 @@ class RankingsView(QWidget):
         ranking = self.ranking
         n = len(ranking.ranked)
         text = f"{n} student{'' if n == 1 else 's'} ranked"
+        failing = sum(r.average < self.pass_mark for r in ranking.ranked)
+        if failing:
+            text += f" · {failing} under the pass mark of {format_number(self.pass_mark)}%"
         if ranking.unranked:
             text += f" · {len(ranking.unranked)} with nothing scored yet, listed last"
         return text

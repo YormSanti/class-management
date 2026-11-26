@@ -63,7 +63,9 @@ def test_rankings_list_students_best_first_then_those_unscored(window: MainWindo
         ["3", "Cy Young", "55.0%", "F"],
         ["—", "Dee Ward", "—", ""],
     ]
-    assert view.summary.text().startswith("3 students ranked · 1 with nothing scored yet, listed last · ")
+    assert view.summary.text().startswith(
+        "3 students ranked · 1 under the pass mark of 60% · 1 with nothing scored yet, listed last · "
+    )
     assert view.table.item(3, 1).toolTip() == "Nothing scored yet"
 
 
@@ -185,8 +187,11 @@ def test_rankings_point_out_averages_under_the_pass_mark(window: MainWindow, ros
     assert view.table.item(0, 2).foreground().color() != danger
     assert view.table.item(0, 2).toolTip() == ""
 
+    assert view.summary.text().startswith("2 students ranked · 1 under the pass mark of 60% · ")
+
     window.settings_view.pass_mark.setValue(50)
     assert view.table.item(1, 2).foreground().color() != danger
+    assert view.summary.text().startswith("2 students ranked · 2 with nothing scored yet")
 
 
 def test_export_saves_the_ranking_as_csv(window: MainWindow, roster: RosterService, tmp_path, monkeypatch):
