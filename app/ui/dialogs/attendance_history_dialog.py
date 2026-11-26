@@ -36,7 +36,8 @@ class AttendanceHistoryDialog(QDialog):
     Given `registers` ((name, subject id) pairs) and `load` (subject id -> history), a
     picker switches between the daily register and the class's subjects.
     Double-clicking a day closes the dialog with `chosen_day` set, to open that day,
-    and `chosen_subject` the register it is in.
+    and `chosen_subject` the register it is in; double-clicking a month sets `chosen_month`
+    (its first day) instead, to open the month.
     """
 
     def __init__(
@@ -52,11 +53,13 @@ class AttendanceHistoryDialog(QDialog):
         self.setWindowTitle(f"Attendance · {history.student.full_name}")
         self.setMinimumSize(480, 420)
         self.chosen_day: date | None = None
+        self.chosen_month: date | None = None
         self.chosen_subject = self.subject_id = subject_id
         self._history = history
         self._register_name = register_name
         self._load = load
         self._days: list[date] = []
+        self._months: list[date] = []  # first days, as listed under By month
 
         title = style.label(history.student.full_name, 1.4, bold=True)
         self.register_combo = QComboBox()
@@ -118,6 +121,11 @@ class AttendanceHistoryDialog(QDialog):
         self.months_table.verticalHeader().setVisible(False)
         self.months_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.months_table.horizontalHeader().setStretchLastSection(True)
+        self.months_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.months_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.months_table.setToolTip("Double-click a month (or press Enter) to open it on the Month tab")
+        self.months_table.cellDoubleClicked.connect(self._open_month)
+        self.months_table.installEventFilter(self)
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -190,6 +198,7 @@ class AttendanceHistoryDialog(QDialog):
     def _fill_months(self) -> None:
         """Each month's totals and rate, newest first, to see a change over the year."""
         months = self._history.by_month()
+        self._months = [first for first, _counts in months]
         self.months_table.setRowCount(len(months))
         for i, (first, counts) in enumerate(months):
             rate = attendance_rate(counts)
@@ -222,14 +231,19 @@ class AttendanceHistoryDialog(QDialog):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if (
-            watched is self.table
-            and event.type() == QEvent.Type.KeyPress
+            event.type() == QEvent.Type.KeyPress  # first: the filter is at work before the month table exists
             and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-            and self.table.currentRow() >= 0
+            and watched in (self.table, self.months_table)
+            and watched.currentRow() >= 0
         ):
-            self._open_day(self.table.currentRow(), 0)
+            (self._open_day if watched is self.table else self._open_month)(watched.currentRow(), 0)
             return True
         return super().eventFilter(watched, event)
+
+    def _open_month(self, row: int, _col: int) -> None:
+        self.chosen_month = self._months[row]
+        self.chosen_subject = self.subject_id
+        self.accept()
 
     def _open_day(self, row: int, _col: int) -> None:
         self.chosen_day = self._days[row]

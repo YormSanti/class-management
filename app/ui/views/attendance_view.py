@@ -1325,10 +1325,15 @@ class AttendanceView(QWidget):
             history, self.register_name, self, registers,
             lambda subject_id: self.attendance.student_history(student_id, subject_id), self.subject_id,
         )  # fmt: skip
-        if dialog.exec() and dialog.chosen_day is not None:
-            if dialog.chosen_subject != self.subject_id:  # a day picked in another register
-                self.register_combo.setCurrentIndex(self.register_combo.findData(dialog.chosen_subject))
+        if not dialog.exec() or (dialog.chosen_day is None and dialog.chosen_month is None):
+            return
+        if dialog.chosen_subject != self.subject_id:  # a day or month picked in another register
+            self.register_combo.setCurrentIndex(self.register_combo.findData(dialog.chosen_subject))
+        if dialog.chosen_day is not None:
             self.set_day(dialog.chosen_day)
+        else:
+            self.tabs.setCurrentWidget(self.month_view)
+            self.month_view.set_month(dialog.chosen_month.year, dialog.chosen_month.month)
 
     # --- undo ----------------------------------------------------------------
 

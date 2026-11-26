@@ -204,3 +204,36 @@ def test_a_note_that_cant_be_saved_isnt_left_showing(
     assert told == ["Grace Hopper is inactive. Reactivate them to take attendance."]
     assert note.text() == "Dentist" and view.register.rows[0].note == "Dentist"
     assert view.undo_button.toolTip().startswith("Undo: note for Grace Hopper")  # the saved note, not the refused one
+
+
+def test_a_month_picked_in_the_history_opens_on_the_month_tab(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _page(window, roster)
+    student = view.register.rows[0].student.id
+    maths = view.register_combo.itemData(1)
+    view.attendance.mark(student, date(2026, 9, 14), AttendanceStatus.ABSENT, maths)
+    view.attendance.mark(student, FRIDAY, AttendanceStatus.LATE, maths)
+
+    history = view.attendance.student_history(student, maths)
+    dialog = AttendanceHistoryDialog(history, "Maths", subject_id=maths)
+    assert [dialog.months_table.item(i, 0).text() for i in range(2)] == ["November 2026", "September 2026"]
+    dialog.months_table.setCurrentCell(1, 0)
+    QTest.keyClick(dialog.months_table, Qt.Key.Key_Return)
+    assert dialog.chosen_month == date(2026, 9, 1) and dialog.chosen_day is None
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+    def exec_picking_september(self):
+        self._open_month(1, 0)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", exec_picking_september)
+    view.register_combo.setCurrentIndex(1)
+    view.show_history(0)  # from the Day tab, in the Maths register
+    assert view.tabs.currentWidget() is view.month_view
+    assert (view.month_view.year, view.month_view.month) == (2026, 9)
+    assert view.subject_id == maths and view.day == FRIDAY  # the day shown stays
