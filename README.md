@@ -88,8 +88,8 @@ weight, e.g. Tests 50 and Homework 20; weights are compared with each other, so 
 needn't add up to 100. A new subject is offered Tests, Quizzes, Homework and Participation
 to start with, or **Categories…** sets up your own.
 
-A score can be typed as points (`8`, `8,5`), a percentage of the maximum (`85%`) or `ex`
-for an exempt student. A student's average is each category's points scored over points
+A score can be typed as points (`8`, `8,5`), a percentage of the maximum (`85%`), points
+out of another total (`17/20`, for a paper marked out of 20) or `ex` for an exempt student. A student's average is each category's points scored over points
 possible, counted by its weight; categories with nothing scored yet, exempt students and
 empty cells are left out, while a 0 counts. Points above the maximum are bonus points.
 Averages under the pass mark (60% unless changed under **Settings → Grades**) are shown

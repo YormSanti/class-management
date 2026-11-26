@@ -32,7 +32,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Attendance, Month tab", "Enter", "Open the selected day"),
     ("Attendance, Month tab", "Alt+Left  Alt+Right, Page Up  Page Down", "Previous or next month"),
     ("Attendance, Month tab", "Alt+Home", "This month"),
-    ("Gradebook", "0-9, ex", "Type a score in the selected cell: points, a percentage (85%) or ex for exempt"),
+    ("Gradebook", "0-9, ex", "Type a score in the selected cell: points, a percentage (85%), points out of a total (17/20) or ex for exempt"),
     ("Gradebook", "Enter", "Save the score and go to the next student"),
     ("Gradebook", "Delete", "Clear the selected scores"),
     ("Gradebook", "Ctrl+C  Ctrl+V", "Copy the selected scores, or paste scores copied from a spreadsheet"),

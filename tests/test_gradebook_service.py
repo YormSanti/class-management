@@ -126,14 +126,18 @@ def test_deleting_an_assignment_deletes_its_scores(
 @pytest.mark.parametrize(
     "text, expected",
     [("", None), ("  ", None), ("8", 8), ("8,5", 8.5), (" 7.25 ", 7.25), ("85%", 17), ("ex", EXEMPT),
-     ("X", EXEMPT), ("Excused", EXEMPT), ("0", 0), ("25", 25), ("40", 40)],
+     ("X", EXEMPT), ("Excused", EXEMPT), ("0", 0), ("25", 25), ("40", 40), ("17/20", 17), ("8,5 / 10", 17),
+     ("3/4", 15)],
 )
 def test_typed_scores_are_read(text, expected):
     assert parse_score(text, 20) == expected
 
 
 @pytest.mark.parametrize("text, message", [("abc", "isn't a score"), ("nan", "isn't a score"),
-                                           ("-1", "can't be negative"), ("41", "far more than the maximum of 20")])
+                                           ("-1", "can't be negative"), ("41", "far more than the maximum of 20"),
+                                           ("5/0", "has to be more than 0"), ("5/", "isn't a score"),
+                                           ("1/2/3", "isn't a score"), ("50/2", "far more than the maximum"),
+                                           ("85/100%", "isn't a score")])
 def test_impossible_scores_are_refused(text, message):
     with pytest.raises(GradebookError, match=message):
         parse_score(text, 20)

@@ -61,7 +61,8 @@ def next_title(title: str, taken: list[str]) -> str:
 
 def parse_score(text: str, max_score: float) -> float | str | None:
     """What the teacher typed in a score cell: a number of points ("8", "8,5"), a
-    percentage of the maximum ("85%"), EXEMPT ("ex"), or None for an empty cell.
+    percentage of the maximum ("85%"), points out of another total ("17/20", e.g. from
+    a paper marked out of 20), EXEMPT ("ex"), or None for an empty cell.
     Raises GradebookError for anything else."""
     text = text.strip().casefold()
     if not text:
@@ -69,15 +70,21 @@ def parse_score(text: str, max_score: float) -> float | str | None:
     if text in EXEMPT_WORDS:
         return EXEMPT
     percent = text.endswith("%")
-    number = text.removesuffix("%").strip().replace(",", ".")
+    number, slash, out_of = text.removesuffix("%").partition("/")
     try:
-        value = float(number)
+        if slash and percent:
+            raise ValueError(text)
+        value = _number(number)
+        total = _number(out_of) if slash else None
     except ValueError:
         raise GradebookError(
-            f"{text!r} isn't a score. Type the points, e.g. 8.5, a percentage, e.g. 85%, or ex for exempt."
+            f"{text!r} isn't a score. Type the points, e.g. 8.5, a percentage, e.g. 85%, "
+            "points out of a total, e.g. 17/20, or ex for exempt."
         ) from None
-    if value != value or value in (float("inf"), float("-inf")):  # nan, inf
-        raise GradebookError(f"{text!r} isn't a score.")
+    if total is not None:
+        if total <= 0:
+            raise GradebookError(f"{text!r} isn't a score: the total after / has to be more than 0.")
+        value = value * max_score / total
     if percent:
         value = value * max_score / 100
     if value < 0:
@@ -87,6 +94,14 @@ def parse_score(text: str, max_score: float) -> float | str | None:
             f"{format_number(value)} is far more than the maximum of {format_number(max_score)}. Check the score."
         )
     return round(value, 2)
+
+
+def _number(text: str) -> float:
+    """A typed number, with a decimal comma or point; ValueError for anything else."""
+    value = float(text.strip().replace(",", "."))
+    if value != value or value in (float("inf"), float("-inf")):  # nan, inf
+        raise ValueError(text)
+    return value
 
 
 def weight_shares(categories: list[Category]) -> dict[int, float]:
