@@ -1402,6 +1402,8 @@ class AttendanceView(QWidget):
         plain = not (event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier)
         if watched is self.table and plain:
             i = self.table.currentRow()
+            if not self._visible_rows() and key not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+                return True  # the find box matches no one: no key may mark or select a hidden student
             if 0 <= i < len(self.register.rows):
                 if key in KEYS:
                     self._set_status(i, KEYS[key])

@@ -1,0 +1,86 @@
+"""The Attendance page, driven offscreen in the real window."""
+
+import os
+import sqlite3
+from collections.abc import Iterator
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from app.config import AppConfig  # noqa: E402
+from app.models import AttendanceStatus, SchoolClass, Student  # noqa: E402
+from app.repositories.attendance_repo import AttendanceRepository  # noqa: E402
+from app.repositories.dashboard_repo import DashboardRepository  # noqa: E402
+from app.repositories.gradebook_repo import GradebookRepository  # noqa: E402
+from app.repositories.student_repo import StudentRepository  # noqa: E402
+from app.repositories.subject_repo import SubjectRepository  # noqa: E402
+from app.services.attendance import AttendanceService  # noqa: E402
+from app.services.dashboard import DashboardService  # noqa: E402
+from app.services.gradebook import GradebookService  # noqa: E402
+from app.services.roster import RosterService  # noqa: E402
+from app.ui.main_window import MainWindow  # noqa: E402
+
+FRIDAY = date(2026, 11, 6)
+
+
+@pytest.fixture(scope="session")
+def qapp() -> QApplication:
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def window(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+) -> Iterator[MainWindow]:
+    students, subjects = StudentRepository(conn), SubjectRepository(conn)
+    window = MainWindow(
+        roster,
+        DashboardService(DashboardRepository(conn), students, subjects),
+        AttendanceService(AttendanceRepository(conn), students, subjects),
+        GradebookService(GradebookRepository(conn), students, subjects),
+        AppConfig(data_dir=tmp_path),
+    )
+    window.show()
+    yield window
+    window.close()
+    window.deleteLater()
+
+
+def _page(window: MainWindow, roster: RosterService, names=("Ada Lovelace", "Grace Hopper"), day=FRIDAY):
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    for name in names:
+        first, last = name.split()
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name=last))
+    window.select_class(class_id)
+    window.show_page("Attendance")
+    view = window.attendance_view
+    view.set_day(day)
+    return view
+
+
+def _statuses(view) -> list[str | None]:
+    return [row.status.value if row.status else None for row in view.register.rows]
+
+
+def test_keys_mark_nobody_when_the_find_box_matches_no_one(window: MainWindow, roster: RosterService):
+    view = _page(window, roster)
+    view.find_edit.setText("zzz")
+    assert all(view.table.isRowHidden(i) for i in range(view.table.rowCount()))
+    QTest.keyClick(view.find_edit, Qt.Key.Key_Return)
+    QTest.keyClick(view.table, Qt.Key.Key_A)
+    assert _statuses(view) == [None, None]
+    view.attendance.mark(view.register.rows[0].student.id, FRIDAY, AttendanceStatus.LATE)
+    view.refresh()
+    QTest.keyClick(view.table, Qt.Key.Key_Delete)
+    assert _statuses(view) == ["late", None]
+
+    view.find_edit.clear()  # everyone shown again: the keys work as before
+    QTest.keyClick(view.table, Qt.Key.Key_A)
+    assert _statuses(view) == ["absent", None]
