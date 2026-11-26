@@ -321,6 +321,22 @@ def repeated_names(students: list[PastedStudent]) -> list[str]:
     return list(repeated.values())
 
 
+def too_long(students: list[PastedStudent]) -> list[str]:
+    """Why save_student() would refuse a pasted name, number or note as too long, one
+    line each, e.g. when a whole paragraph landed in the notes column."""
+    problems = []
+    for s in students:
+        for text, limit, what in ((_clean(s.student_no), STUDENT_NO_MAX, "A student number"),
+                                  (_clean(s.first_name), NAME_MAX, "A first name"),
+                                  (_clean(s.last_name), NAME_MAX, "A last name"),
+                                  (s.notes.strip(), STUDENT_NOTES_MAX, "The notes")):  # as save_student() cleans them  # fmt: skip
+            try:
+                _check_length(text, limit, what)
+            except RosterError as exc:
+                problems.append(f"Line {s.line}: {exc}")
+    return problems
+
+
 def fix_name_case(name: str) -> str:
     """A name typed all in capitals or all in lowercase, written the usual way:
     "LOVELACE" -> "Lovelace", "anne-marie o'brien" -> "Anne-Marie O'Brien".

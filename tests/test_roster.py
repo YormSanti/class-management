@@ -912,3 +912,14 @@ def test_class_with_only_empty_seating_plans_can_be_deleted(conn, roster: Roster
     roster.delete_class(class_id)
     assert roster.get_class(class_id) is None
     assert seating.layouts(class_id) == []
+
+
+def test_too_long_names_the_pasted_lines_that_would_be_refused():
+    from app.services.roster import too_long
+
+    pasted, _ = parse_student_list(f"1\tAda\tLovelace\n{'9' * 21}\tGrace\t{'H' * 61}\n3\tAlan\tTuring\t{'n' * 1001}\n")
+    assert too_long(pasted) == [
+        "Line 2: A student number can be at most 20 characters; this one has 21.",
+        "Line 2: A last name can be at most 60 characters; this one has 61.",
+        "Line 3: The notes can be at most 1000 characters; this one has 1001.",
+    ]

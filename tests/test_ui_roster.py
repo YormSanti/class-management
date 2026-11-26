@@ -43,3 +43,12 @@ def test_new_year_dialog_does_not_ask_about_the_suggested_year(
     dialog = NewYearDialog(roster, "2025-2026")
     dialog.accept()
     assert [c.term for c in dialog.created] == ["2026-2027"]
+
+
+def test_paste_preview_points_out_a_name_too_long_to_add(qapp: QApplication, roster: RosterService):
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    dialog = PasteStudentsDialog(roster, class_id, text="Ada\tLovelace\nGrace\t" + "H" * 61 + "\n")
+    assert "Line 2: A last name can be at most 60 characters" in dialog.problems.text()
+    assert not dialog._ok.isEnabled()
