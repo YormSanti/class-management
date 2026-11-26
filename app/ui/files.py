@@ -1,5 +1,6 @@
 """Asking where to save a file and writing PDFs, shared by every export on every page."""
 
+import os
 import re
 from pathlib import Path
 
@@ -37,8 +38,16 @@ def ask_save_path(
 
 
 def write_pdf(parent: QWidget, path, title: str, page_html: str, landscape: bool) -> bool:
-    """Print `page_html` to an A4 PDF at `path`; says so and returns False if it failed."""
-    writer = QPdfWriter(str(path))
+    """Print `page_html` to an A4 PDF at `path`; says so and returns False if it failed.
+
+    The PDF is written next to `path` first and then renamed, so a failed save can't
+    pass for a good one when an older PDF of the same name is already there, and never
+    leaves half a file in its place.
+    """
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.unlink(missing_ok=True)
+    writer = QPdfWriter(str(tmp))
     writer.setTitle(title)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
     orientation = QPageLayout.Orientation.Landscape if landscape else QPageLayout.Orientation.Portrait
@@ -47,7 +56,17 @@ def write_pdf(parent: QWidget, path, title: str, page_html: str, landscape: bool
     document.setHtml(page_html)
     document.print_(writer)
     del writer  # finishes the file
-    if not path.exists() or path.stat().st_size == 0:
-        QMessageBox.warning(parent, "Save PDF", f"The PDF could not be saved to\n{path}")
+    try:
+        if not tmp.exists() or tmp.stat().st_size == 0:
+            raise OSError("nothing could be written there")
+        os.replace(tmp, path)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        QMessageBox.warning(
+            parent,
+            "Save PDF",
+            f"The PDF could not be saved to\n{path}\n\n{exc}\n\n"
+            "If a PDF of that name is open in another program, close it and try again.",
+        )
         return False
     return True
