@@ -81,11 +81,10 @@ class ClassRepository:
         return [_from_row(r) for r in rows]
 
     def find_by_name(self, name: str, term: str) -> SchoolClass | None:
-        """Case-insensitive, so "7b" and "7B" in the same school year count as the same class."""
-        row = self.conn.execute(
-            "SELECT * FROM classes WHERE name = ? COLLATE NOCASE AND term = ?", (name, term)
-        ).fetchone()
-        return _from_row(row) if row else None
+        """Case-insensitive, so "7b" and "7B" (or "Ä1" and "ä1") in the same school year
+        count as the same class; SQLite's NOCASE only folds A to Z."""
+        rows = self.conn.execute("SELECT * FROM classes WHERE term = ? ORDER BY id", (term,))
+        return next((_from_row(r) for r in rows if r["name"].casefold() == name.casefold()), None)
 
     def list_terms(self) -> list[str]:
         """Distinct non-empty school years, newest first ("2026-2027" before "2025-2026")."""

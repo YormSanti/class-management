@@ -114,16 +114,11 @@ class StudentRepository:
         return _from_row(row) if row else None
 
     def find_by_name(self, class_id: int, first_name: str, last_name: str) -> list[Student]:
-        """Students in the class with this name, ignoring case; inactive ones included."""
-        rows = self.conn.execute(
-            """
-            SELECT * FROM students
-            WHERE class_id = ? AND first_name = ? COLLATE NOCASE AND last_name = ? COLLATE NOCASE
-            ORDER BY id
-            """,
-            (class_id, first_name, last_name),
-        )
-        return [_from_row(r) for r in rows]
+        """Students in the class with this name, ignoring case, also of letters such as
+        "É" that SQLite's NOCASE leaves alone; inactive ones included."""
+        wanted = (first_name.casefold(), last_name.casefold())
+        rows = self.conn.execute("SELECT * FROM students WHERE class_id = ? ORDER BY id", (class_id,))
+        return [_from_row(r) for r in rows if (r["first_name"].casefold(), r["last_name"].casefold()) == wanted]
 
     def list_for_class(self, class_id: int, include_inactive: bool = False) -> list[Student]:
         """Students in a class sorted by name (the roster service does the searching)."""

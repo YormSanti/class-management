@@ -68,12 +68,10 @@ class SubjectRepository:
         return _from_row(row) if row else None
 
     def find_by_name(self, class_id: int, name: str) -> Subject | None:
-        """Case-insensitive, so "maths" and "Maths" count as the same subject."""
-        row = self.conn.execute(
-            "SELECT * FROM subjects WHERE class_id = ? AND name = ? COLLATE NOCASE",
-            (class_id, name),
-        ).fetchone()
-        return _from_row(row) if row else None
+        """Case-insensitive, so "maths" and "Maths", or "économie" and "Économie", count
+        as the same subject (SQLite's NOCASE only folds A to Z)."""
+        rows = self.conn.execute("SELECT * FROM subjects WHERE class_id = ? ORDER BY id", (class_id,))
+        return next((_from_row(r) for r in rows if r["name"].casefold() == name.casefold()), None)
 
     def list_for_class(self, class_id: int) -> list[Subject]:
         rows = self.conn.execute(

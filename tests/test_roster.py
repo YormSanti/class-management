@@ -923,3 +923,17 @@ def test_too_long_names_the_pasted_lines_that_would_be_refused():
         "Line 2: A last name can be at most 60 characters; this one has 61.",
         "Line 3: The notes can be at most 1000 characters; this one has 1001.",
     ]
+
+
+def test_names_differing_only_in_the_case_of_accented_letters_are_the_same(roster: RosterService, class_id: int):
+    roster.save_class(SchoolClass(name="Éco 1", term="2026 T1"))
+    with pytest.raises(RosterError, match="already a class called Éco 1"):
+        roster.save_class(SchoolClass(name="éco 1", term="2026 T1"))
+    roster.save_subject(Subject(class_id=class_id, name="Économie"))
+    with pytest.raises(RosterError, match="already has a subject called Économie"):
+        roster.save_subject(Subject(class_id=class_id, name="économie"))
+    élodie = _add(roster, class_id, "Élodie", "Ñúñez")
+    same = roster.same_name_students(Student(class_id=class_id, first_name="élodie", last_name="ñúñez"))
+    assert [s.id for s in same] == [élodie.id]
+    pasted, _ = parse_student_list("ÉLODIE ÑÚÑEZ\n")
+    assert roster.already_in_class(class_id, pasted) == pasted
