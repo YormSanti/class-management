@@ -1140,12 +1140,13 @@ class AttendanceView(QWidget):
     def mark_rest_present(self) -> None:
         if self.class_id is None:
             return
-        if self.day > date.today():
+        day = self.day
+        if day > date.today() or day.weekday() >= 5:  # a whole class marked on a wrong day is a lot to undo
+            why = "hasn't happened yet" if day > date.today() else "is a weekend day"
             answer = QMessageBox.question(
                 self,
                 "Mark the rest present",
-                f"{self.day:%A} {self.day.day} {self.day:%B} hasn't happened yet. "
-                "Mark everyone who isn't marked as present anyway?",
+                f"{day:%A} {day.day} {day:%B} {why}. Mark everyone who isn't marked as present anyway?",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return

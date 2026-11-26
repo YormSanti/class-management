@@ -113,3 +113,30 @@ def test_ctrl_shift_c_copies_nothing_before_anyone_is_marked(window: MainWindow,
     _shortcut(view, "Ctrl+Shift+C").activated.emit()
     assert "Grace Hopper" in QApplication.clipboard().text()
     assert view.status_label.text().startswith("Copied")
+
+
+def test_mark_the_rest_present_asks_first_on_a_weekend(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _page(window, roster, day=date(2026, 11, 7))  # a Saturday
+    asked = []
+
+    def answer(_parent, _title, text, *args):
+        asked.append(text)
+        return reply
+
+    monkeypatch.setattr(QMessageBox, "question", answer)
+    reply = QMessageBox.StandardButton.No
+    view.mark_rest_button.click()
+    assert asked == ["Saturday 7 November is a weekend day. Mark everyone who isn't marked as present anyway?"]
+    assert _statuses(view) == [None, None]
+
+    reply = QMessageBox.StandardButton.Yes
+    view.mark_rest_button.click()
+    assert _statuses(view) == ["present", "present"]
+
+    view.set_day(FRIDAY)  # a school day in the past: no question
+    view.mark_rest_button.click()
+    assert len(asked) == 2 and _statuses(view) == ["present", "present"]
