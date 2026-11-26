@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -49,18 +50,31 @@ class CategoriesDialog(QDialog):
         self.table.itemSelectionChanged.connect(self._update_buttons)
 
         self.add_button = QPushButton("&Add…")
+        self.add_button.setToolTip("Add a category (Ctrl+N)")
         self.add_button.clicked.connect(self.add_category)
         self.edit_button = QPushButton("&Edit…")
+        self.edit_button.setToolTip("Edit the selected category (Enter or F2)")
         self.edit_button.clicked.connect(self.edit_category)
         self.delete_button = QPushButton("&Delete")
+        self.delete_button.setToolTip("Delete the selected category, while no assignment is in it (Delete)")
         self.delete_button.clicked.connect(self.delete_category)
         row = QHBoxLayout()
         for button in (self.add_button, self.edit_button, self.delete_button):
+            button.setAutoDefault(False)  # Enter in the list edits, it doesn't press a button
             row.addWidget(button)
         row.addStretch()
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
         row.addWidget(close)
+
+        for keys in ("Return", "Enter", "F2", "Delete"):
+            shortcut = QShortcut(QKeySequence(keys), self.table)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            if keys == "Delete":
+                shortcut.activated.connect(lambda: self.delete_category())
+            else:
+                shortcut.activated.connect(lambda: self.edit_category())
+        QShortcut(QKeySequence.StandardKey.New, self).activated.connect(lambda: self.add_category())
 
         layout = QVBoxLayout(self)
         layout.addWidget(intro)

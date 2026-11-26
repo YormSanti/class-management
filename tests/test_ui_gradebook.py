@@ -145,6 +145,23 @@ def test_categories_dialog_adds_edits_and_deletes(window: MainWindow, roster: Ro
     assert dialog.table.rowCount() == 1
 
 
+def test_categories_dialog_keys_add_edit_and_delete(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    from app.ui.dialogs.categories_dialog import CategoriesDialog
+
+    maths, *_ = _graded_class(window, roster)
+    dialog = CategoriesDialog(window.gradebook_view.grades, maths)
+    done = []
+    for name in ("add_category", "edit_category", "delete_category"):
+        monkeypatch.setattr(dialog, name, lambda name=name: done.append(name))
+    keys = {s.key().toString(): s for s in dialog.findChildren(QShortcut)}
+    for key in ("Return", "Enter", "F2", "Del", QKeySequence(QKeySequence.StandardKey.New).toString()):
+        keys[key].activated.emit()
+    assert done == ["edit_category"] * 3 + ["delete_category", "add_category"]
+    assert not any(b.autoDefault() for b in (dialog.add_button, dialog.edit_button, dialog.delete_button))
+
+
 def test_assignment_dialog_saves_a_new_assignment(window: MainWindow, roster: RosterService):
     from datetime import date
 
