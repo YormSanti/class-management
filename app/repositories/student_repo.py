@@ -63,9 +63,13 @@ class StudentRepository:
                 "UPDATE students SET active = ? WHERE id = ?", (int(active), student_id)
             )
 
-    def set_class(self, student_id: int, class_id: int) -> None:
+    def set_class(self, student_id: int, class_id: int, student_no: str | None) -> None:
+        """Move the student to `class_id` with `student_no`, in one step: their number may
+        be taken in either class on its own."""
         with transaction(self.conn):
-            self.conn.execute("UPDATE students SET class_id = ? WHERE id = ?", (class_id, student_id))
+            self.conn.execute(
+                "UPDATE students SET class_id = ?, student_no = ? WHERE id = ?", (class_id, student_no, student_id)
+            )
 
     def delete(self, student_id: int) -> None:
         """Delete a student. Raises sqlite3.IntegrityError if anything refers to them."""

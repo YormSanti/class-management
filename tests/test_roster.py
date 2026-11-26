@@ -654,6 +654,17 @@ def test_transfer_student_without_records_moves_them(roster: RosterService, clas
     assert [s.id for s in roster.list_students(other)] == [ada.id]
 
 
+def test_transfer_student_gets_a_number_that_is_taken_in_their_old_class(roster: RosterService, class_id: int):
+    other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="1")
+    _add(roster, class_id, "Grace", "Hopper", no="3")
+    _add(roster, other, "Alan", "Turing", no="1")
+    _add(roster, other, "Edsger", "Dijkstra", no="2")
+    moved = roster.transfer_student(ada.id, other)  # 1 is taken in 7C; the next free one, 3, only in 7B
+    assert (moved.id, moved.class_id, moved.student_no) == (ada.id, other, "3")
+    assert {s.full_name: s.student_no for s in roster.list_students(other)}["Ada Lovelace"] == "3"
+
+
 def test_transfer_student_with_records_keeps_history_in_old_class(roster: RosterService, class_id: int, conn):
     other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
     ada = _add(roster, class_id, "Ada", "Lovelace", no="5")

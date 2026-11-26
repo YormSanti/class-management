@@ -627,9 +627,9 @@ class RosterService:
             student_no = self.suggest_student_no(class_id) or None  # taken: the next free one
         with transaction(self.students.conn):
             if not self.students.has_records(student.id):
+                self.students.set_class(student.id, class_id, student_no)
                 moved = replace(student, class_id=class_id, student_no=student_no, active=True)
                 self.students.update(moved)
-                self.students.set_class(student.id, class_id)
                 return moved
             self.students.set_active(student.id, False)
             return self.students.add(
