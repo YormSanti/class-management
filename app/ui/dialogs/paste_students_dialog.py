@@ -30,6 +30,14 @@ from app.services.roster import (
 from app.ui import style
 
 PROBLEMS_SHOWN = 5  # lines that can't be read, named under the list; more would push it away
+NAMES_SHOWN = 8  # students named in the summary, e.g. those already in the class; then "and 22 more"
+
+
+def _some_names(names: list[str]) -> str:
+    """The first NAMES_SHOWN of `names`, and how many more there are."""
+    if len(names) <= NAMES_SHOWN:
+        return ", ".join(names)
+    return ", ".join(names[:NAMES_SHOWN]) + f" and {len(names) - NAMES_SHOWN} more"
 
 
 class PasteStudentsDialog(QDialog):
@@ -87,6 +95,7 @@ class PasteStudentsDialog(QDialog):
         self.problems = QLabel()
         self.problems.setWordWrap(True)
         self.summary = QLabel()
+        self.summary.setWordWrap(True)
         self.summary.setForegroundRole(QPalette.ColorRole.PlaceholderText)
 
         self.buttons = QDialogButtonBox(
@@ -148,12 +157,12 @@ class PasteStudentsDialog(QDialog):
         self.skip_existing.setVisible(bool(existing))
 
         n = len(self._students)
-        names = ", ".join(f"{s.first_name} {s.last_name}" for s in existing)
+        names = _some_names([f"{s.first_name} {s.last_name}" for s in existing])
         parts = [f"{n} student{'' if n == 1 else 's'} to add."]
         if existing:
             parts.append(f"Leaving out, already in the class: {names}." if skip else f"Already in the class: {names}.")
         if repeated := repeated_names(self._students):
-            parts.append("Listed twice: " + ", ".join(repeated) + ".")
+            parts.append("Listed twice: " + _some_names(repeated) + ".")
         self.summary.setText(" ".join(parts) if pasted else "")
         self._ok.setText(f"Add {n} student{'' if n == 1 else 's'}" if n else "Add students")
         self._ok.setEnabled(bool(n) and not problems)

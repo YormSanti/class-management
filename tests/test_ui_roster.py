@@ -91,3 +91,19 @@ def test_enter_in_the_student_search_goes_to_the_first_student_found(
     QTest.keyClick(view.table, Qt.Key.Key_Enter)  # the number pad Enter
     assert edited == ["Alan Turing"]
     view.close()
+
+
+def test_paste_summary_names_a_few_students_already_in_the_class(qapp: QApplication, roster: RosterService):
+    from app.models import Student
+    from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
+
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    names = [(f"Student{chr(65 + i)}", "Smith") for i in range(30)]
+    for first, last in names:
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name=last))
+    text = "".join(f"{first} {last}\n" for first, last in names) + "Ada Lovelace\n"
+    dialog = PasteStudentsDialog(roster, class_id, text=text)
+    summary = dialog.summary.text()
+    assert summary.startswith("1 student to add. Leaving out, already in the class: StudentA Smith, ")
+    assert "StudentH Smith and 22 more." in summary and "StudentI" not in summary
+    assert dialog.summary.wordWrap()
