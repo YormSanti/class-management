@@ -207,3 +207,18 @@ def test_manual_backup_reminder():
     assert manual_backup_reminder(now - timedelta(days=45), now) == (
         "Your data was last backed up elsewhere 45 days ago."
     )
+
+
+def test_other_files_in_the_backups_folder_are_left_alone(db_path: Path, conn: sqlite3.Connection, tmp_path: Path):
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    mine = backup_dir / "classroom_old copy.db"  # put there by the teacher
+    mine.write_bytes(b"keep me")
+    start = datetime(2026, 9, 1, 8, 0, 0)
+    for minute in range(12):
+        auto_backup(db_path, backup_dir, now=start + timedelta(minutes=minute))
+
+    names = [p.name for p in list_auto_backups(backup_dir)]
+    assert len(names) == 10 and "classroom_old copy.db" not in names
+    assert names[0] == "classroom_2026-09-01_08-11-00.db"  # still the newest real backup
+    assert mine.read_bytes() == b"keep me"

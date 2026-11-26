@@ -67,11 +67,17 @@ def manual_backup_reminder(last: datetime | None, now: datetime) -> str | None:
 
 
 def list_auto_backups(backup_dir: Path) -> list[Path]:
-    """Automatic backups, newest first."""
+    """Automatic backups, newest first.
+
+    Only files named like one (see backup_time) count, so another file put in the
+    folder, e.g. "classroom_old.db", is neither listed nor pruned and can't take the
+    place of a real backup among the ones kept.
+    """
     if not backup_dir.is_dir():
         return []
+    found = [p for p in backup_dir.glob(f"{AUTO_BACKUP_PREFIX}*.db") if backup_time(p) is not None]
     # Timestamps are zero-padded, so name order is chronological order.
-    return sorted(backup_dir.glob(f"{AUTO_BACKUP_PREFIX}*.db"), reverse=True)
+    return sorted(found, reverse=True)
 
 
 def backup_time(path: Path) -> datetime | None:
