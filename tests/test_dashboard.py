@@ -150,6 +150,15 @@ def test_missing_work_counts_only_past_dated_assignments(service, roster, conn, 
     assert service.summary(class_id, TODAY).missing_total == 1
 
 
+def test_work_due_today_is_not_missing_until_the_day_has_passed(service, roster, conn, class_id, maths):
+    ada = _student(roster, class_id, "Ada")
+    cat = _category(conn, maths, "Homework", 1)
+    _assignment(conn, maths, cat, "Test today", 10, TODAY)  # scores not entered yet
+    assert service.summary(class_id, TODAY).missing_total == 0
+    assert service.summary(class_id, TODAY + timedelta(days=1)).missing_total == 1
+    assert ada not in {i.student.id for i in service.summary(class_id, TODAY).attention}
+
+
 def test_needs_attention_uses_most_serious_reason(service, roster, conn, class_id, maths):
     maya = _student(roster, class_id, "Maya", "Okafor")
     jonas = _student(roster, class_id, "Jonas", "Berg")

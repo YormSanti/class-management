@@ -51,7 +51,7 @@ KPI_HELP = {
         "The mean of the students' averages. Each student's average is the mean of their subject "
         "averages, weighted by grade category; work not handed in is left out, unlike a score of 0."
     ),
-    "Missing work": "Scores not entered for dated assignments up to today, over all active students.",
+    "Missing work": "Scores not entered for assignments dated before today, over all active students.",
 }
 
 
