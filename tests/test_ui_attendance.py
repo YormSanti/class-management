@@ -94,3 +94,22 @@ def test_find_ignores_accents_and_name_order(window: MainWindow, roster: RosterS
     assert [view.table.isRowHidden(i) for i in range(2)] == [True, False]
     view.find_edit.setText("")
     assert [view.table.isRowHidden(i) for i in range(2)] == [False, False]
+
+
+def _shortcut(view, keys: str):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    return next(s for s in view.findChildren(QShortcut) if s.key() == QKeySequence(keys))
+
+
+def test_ctrl_shift_c_copies_nothing_before_anyone_is_marked(window: MainWindow, roster: RosterService):
+    view = _page(window, roster)
+    QApplication.clipboard().setText("before")
+    _shortcut(view, "Ctrl+Shift+C").activated.emit()
+    assert QApplication.clipboard().text() == "before"  # as the Copy absences button, which is disabled
+    assert not view.status_label.text().startswith("Copied")
+
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    _shortcut(view, "Ctrl+Shift+C").activated.emit()
+    assert "Grace Hopper" in QApplication.clipboard().text()
+    assert view.status_label.text().startswith("Copied")

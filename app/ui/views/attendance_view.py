@@ -753,7 +753,7 @@ class AttendanceView(QWidget):
             rest.activated.connect(lambda: self.mark_rest_button.isEnabled() and self.mark_rest_present())
         copy = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        copy.activated.connect(self.copy_absences)
+        copy.activated.connect(lambda: self.copy_button.isEnabled() and self.copy_absences())
         find = QShortcut(QKeySequence.StandardKey.Find, self)  # like the class list: whole window, page shown
         find.activated.connect(self._start_find)
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
