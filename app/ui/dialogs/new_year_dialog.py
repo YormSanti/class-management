@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import SchoolClass
-from app.services.roster import RosterError, RosterService, example_school_year, move_up, next_term
+from app.services.roster import RosterError, RosterService, example_school_year, move_up, next_term, term_warning
 
 _COPY, _CLASS, _STUDENTS, _SUBJECTS, _NEW_NAME = range(5)
 
@@ -178,6 +178,12 @@ class NewYearDialog(QDialog):
         return plan
 
     def accept(self) -> None:
+        warning = term_warning(" ".join(self.new_term.text().split()), date.today())
+        if warning and QMessageBox.question(
+            self, self.windowTitle(), f"{warning}\n\nCreate the classes in this school year anyway?"
+        ) != QMessageBox.StandardButton.Yes:
+            self.new_term.setFocus()
+            return
         try:
             self.created = self.roster.start_new_year(
                 self.new_term.text(), self.plan(), self.copy_students.isChecked()
