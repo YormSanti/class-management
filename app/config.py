@@ -65,6 +65,9 @@ def load_config(path: Path | None = None) -> AppConfig | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
         data_dir = Path(raw["data_dir"])
+        # "" or a relative path would put the data wherever the app happens to be started.
+        if not data_dir.is_absolute():
+            raise ValueError(f"the data folder {raw['data_dir']!r} isn't a full path")
     except FileNotFoundError:
         return None
     except (OSError, ValueError, KeyError, TypeError) as exc:

@@ -23,6 +23,16 @@ def test_corrupt_config_is_treated_as_missing(tmp_path: Path):
     assert load_config(path) is None
 
 
+def test_config_without_a_full_data_path_is_treated_as_missing(tmp_path: Path):
+    # Otherwise the data would end up in whatever folder the app was started from.
+    path = tmp_path / "config.json"
+    for data_dir in ("", "ClassroomData", "."):
+        path.write_text(json.dumps({"data_dir": data_dir}), encoding="utf-8")
+        assert load_config(path) is None
+    path.write_text(json.dumps({"data_dir": 5}), encoding="utf-8")
+    assert load_config(path) is None
+
+
 def test_unknown_ranking_method_falls_back_to_competition(tmp_path: Path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"data_dir": str(tmp_path), "ranking_method": "bogus"}))
