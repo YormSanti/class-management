@@ -140,3 +140,20 @@ def test_mark_the_rest_present_asks_first_on_a_weekend(
     view.set_day(FRIDAY)  # a school day in the past: no question
     view.mark_rest_button.click()
     assert len(asked) == 2 and _statuses(view) == ["present", "present"]
+
+
+def test_h_on_the_month_tab_shows_the_students_history(window: MainWindow, roster: RosterService):
+    view = _page(window, roster)
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    shown = []
+    month.history_requested.disconnect()  # instead of the dialog, which would wait for a click
+    month.history_requested.connect(shown.append)
+    month.table.setCurrentCell(1, 1 + month.register.days.index(FRIDAY))  # Lovelace, on a day
+    QTest.keyClick(month.table, Qt.Key.Key_H)
+    assert shown == [month.register.rows[1].student.id]
+    assert _statuses(view) == [None, None]  # H marks nothing
+
+    month.table.setCurrentCell(len(month.register.rows), 1)  # the "Absent that day" row: no student
+    QTest.keyClick(month.table, Qt.Key.Key_H)
+    assert len(shown) == 1

@@ -203,7 +203,7 @@ class MonthView(QWidget):
 
         hint = style.label(
             "Hover over a mark to see its note; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
-            "double-click a day (or press Enter) to open its register, or a name for the student's history. "
+            "double-click a day (or press Enter) to open its register, or a name (or press H) for the student's history. "
             "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
@@ -400,6 +400,9 @@ class MonthView(QWidget):
             plain = not (event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier)
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self._open_cell(row, col)
+                return True
+            if plain and key == Qt.Key.Key_H and self.register is not None and 0 <= row < len(self.register.rows):
+                self.history_requested.emit(self.register.rows[row].student.id)  # as on the Day tab
                 return True
             cell = self._cell(row, col)
             if plain and cell is not None and (key in KEYS or key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)):
