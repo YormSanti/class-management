@@ -316,6 +316,21 @@ def test_pasted_block_of_scores_is_entered(window: MainWindow, roster: RosterSer
     assert view.table.item(0, 1).text() == "1"
 
 
+def test_one_value_pasted_goes_in_every_selected_cell(window: MainWindow, roster: RosterService):
+    from PySide6.QtWidgets import QTableWidgetSelectionRange
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.setCurrentCell(0, 1)
+    view.table.setRangeSelected(QTableWidgetSelectionRange(0, 1, 1, 2), True)  # both students, both assignments
+    view.paste_scores("ex\n")
+    sheet = view.grades.sheet(maths)
+    assert all(sheet.is_entered(a, s.id) and sheet.score(a, s.id) is None
+               for a in (test, homework) for s in sheet.students)  # fmt: skip
+    view.undo()
+    assert view.grades.sheet(maths).scores == {}
+
+
 def test_paste_skips_students_and_assignments_not_shown(window: MainWindow, roster: RosterService):
     from app.models import Assignment, Category, Student
 

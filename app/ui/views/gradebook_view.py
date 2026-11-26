@@ -632,14 +632,19 @@ class GradebookView(QWidget):
     def paste_scores(self, text: str) -> None:
         """Enter a block of scores copied from a spreadsheet (tab-separated, one student per
         line), starting at the current cell. Students hidden by Find and assignments of
-        other categories are skipped, as they aren't in the block seen. All or nothing."""
+        other categories are skipped, as they aren't in the block seen. One value pasted
+        over several selected cells goes in each of them, as in a spreadsheet. All or nothing."""
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")
+        selected = self.selected_cells()
+        if len(lines) == 1 and "\t" not in lines[0] and len(selected) > 1:
+            self._enter_pasted([(a, s, lines[0]) for _r, _c, a, s in selected], {r for r, *_ in selected})
+            return
         row0, col0 = self.table.currentRow(), self.table.currentColumn()
         if self.assignment_at(col0) is None or row0 < 0:
             QMessageBox.information(self, "Paste scores", "Select the score cell to paste into first.")
             return
         rows = [r for r in range(row0, self.table.rowCount()) if not self.table.isRowHidden(r)]
         columns = [c for c in range(col0, self.average_column()) if not self.table.isColumnHidden(c)]
-        lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")
         entries, cells, left_out = [], set(), 0
         for r, line in enumerate(lines):
             for c, value in enumerate(line.split("\t")):
@@ -649,21 +654,26 @@ class GradebookView(QWidget):
                 row = rows[r]
                 entries.append((self.assignment_at(columns[c]), self.student_at(row), value))
                 cells.add(row)
-        before = [(a, s, self._score_text(a, s)) for a, s, _text in entries]
-        try:
-            self.grades.enter_scores(entries)
-        except GradebookError as exc:
-            QMessageBox.warning(self, "Paste scores", f"Nothing was pasted.\n\n{exc}")
-            return
-        for row in sorted(cells):
-            self._update_row(row)
-        self._remember(before)
-        if left_out:
+        if self._enter_pasted(entries, cells) and left_out:
             QMessageBox.information(
                 self, "Paste scores",
                 f"{left_out} value{'' if left_out == 1 else 's'} didn't fit in the gradebook and "
                 f"{'was' if left_out == 1 else 'were'} left out. Start the paste further up or left.",
             )  # fmt: skip
+
+    def _enter_pasted(self, entries: list[tuple[int, int, str]], rows: set[int]) -> bool:
+        """Enter pasted (assignment id, student id, text) cells, all or none, and show the
+        `rows` they are in. False, after saying why, when nothing could be pasted."""
+        before = [(a, s, self._score_text(a, s)) for a, s, _text in entries]
+        try:
+            self.grades.enter_scores(entries)
+        except GradebookError as exc:
+            QMessageBox.warning(self, "Paste scores", f"Nothing was pasted.\n\n{exc}")
+            return False
+        for row in sorted(rows):
+            self._update_row(row)
+        self._remember(before)
+        return True
 
     # --- undo ----------------------------------------------------------------
 
