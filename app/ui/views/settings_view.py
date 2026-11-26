@@ -207,6 +207,9 @@ class SettingsView(QWidget):
         self.pass_mark.setRange(0, 100)
         self.pass_mark.setSuffix(" %")
         self.pass_mark.setValue(round(config.pass_mark))
+        # Typed marks apply on Enter or leaving the box, not at every digit: typing 75
+        # would otherwise save 7 first and recolour every page on the way.
+        self.pass_mark.setKeyboardTracking(False)
         self.pass_mark.valueChanged.connect(self._pass_mark_changed)
         pass_row = QHBoxLayout()
         pass_row.addWidget(QLabel("Pass mark"))

@@ -36,3 +36,20 @@ def test_move_data_wont_switch_to_a_file_the_app_cant_open(
         assert saved == [] and view.config.data_dir == tmp_path
     finally:
         view.deleteLater()
+
+
+def test_typed_pass_mark_is_saved_once_on_enter(qapp, tmp_path: Path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    saved = []
+    view = SettingsView(AppConfig(data_dir=tmp_path), save=saved.append)
+    try:
+        view.pass_mark.lineEdit().selectAll()
+        QTest.keyClicks(view.pass_mark.lineEdit(), "75")
+        assert saved == []  # not 7 on the way to 75
+        QTest.keyClick(view.pass_mark.lineEdit(), Qt.Key.Key_Return)
+        assert [c.pass_mark for c in saved] == [75.0]
+        assert view.config.pass_mark == 75.0
+    finally:
+        view.deleteLater()
