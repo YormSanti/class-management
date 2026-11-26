@@ -1330,7 +1330,7 @@ class AttendanceView(QWidget):
         if dialog.chosen_subject != self.subject_id:  # a day or month picked in another register
             self.register_combo.setCurrentIndex(self.register_combo.findData(dialog.chosen_subject))
         if dialog.chosen_day is not None:
-            self.set_day(dialog.chosen_day)
+            self.open_day(dialog.chosen_day)  # on the Day tab, also when asked from the Month tab
         else:
             self.tabs.setCurrentWidget(self.month_view)
             self.month_view.set_month(dialog.chosen_month.year, dialog.chosen_month.month)

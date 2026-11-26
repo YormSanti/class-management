@@ -237,3 +237,26 @@ def test_a_month_picked_in_the_history_opens_on_the_month_tab(
     assert view.tabs.currentWidget() is view.month_view
     assert (view.month_view.year, view.month_view.month) == (2026, 9)
     assert view.subject_id == maths and view.day == FRIDAY  # the day shown stays
+
+
+def test_a_day_picked_in_the_history_opens_on_the_day_tab_from_the_month_tab(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _page(window, roster)
+    student = view.register.rows[0].student.id
+    view.attendance.mark(student, date(2026, 11, 3), AttendanceStatus.ABSENT)
+    view.refresh()
+
+    def exec_picking_the_absence(self):
+        self._open_day(0, 0)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", exec_picking_the_absence)
+    view.tabs.setCurrentWidget(view.month_view)
+    view.month_view.history_requested.emit(student)  # a name double-clicked on the Month tab
+    assert view.tabs.currentIndex() == 0
+    assert view.day == date(2026, 11, 3)
