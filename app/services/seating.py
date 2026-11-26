@@ -2,7 +2,8 @@
 
 A class can keep several plans, e.g. one for tests and one for group work. The
 students' active list decides who can be seated; a deactivated student's seat shows
-as free and is given away when someone else is put in it.
+as free and is given away when someone else is put in it; until then it is theirs
+again if they are reactivated.
 """
 
 import random
@@ -150,7 +151,7 @@ class SeatingService:
             if occupant is not None and occupant != student_id:
                 seats[old] = occupant
         seats[(row, col)] = student_id
-        self.seating.set_seats(layout_id, seats)
+        self._write(plan, seats)
 
     def set_desk(self, layout_id: int, row: int, col: int, desk: bool) -> None:
         """Put a desk at (row, col), or mark it as a spot with no desk, e.g. an aisle.
@@ -165,7 +166,7 @@ class SeatingService:
     def unseat(self, layout_id: int, student_id: int) -> None:
         """Take a student out of their seat."""
         plan = self._checked(layout_id, student_id)
-        self.seating.set_seats(layout_id, {seat: s for seat, s in plan.seats.items() if s != student_id})
+        self._write(plan, {seat: s for seat, s in plan.seats.items() if s != student_id})
 
     def set_seats(self, layout_id: int, seats: dict[tuple[int, int], int]) -> None:
         """Replace the whole plan, e.g. to undo a change or after filling it. Seats
@@ -176,10 +177,23 @@ class SeatingService:
             raise SeatingError("This seating plan no longer exists.")
         students = {s.id for s in plan.students}
         rows, cols = plan.layout.rows, plan.layout.cols
-        self.seating.set_seats(
-            layout_id,
-            {(r, c): s for (r, c), s in seats.items() if s in students and 0 <= r < rows and 0 <= c < cols},
+        self._write(
+            plan, {(r, c): s for (r, c), s in seats.items() if s in students and 0 <= r < rows and 0 <= c < cols}
         )
+
+    def clear(self, layout_id: int) -> None:
+        """Take everyone out of their seat, deactivated students too."""
+        self.seating.set_seats(layout_id, {})
+
+    def _write(self, plan: SeatingPlan, seats: dict[tuple[int, int], int]) -> None:
+        """Save `seats` {(row, col): active student id} as who sits where in `plan`. A
+        deactivated student keeps their seat unless someone else sits there now, so it is
+        theirs again if they come back."""
+        active = {s.id for s in plan.students}
+        held = {
+            seat: s for seat, s in self.seating.seats(plan.layout.id).items() if s not in active and seat not in seats
+        }
+        self.seating.set_seats(plan.layout.id, seats | held)
 
     def fill(self, layout_id: int, shuffle: bool = False, rng: random.Random | None = None) -> int:
         """Seat the students without a seat in the free seats, front row first, in name
@@ -199,5 +213,5 @@ class SeatingService:
             free = plan.free_seats
         for seat, student in zip(free, students):
             seats[seat] = student.id
-        self.seating.set_seats(layout_id, seats)
+        self._write(plan, seats)
         return min(len(free), len(students))

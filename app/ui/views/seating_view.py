@@ -446,7 +446,7 @@ class SeatingView(QWidget):
         if self.plan is None or not self.plan.seats:
             return
         self._remember()
-        self.seating.set_seats(self.plan.layout.id, {})
+        self.seating.clear(self.plan.layout.id)
         self.refresh()
 
     # --- undo ------------------------------------------------------------------

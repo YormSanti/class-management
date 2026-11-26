@@ -259,3 +259,24 @@ def test_a_plan_put_back_leaves_out_seats_gone_meanwhile(
     seating.set_seats(layout, old)  # e.g. undo from before the changes
     assert seating.plan(layout).seats == {(0, 0): ada}
     assert seating.seating.seats(layout) == {(0, 0): ada}
+
+
+def test_a_deactivated_student_gets_their_seat_back_unless_it_was_given_away(
+    seating: SeatingService, roster: RosterService, class_id: int
+):
+    layout, ada, bob, cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, ada, 0, 0)
+    seating.place(layout, cy, 1, 1)
+    roster.deactivate_student(ada)
+    roster.deactivate_student(cy)
+    seating.place(layout, bob, 1, 1)  # Cy's seat is given away; Ada's is untouched
+    seating.fill(layout)
+    roster.reactivate_student(ada)
+    roster.reactivate_student(cy)
+    plan = seating.plan(layout)
+    assert plan.seats == {(0, 0): ada, (1, 1): bob}
+    assert [s.first_name for s in plan.unseated] == ["Cy"]
+
+    roster.deactivate_student(ada)
+    seating.clear(layout)  # everyone, so nothing keeps the class from being deleted
+    assert seating.seating.seats(layout) == {}

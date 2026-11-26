@@ -135,7 +135,8 @@ Rooms aren't always full rows: right-click a free seat and choose **No desk here
 aisle or a gap. Nobody is seated there, not even by Seat the rest or Shuffle, and the
 printed plan leaves it blank.
 
-A student who is deactivated leaves their seat free. Deleting a class deletes its seating
+A student who is deactivated leaves their seat free; if nobody else is seated there, it is
+theirs again when they are reactivated. Deleting a class deletes its seating
 plans while nobody is seated in them; clear a plan first to delete a class set up by mistake.
 
 ## Test
