@@ -362,14 +362,15 @@ class GradebookView(QWidget):
             self.edit_assignment(assignment_id)
 
     def go_to_assignment(self, assignment_id: int) -> None:
-        """Select the first student's cell of the assignment, ready to type."""
+        """Select the cell of the assignment of the first student shown, ready to type."""
         for col in range(1, self.average_column()):
             if self.assignment_at(col) == assignment_id:
                 if self.table.isColumnHidden(col):  # another category is shown
                     self.category_filter.setCurrentIndex(0)
-                if self.table.rowCount():
-                    self.table.setCurrentCell(0, col)
-                    self.table.scrollToItem(self.table.item(0, col))
+                shown = [r for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)]
+                if shown:
+                    self.table.setCurrentCell(shown[0], col)
+                    self.table.scrollToItem(self.table.item(shown[0], col))
                 self.table.setFocus()
                 return
 

@@ -526,6 +526,14 @@ def test_going_to_a_hidden_assignment_shows_every_category(window: MainWindow, r
     assert not view.table.isColumnHidden(1) and view.table.currentColumn() == 1
 
 
+def test_going_to_an_assignment_starts_at_the_first_student_found(window: MainWindow, roster: RosterService):
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.search.setText("smi")  # Ada, on the first row, is hidden
+    view.go_to_assignment(homework)
+    assert (view.table.currentRow(), view.table.currentColumn()) == (1, 2)
+
+
 def test_find_shows_only_matching_students(window: MainWindow, roster: RosterService):
     maths, ada, test, homework = _graded_class(window, roster)
     view = window.gradebook_view
