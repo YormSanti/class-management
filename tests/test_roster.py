@@ -536,6 +536,19 @@ def test_parse_student_list_reads_the_columns_a_heading_names():
     assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace")]
 
 
+def test_parse_student_list_reads_a_csv_file_of_two_columns_after_its_heading():
+    from app.services.roster import parse_student_list
+
+    students, problems = parse_student_list("First name,Last name\nAda,Lovelace\nGrace, Hopper\n")
+    assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace"), ("Grace", "Hopper")]
+    assert problems == []
+    students, problems = parse_student_list("Last name,First name\r\nLovelace,Ada\r\n")
+    assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace")]
+    # Without such a heading, one comma is "Last, First".
+    students, _ = parse_student_list("Surin, Forest\nLovelace, Ada\n")
+    assert [(s.first_name, s.last_name) for s in students] == [("Forest", "Surin"), ("Ada", "Lovelace")]
+
+
 def test_parse_student_list_leaves_out_quotes_around_cells():
     from app.services.roster import parse_student_list
 

@@ -207,18 +207,22 @@ _USUAL_COLUMNS = {  # the column orders read without a heading, by how many colu
 }
 
 
-def _heading_columns(cells: list[str]) -> dict[str, int] | None:
+def _named_columns(cells: list[str]) -> dict[str, int] | None:
     """{"first", "last", "number", "notes": column} as a heading row names them, e.g.
-    "Surname;First name;Class". None if it doesn't name both name columns, or names
-    them in a usual order, which is read without a heading anyway."""
+    "Surname;First name;Class"; None if it doesn't name both name columns."""
     columns: dict[str, int] = {}
     for i, cell in enumerate(cells):
         text = fold(cell)
         role = next((role for role, pattern in _HEADING_WORDS if re.search(pattern, text)), None)
         if role is not None:
             columns.setdefault(role, i)
-    if "first" not in columns or "last" not in columns:
-        return None
+    return columns if "first" in columns and "last" in columns else None
+
+
+def _heading_columns(cells: list[str]) -> dict[str, int] | None:
+    """_named_columns(), or None when they are in a usual order, which is read without a
+    heading anyway."""
+    columns = _named_columns(cells)
     return None if columns == _USUAL_COLUMNS.get(len([c for c in cells if c])) else columns
 
 
@@ -262,18 +266,21 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
     students: list[PastedStudent] = []
     problems: list[str] = []
     columns: dict[str, int] | None = None  # from a heading row in another order than usual
+    commas = 2  # in a line of CSV columns; one comma is "Last, First"
     for line_no, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line:
             continue
-        # Two commas or more are CSV columns; one is "Last, First".
-        separator = "\t" if "\t" in line else ";" if ";" in line else "," if line.count(",") >= 2 else None
+        heading = "name" in line.casefold() and not students and not problems
+        if heading and line.count(",") == 1 and _named_columns(line.split(",")):
+            commas = 1  # "First name,Last name": a CSV file of two columns follows
+        separator = "\t" if "\t" in line else ";" if ";" in line else "," if line.count(",") >= commas else None
         if separator:
             if separator == ",":  # a quoted cell may hold a comma: "Lovelace, Ada" in a CSV line
                 cells = [c.strip() for c in next(csv.reader([raw], skipinitialspace=True))]
             else:
                 cells = [_unquote(c) for c in raw.split(separator)]
-            if "name" in line.casefold() and not students and not problems:
+            if heading:
                 columns = _heading_columns(cells)
                 continue  # header row
             student = _from_columns(line_no, cells, columns)
