@@ -280,3 +280,15 @@ def test_a_deactivated_student_gets_their_seat_back_unless_it_was_given_away(
     roster.deactivate_student(ada)
     seating.clear(layout)  # everyone, so nothing keeps the class from being deleted
     assert seating.seating.seats(layout) == {}
+
+
+def test_a_plan_is_restored_with_its_desks(seating: SeatingService, roster: RosterService, class_id: int):
+    layout, ada, bob, _cy = _seated_class(roster, seating, class_id)
+    seating.place(layout, ada, 0, 0)
+    seating.set_desk(layout, 1, 1, False)
+    seating.place(layout, bob, 0, 1)
+    seating.set_desk(layout, 0, 2, False)
+    seating.restore(layout, {(0, 0): bob, (0, 1): ada}, {(0, 2), (1, 2), (5, 5)})
+    plan = seating.plan(layout)
+    assert plan.seats == {(0, 0): bob, (0, 1): ada}
+    assert plan.gaps == {(0, 2), (1, 2)}  # (5, 5) is outside the room

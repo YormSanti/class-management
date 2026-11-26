@@ -51,9 +51,9 @@ class SeatingView(QWidget):
         self.plan: SeatingPlan | None = None
         self.picked: int | None = None  # the student clicked, waiting for a seat
         self._last_layout: dict[int, int] = {}  # class id -> plan shown in it this session
-        # Who sat where before each change, as (layout id, {(row, col): student id}).
-        self._undo: list[tuple[int, dict[tuple[int, int], int]]] = []
-        self._redo: list[tuple[int, dict[tuple[int, int], int]]] = []
+        # The plan before each change: (layout id, {(row, col): student id}, spots with no desk).
+        self._undo: list[tuple[int, dict[tuple[int, int], int], set[tuple[int, int]]]] = []
+        self._redo: list[tuple[int, dict[tuple[int, int], int], set[tuple[int, int]]]] = []
 
         self.title = style.label("Seating chart", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -418,9 +418,11 @@ class SeatingView(QWidget):
         return menu
 
     def set_desk(self, row: int, col: int, desk: bool) -> None:
+        self._remember()
         try:
             self.seating.set_desk(self.plan.layout.id, row, col, desk)
         except SeatingError as exc:
+            self._undo.pop()  # nothing changed
             QMessageBox.warning(self, "Seating chart", str(exc))
         self.refresh()
 
@@ -452,8 +454,9 @@ class SeatingView(QWidget):
     # --- undo ------------------------------------------------------------------
 
     def _remember(self) -> None:
-        """Keep who sits where now, before a change, so Ctrl+Z can put it back."""
-        self._undo.append((self.plan.layout.id, dict(self.plan.seats)))
+        """Keep who sits where and where there's no desk now, before a change, so
+        Ctrl+Z can put it back."""
+        self._undo.append((self.plan.layout.id, dict(self.plan.seats), set(self.plan.gaps)))
         del self._undo[:-UNDO_LIMIT]
         self._redo.clear()
 
@@ -470,13 +473,13 @@ class SeatingView(QWidget):
     def _step(self, source: list, target: list) -> None:
         if not source:
             return
-        layout_id, seats = source.pop()
+        layout_id, seats, gaps = source.pop()
         current = self.seating.plan(layout_id)
         if current is None:  # the plan was deleted meanwhile
             self.clear_undo()
             return
-        target.append((layout_id, dict(current.seats)))
-        self.seating.set_seats(layout_id, seats)
+        target.append((layout_id, dict(current.seats), set(current.gaps)))
+        self.seating.restore(layout_id, seats, gaps)
         self.layout_id = layout_id
         self.refresh()
 

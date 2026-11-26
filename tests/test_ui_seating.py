@@ -393,3 +393,22 @@ def test_undo_after_a_student_was_deleted_seats_the_others(window: MainWindow, r
     window.show_page("Seating")
     view.undo()  # Ada's seat was put back before, which failed: she no longer exists
     assert _grid(window)[1] == ["", "Bob Smith", ""]
+
+
+def test_taking_a_desk_away_can_be_undone(window: MainWindow, roster: RosterService, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)
+    view.refresh()
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
+    view.set_desk(0, 1, False)
+    view.set_desk(0, 0, False)  # Ada sits there: refused, so nothing to undo
+    assert warnings == ["Ada Lovelace sits there. Take them out of the seat first."]
+    assert view.plan.gaps == {(0, 1)}
+    view.undo()
+    assert view.plan.gaps == set() and view.plan.seats == {(0, 0): ids["Ada"]}
+    view.redo()
+    assert view.plan.gaps == {(0, 1)} and view.plan.seats == {(0, 0): ids["Ada"]}
