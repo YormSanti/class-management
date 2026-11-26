@@ -194,16 +194,74 @@ def _parse_name(text: str) -> tuple[str, str] | None:
     return " ".join(words[:-1]), words[-1]
 
 
+_HEADING_WORDS = (  # how a spreadsheet's heading names each column, without accents or case
+    ("first", r"\b(first|given|fore)"),
+    ("last", r"\b(last|sur|family)"),
+    ("notes", r"\b(note|comment|remark)"),
+    ("number", r"#|\b(no|nr|num|number|id)\b"),
+)
+_USUAL_COLUMNS = {  # the column orders read without a heading, by how many columns there are
+    2: {"first": 0, "last": 1},
+    3: {"number": 0, "first": 1, "last": 2},
+    4: {"number": 0, "first": 1, "last": 2, "notes": 3},
+}
+
+
+def _heading_columns(cells: list[str]) -> dict[str, int] | None:
+    """{"first", "last", "number", "notes": column} as a heading row names them, e.g.
+    "Surname;First name;Class". None if it doesn't name both name columns, or names
+    them in a usual order, which is read without a heading anyway."""
+    columns: dict[str, int] = {}
+    for i, cell in enumerate(cells):
+        text = fold(cell)
+        role = next((role for role, pattern in _HEADING_WORDS if re.search(pattern, text)), None)
+        if role is not None:
+            columns.setdefault(role, i)
+    if "first" not in columns or "last" not in columns:
+        return None
+    return None if columns == _USUAL_COLUMNS.get(len([c for c in cells if c])) else columns
+
+
+def _from_columns(line_no: int, cells: list[str], heading: dict[str, int] | None) -> PastedStudent | None:
+    """The student in a row of cells, in the columns `heading` names or else in a usual
+    order. Its names may be empty; None if the row fits no usual order."""
+    if heading is not None and any(cells):
+
+        def cell(role: str) -> str:
+            i = heading.get(role)
+            return cells[i] if i is not None and i < len(cells) else ""
+
+        return PastedStudent(line_no, cell("first"), cell("last"), cell("number") or None, cell("notes"))
+    # Empty cells keep their column, so a missing first name doesn't turn the number
+    # into one. Only empty columns at the end, or more than any order has at the
+    # start, are dropped.
+    cells = cells.copy()
+    while cells and not cells[-1]:
+        cells.pop()
+    while len(cells) > 4 and not cells[0]:
+        cells.pop(0)
+    if len(cells) == 2:
+        return PastedStudent(line_no, cells[0], cells[1])
+    if len(cells) == 3:
+        return PastedStudent(line_no, cells[1], cells[2], cells[0] or None)
+    if len(cells) == 4:
+        return PastedStudent(line_no, cells[1], cells[2], cells[0] or None, cells[3])
+    return None
+
+
 def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
     """Read students from pasted text, one per line. Returns (students, problems).
 
     A line can be "First Last", "Last, First", either one after a student number
     ("007 Ada Lovelace"), or columns copied from a spreadsheet or a CSV file
     separated by tabs, semicolons or (two or more) commas: first and last name;
-    number, first and last name; or number, first and last name and notes. Blank lines and a heading row (containing "name") are skipped.
+    number, first and last name; or number, first and last name and notes. Blank lines
+    are skipped, and so is a heading row (containing "name"); one that names the columns
+    in another order ("Surname", "First name", "Class") says where each one is.
     """
     students: list[PastedStudent] = []
     problems: list[str] = []
+    columns: dict[str, int] | None = None  # from a heading row in another order than usual
     for line_no, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line:
@@ -215,25 +273,13 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
                 cells = [c.strip() for c in next(csv.reader([raw], skipinitialspace=True))]
             else:
                 cells = [_unquote(c) for c in raw.split(separator)]
-            # Empty cells keep their column, so a missing first name doesn't turn the
-            # number into one. Only empty columns at the end, or more than any layout has
-            # at the start, are dropped.
-            while cells and not cells[-1]:
-                cells.pop()
-            while len(cells) > 4 and not cells[0]:
-                cells.pop(0)
             if "name" in line.casefold() and not students and not problems:
+                columns = _heading_columns(cells)
                 continue  # header row
-            if len(cells) == 2:
-                student = PastedStudent(line_no, cells[0], cells[1])
-            elif len(cells) == 3:
-                student = PastedStudent(line_no, cells[1], cells[2], cells[0] or None)
-            elif len(cells) == 4:
-                student = PastedStudent(line_no, cells[1], cells[2], cells[0] or None, cells[3])
-            else:
+            student = _from_columns(line_no, cells, columns)
+            if student is None:
                 problems.append(f"Line {line_no}: expected first and last name columns: {line}")
-                continue
-            if student.first_name and student.last_name:
+            elif student.first_name and student.last_name:
                 students.append(student)
             else:
                 problems.append(f"Line {line_no}: needs a first and a last name: {line}")

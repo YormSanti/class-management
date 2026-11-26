@@ -521,6 +521,21 @@ def test_parse_student_list_keeps_empty_cells_in_their_column():
     ]
 
 
+def test_parse_student_list_reads_the_columns_a_heading_names():
+    from app.services.roster import parse_student_list
+
+    text = "Surname\tFirst name\tStudent no.\tClass\tRemarks\nLovelace\tAda\tS1\t7B\tGlasses\nHopper\tGrace\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name, s.notes) for s in students] == [
+        ("S1", "Ada", "Lovelace", "Glasses"),
+        (None, "Grace", "Hopper", ""),
+    ]
+    assert problems == []
+
+    students, _ = parse_student_list("Name;Name\nAda;Lovelace\n")  # no columns named: the usual order
+    assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace")]
+
+
 def test_parse_student_list_leaves_out_quotes_around_cells():
     from app.services.roster import parse_student_list
 

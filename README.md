@@ -74,8 +74,10 @@ On the Manage classes page:
 A pasted list can have one student per line (`Ada Lovelace`, `Lovelace, Ada` or
 `LOVELACE Ada`, optionally after a number or a bullet) or columns separated by tabs,
 semicolons or commas: first and last name; number, first and last name; or number, first
-and last name and notes. The preview points out lines it can't read, names listed twice and
-numbers already used before anything is added.
+and last name and notes. Columns in another order, or with more columns such as a class,
+are read when copied with their heading row, e.g. `Surname`, `First name`, `Student no.`.
+The preview points out lines it can't read, names listed twice and numbers already used
+before anything is added.
 
 **Copy…** under Classes sets up another class of the same school year with the same
 subjects, and **Export year…** saves the students of every class of a school year in one
