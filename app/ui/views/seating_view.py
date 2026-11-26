@@ -166,6 +166,10 @@ class SeatingView(QWidget):
             )
         self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.grid.customContextMenuRequested.connect(self._show_seat_menu)
+        for keys in ("Shift+F10", QKeySequence(Qt.Key.Key_Menu)):
+            menu_key = QShortcut(QKeySequence(keys), self.grid)
+            menu_key.setContext(Qt.ShortcutContext.WidgetShortcut)
+            menu_key.activated.connect(self._show_current_seat_menu)
         cancel = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         cancel.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         cancel.activated.connect(lambda: self.pick(None))
@@ -435,6 +439,12 @@ class SeatingView(QWidget):
         index = self.grid.indexAt(pos)
         if index.isValid() and (menu := self.seat_menu(*self.seat_at(index.row(), index.column()))):
             menu.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def _show_current_seat_menu(self) -> None:
+        """The selected seat's menu, from the keyboard (Shift+F10 or the menu key)."""
+        index = self.grid.currentIndex()
+        if index.isValid():
+            self._show_seat_menu(self.grid.visualRect(index).center())
 
     def fill(self, shuffle: bool) -> None:
         """Seat the rest by name, or everyone at random."""

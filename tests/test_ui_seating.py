@@ -395,6 +395,25 @@ def test_a_desk_is_taken_away_and_put_back(window: MainWindow, roster: RosterSer
     assert view.grid.item(*view.cell_of(0, 1)).toolTip() == ""
 
 
+def test_shift_f10_lists_what_can_be_done_with_the_selected_seat(
+    window: MainWindow, roster: RosterService, monkeypatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    _class_id, _layout, _ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.resize(900, 600)
+    shown = []
+    monkeypatch.setattr(view, "seat_menu", lambda row, col: shown.append((row, col)))  # no menu to open
+    view.grid.setCurrentCell(*view.cell_of(1, 2))
+    keys = {x.key().toString(): x for x in view.grid.findChildren(QShortcut)}
+    keys["Shift+F10"].activated.emit()  # offscreen, key presses don't reach shortcuts
+    view.grid.setCurrentCell(*view.cell_of(0, 0))
+    keys[QKeySequence(Qt.Key.Key_Menu).toString()].activated.emit()
+    assert shown == [(1, 2), (0, 0)]
+
+
 def test_find_selects_a_students_seat_or_them_under_not_seated(window: MainWindow, roster: RosterService):
     _class_id, layout, ids = _seated_class(window, roster)
     view = window.seating_view
