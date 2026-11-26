@@ -506,6 +506,21 @@ def test_parse_student_list_reads_semicolon_columns():
     assert problems == ["Line 4: expected first and last name columns: ;;"]
 
 
+def test_parse_student_list_keeps_empty_cells_in_their_column():
+    from app.services.roster import parse_student_list
+
+    text = "S1\tAda\tLovelace\nS2\t\tHopper\n\tAlan\tTuring\t\n\tKatherine\tJohnson\tGlasses\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name, s.notes) for s in students] == [
+        ("S1", "Ada", "Lovelace", ""),
+        (None, "Alan", "Turing", ""),
+        (None, "Katherine", "Johnson", "Glasses"),
+    ]
+    assert problems == [
+        "Line 2: needs a first and a last name: S2\t\tHopper",  # not a student called S2 Hopper
+    ]
+
+
 def test_parse_student_list_leaves_out_quotes_around_cells():
     from app.services.roster import parse_student_list
 

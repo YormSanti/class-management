@@ -212,20 +212,31 @@ def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
         separator = "\t" if "\t" in line else ";" if ";" in line else "," if line.count(",") >= 2 else None
         if separator:
             if separator == ",":  # a quoted cell may hold a comma: "Lovelace, Ada" in a CSV line
-                cells = [c.strip() for c in next(csv.reader([line], skipinitialspace=True))]
+                cells = [c.strip() for c in next(csv.reader([raw], skipinitialspace=True))]
             else:
-                cells = [_unquote(c) for c in line.split(separator)]
-            cells = [c for c in cells if c]
+                cells = [_unquote(c) for c in raw.split(separator)]
+            # Empty cells keep their column, so a missing first name doesn't turn the
+            # number into one. Only empty columns at the end, or more than any layout has
+            # at the start, are dropped.
+            while cells and not cells[-1]:
+                cells.pop()
+            while len(cells) > 4 and not cells[0]:
+                cells.pop(0)
             if "name" in line.casefold() and not students and not problems:
                 continue  # header row
             if len(cells) == 2:
-                students.append(PastedStudent(line_no, cells[0], cells[1]))
+                student = PastedStudent(line_no, cells[0], cells[1])
             elif len(cells) == 3:
-                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0]))
+                student = PastedStudent(line_no, cells[1], cells[2], cells[0] or None)
             elif len(cells) == 4:
-                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0], cells[3]))
+                student = PastedStudent(line_no, cells[1], cells[2], cells[0] or None, cells[3])
             else:
                 problems.append(f"Line {line_no}: expected first and last name columns: {line}")
+                continue
+            if student.first_name and student.last_name:
+                students.append(student)
+            else:
+                problems.append(f"Line {line_no}: needs a first and a last name: {line}")
             continue
 
         student_no = None
