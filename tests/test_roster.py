@@ -380,6 +380,12 @@ def test_terms_and_classes_by_year(roster: RosterService):
     assert len(roster.list_classes()) == 4
 
 
+def test_school_years_are_listed_newest_first_by_their_years(roster: RosterService):
+    for term in ("Spring 2025", "Fall 2026", "Summer school", "Term 2 2026", "2024-25"):
+        roster.save_class(SchoolClass(name="7B", term=term))
+    assert roster.list_terms() == ["Term 2 2026", "Fall 2026", "Spring 2025", "2024-25", "Summer school"]
+
+
 def test_start_new_year_copies_subjects_and_active_students(roster: RosterService):
     old = roster.save_class(SchoolClass(name="7B", term="2025-2026"), first_subject="Math")
     roster.save_subject(Subject(class_id=old.id, name="Science", teacher="Ms. Chen"))

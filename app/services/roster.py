@@ -378,7 +378,12 @@ class RosterService:
         return classes if term is None else [c for c in classes if c.term == term]
 
     def list_terms(self) -> list[str]:
-        return self.classes.list_terms()
+        """The school years in use, newest first by the years written in them: "Fall
+        2026" before "Spring 2025", which sorted as text would come first."""
+        def years_first(term: str) -> tuple:
+            return tuple(int(y) for y in re.findall(r"\d{4}", term)), natural_key(term)
+
+        return sorted(self.classes.list_terms(), key=years_first, reverse=True)
 
     def class_counts(self) -> dict[int, tuple[int, int]]:
         """{class id: (active students, subjects)}."""
