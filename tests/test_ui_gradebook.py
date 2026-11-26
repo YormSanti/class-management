@@ -213,6 +213,35 @@ def test_new_assignment_opens_its_column(window: MainWindow, roster: RosterServi
     assert (view.table.currentRow(), view.table.currentColumn()) == (0, 3)
 
 
+def test_new_assignment_is_like_the_latest_of_the_category_shown(window: MainWindow, roster: RosterService, monkeypatch):
+    from app.models import Assignment, Category
+    from app.ui.views import gradebook_view
+
+    maths, *_ = _graded_class(window, roster)
+    view = window.gradebook_view
+    quizzes = view.grades.save_category(Category(maths, "Quizzes", 20)).id
+    view.grades.save_assignment(Assignment(maths, quizzes, "Quiz 2", 4))
+    empty = view.grades.save_category(Category(maths, "Projects", 10)).id
+    view.refresh()
+    seen = {}
+
+    class FakeDialog:
+        def __init__(self, save, subject_id, categories, parent=None, **defaults):
+            seen.update(defaults)
+            self.saved = None
+
+        def exec(self):
+            return False
+
+    monkeypatch.setattr(gradebook_view, "AssignmentDialog", FakeDialog)
+    view.category_filter.setCurrentIndex(view.category_filter.findData(quizzes))
+    view.new_assignment()
+    assert (seen["default_category"], seen["default_max"], seen["default_title"]) == (quizzes, 4, "Quiz 3")
+    view.category_filter.setCurrentIndex(view.category_filter.findData(empty))
+    view.new_assignment()
+    assert (seen["default_category"], seen["default_max"], seen["default_title"]) == (empty, 10, "")
+
+
 def test_double_clicking_a_header_edits_its_assignment(window: MainWindow, roster: RosterService, monkeypatch):
     from dataclasses import replace
     from datetime import date

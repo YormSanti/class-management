@@ -262,16 +262,19 @@ class GradebookView(QWidget):
             self.refresh()
 
     def new_assignment(self) -> None:
-        """Ask for a new assignment like the latest one, then go to its column to enter scores."""
+        """Ask for a new assignment like the latest one, then go to its column to enter scores.
+        While one category is shown, the new assignment is in it, like its latest one."""
         if self.sheet is None or not self.sheet.categories:
             return
-        latest = self.sheet.assignments[-1] if self.sheet.assignments else None
+        shown = self.category_filter.currentData()
+        alike = [a for a in self.sheet.assignments if shown is None or a.category_id == shown]
+        latest = alike[-1] if alike else None
         dialog = AssignmentDialog(
             self.grades.save_assignment,
             self.sheet.subject.id,
             self.sheet.categories,
             parent=self,
-            default_category=latest.category_id if latest else None,
+            default_category=shown if shown is not None else latest.category_id if latest else None,
             default_max=latest.max_score if latest else 10,
             default_title=next_title(latest.title, [a.title for a in self.sheet.assignments]) if latest else "",
         )
