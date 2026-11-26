@@ -222,3 +222,15 @@ def test_other_files_in_the_backups_folder_are_left_alone(db_path: Path, conn: s
     assert len(names) == 10 and "classroom_old copy.db" not in names
     assert names[0] == "classroom_2026-09-01_08-11-00.db"  # still the newest real backup
     assert mine.read_bytes() == b"keep me"
+
+
+def test_data_file_problem_says_why_a_file_cant_be_used(db_path: Path, conn: sqlite3.Connection, tmp_path: Path):
+    from app.services.backup import data_file_problem
+
+    assert data_file_problem(db_path) is None
+    junk = tmp_path / "junk.db"
+    junk.write_bytes(b"not a database at all, just some text that is long enough" * 100)
+    assert data_file_problem(junk).startswith("is damaged")
+    other = tmp_path / "other.db"
+    sqlite3.connect(other).execute("CREATE TABLE things (x)").connection.close()
+    assert data_file_problem(other) == "isn't Classroom Manager data"

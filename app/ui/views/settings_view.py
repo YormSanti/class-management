@@ -33,6 +33,7 @@ from app.services.backup import (
     BackupError,
     backup_time,
     copy_database,
+    data_file_problem,
     is_before_restore,
     list_auto_backups,
 )
@@ -352,6 +353,15 @@ class SettingsView(QWidget):
             QMessageBox.information(self, "Move data", "Your data is already in that folder.")
             return
         target = new_dir / DB_FILENAME
+        if target.exists() and (problem := data_file_problem(target)):
+            # Switching would leave the app unable to open its data next time.
+            QMessageBox.warning(
+                self,
+                "Move data",
+                f"{new_dir} already has a {DB_FILENAME}, but that file {problem}.\n\n"
+                "Your data stays where it is. Choose another folder, or move that file away first.",
+            )
+            return
         if target.exists():
             question = (
                 f"{new_dir} already has Classroom Manager data.\n\nSwitch to the data in that folder? "

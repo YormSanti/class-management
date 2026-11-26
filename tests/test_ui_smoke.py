@@ -1083,9 +1083,14 @@ def test_settings_page_switches_to_existing_data_without_overwriting(
 
     from app.config import load_config
 
+    from app.services.backup import copy_database
+
     other = tmp_path / "other"
     other.mkdir()
-    (other / "classroom.db").write_bytes(b"theirs")
+    copy_database(tmp_path / "classroom.db", other / "classroom.db")  # Classroom Manager data
+    with sqlite3.connect(other / "classroom.db") as theirs:
+        theirs.execute("INSERT INTO classes (name) VALUES ('Theirs')")
+    theirs.close()
     questions = []
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(other))
     monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or QMessageBox.StandardButton.Yes)
@@ -1094,7 +1099,9 @@ def test_settings_page_switches_to_existing_data_without_overwriting(
     try:
         window.settings_view.move_data()
         assert "already has Classroom Manager data" in questions[0]
-        assert (other / "classroom.db").read_bytes() == b"theirs"
+        theirs = sqlite3.connect(other / "classroom.db")
+        assert [r[0] for r in theirs.execute("SELECT name FROM classes")] == ["Theirs"]
+        theirs.close()
         assert load_config(tmp_path / "config.json").data_dir == other
     finally:
         window.close()
