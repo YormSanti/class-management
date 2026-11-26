@@ -128,6 +128,25 @@ def _resolve_config() -> AppConfig | None:
             return None
         config = replace(config, data_dir=data_dir)
         save_config(config)
+        return config
+
+    try:
+        prepare_data_dir(config.data_dir)
+    except OSError as exc:
+        # e.g. a USB stick with its write-protect switch on: every change would fail.
+        log.warning("Data folder %s can't be written to: %s", config.data_dir, exc)
+        data_dir = _choose_data_dir(
+            message=(
+                f"Classroom Manager can't save changes in the data folder {config.data_dir} "
+                f"({exc.strerror or exc}). If it is on a USB stick, check that it isn't "
+                "write-protected and choose it again, or pick another folder."
+            ),
+            current=config.data_dir,
+        )
+        if data_dir is None:
+            return None
+        config = replace(config, data_dir=data_dir)
+        save_config(config)
     return config
 
 
