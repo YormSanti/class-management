@@ -104,6 +104,21 @@ def _choose_data_dir(message: str = "", current: Path | None = None) -> Path | N
             current = chosen
 
 
+def _remember(config: AppConfig) -> None:
+    """Save the chosen data folder in config.json. If the settings folder can't be written
+    to, say so and carry on with the folder for this session instead of failing to start."""
+    try:
+        save_config(config)
+    except OSError as exc:
+        log.warning("Could not save the config: %s", exc)
+        QMessageBox.warning(
+            None,
+            "Settings not saved",
+            f"The data folder {config.data_dir} will be used now, but it couldn't be "
+            f"remembered for next time:\n{exc}\n\nYou will be asked for it again when the app starts.",
+        )
+
+
 def _resolve_config() -> AppConfig | None:
     """Load config.json, running first-launch setup or recovery if needed."""
     config = load_config()
@@ -112,7 +127,7 @@ def _resolve_config() -> AppConfig | None:
         if data_dir is None:
             return None
         config = AppConfig(data_dir=data_dir)
-        save_config(config)
+        _remember(config)
         return config
 
     if not config.data_dir.is_dir():
@@ -127,7 +142,7 @@ def _resolve_config() -> AppConfig | None:
         if data_dir is None:
             return None
         config = replace(config, data_dir=data_dir)
-        save_config(config)
+        _remember(config)
         return config
 
     try:
@@ -146,7 +161,7 @@ def _resolve_config() -> AppConfig | None:
         if data_dir is None:
             return None
         config = replace(config, data_dir=data_dir)
-        save_config(config)
+        _remember(config)
     return config
 
 

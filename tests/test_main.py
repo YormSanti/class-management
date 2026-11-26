@@ -56,3 +56,21 @@ def test_a_writable_data_folder_is_used_without_asking(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "load_config", lambda: AppConfig(data_dir=tmp_path))
     monkeypatch.setattr(main, "_choose_data_dir", lambda **kw: pytest.fail("shouldn't ask"))
     assert main._resolve_config().data_dir == tmp_path
+
+
+def test_first_start_goes_on_when_the_settings_cant_be_saved(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    warnings = []
+
+    def fail(_config) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(main, "load_config", lambda: None)
+    monkeypatch.setattr(main, "_choose_data_dir", lambda *a, **kw: tmp_path)
+    monkeypatch.setattr(main, "save_config", fail)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[2]))
+
+    config = main._resolve_config()
+    assert config is not None and config.data_dir == tmp_path
+    assert "couldn't be remembered" in warnings[0] and "Permission denied" in warnings[0]
