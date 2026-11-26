@@ -308,7 +308,7 @@ class SeatingView(QWidget):
         if self.plan is None:
             return
         name, ok = QInputDialog.getText(
-            self, "Copy seating plan", "Name of the new plan:", text=f"{self.plan.layout.name} (copy)"
+            self, "Copy seating plan", "Name of the new plan:", text=self.seating.copy_name(self.plan.layout)
         )
         if not ok:
             return

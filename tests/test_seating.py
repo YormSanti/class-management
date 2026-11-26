@@ -7,7 +7,7 @@ from app.models import SchoolClass, SeatLayout, Student
 from app.repositories.class_repo import ClassRepository
 from app.repositories.seating_repo import SeatingRepository
 from app.repositories.student_repo import StudentRepository
-from app.services.seating import SeatingError, SeatingService
+from app.services.seating import NAME_MAX, SeatingError, SeatingService
 from app.services.roster import RosterService
 
 
@@ -191,6 +191,17 @@ def test_a_plan_is_copied_with_its_seats(seating: SeatingService, roster: Roster
     with pytest.raises(SeatingError, match="already has a seating plan called Exams"):
         seating.copy_layout(layout, "exams")
     assert len(seating.list_layouts(class_id)) == 2
+
+
+def test_a_copy_is_offered_a_name_not_taken(seating: SeatingService, class_id: int):
+    tests = seating.save_layout(SeatLayout(class_id, "Tests", 2, 3))
+    assert seating.copy_name(tests) == "Tests (copy)"
+    seating.copy_layout(tests.id, "Tests (copy)")
+    assert seating.copy_name(tests) == "Tests (copy 2)"
+    seating.copy_layout(tests.id, "tests (COPY 2)")
+    assert seating.copy_name(tests) == "Tests (copy 3)"
+    long = seating.save_layout(SeatLayout(class_id, "x" * NAME_MAX, 2, 3))
+    assert seating.copy_name(long) == "x" * (NAME_MAX - 7) + " (copy)"
 
 
 def test_a_spot_without_a_desk_is_skipped(seating: SeatingService, roster: RosterService, class_id: int):

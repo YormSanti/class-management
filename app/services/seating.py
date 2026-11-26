@@ -105,6 +105,17 @@ class SeatingService:
             self.seating.set_seats(copy.id, self.seating.seats(layout_id))
         return copy
 
+    def copy_name(self, layout: SeatLayout) -> str:
+        """A name no other plan of the class has for a copy of `layout`: "Tests (copy)",
+        else "Tests (copy 2)" and so on, shortened to fit NAME_MAX."""
+        n = 1
+        while True:
+            suffix = " (copy)" if n == 1 else f" (copy {n})"
+            name = layout.name[: NAME_MAX - len(suffix)].rstrip() + suffix
+            if self.seating.find_layout(layout.class_id, name) is None:
+                return name
+            n += 1
+
     def seated_outside(self, layout_id: int, rows: int, cols: int) -> list[Student]:
         """The active students who would lose their seat if the layout had `rows` × `cols` seats."""
         plan = self.plan(layout_id)
