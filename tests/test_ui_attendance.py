@@ -157,3 +157,24 @@ def test_h_on_the_month_tab_shows_the_students_history(window: MainWindow, roste
     month.table.setCurrentCell(len(month.register.rows), 1)  # the "Absent that day" row: no student
     QTest.keyClick(month.table, Qt.Key.Key_H)
     assert len(shown) == 1
+
+
+def test_a_first_day_past_the_last_moves_the_last_along(qapp: QApplication):
+    from PySide6.QtCore import QDate
+
+    from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    marks = MarkDaysDialog("Ada Lovelace", "Daily (homeroom)", FRIDAY, today=FRIDAY)
+    period = PeriodDialog("Export", date(2026, 11, 2), FRIDAY, today=FRIDAY)
+    for dialog in (marks, period):
+        dialog.start_edit.setDate(QDate(2026, 11, 10))
+        assert (dialog.start, dialog.end) == (date(2026, 11, 10), date(2026, 11, 10))
+        dialog.start_edit.setDate(QDate(2026, 11, 9))  # back before the last day: the last stays
+        assert dialog.end == date(2026, 11, 10)
+        dialog.end_edit.setDate(QDate(2026, 11, 5))  # a last day before the first is still pointed out
+        assert dialog.start == date(2026, 11, 9)
+    assert marks.days_label.text() == "The last day is before the first."
+    assert period.problem.text() == "The last day is before the first."
+    marks.deleteLater()
+    period.deleteLater()

@@ -53,6 +53,7 @@ class PeriodDialog(QDialog):
             edit.setCalendarPopup(True)
             edit.setDisplayFormat("ddd d MMM yyyy")
             edit.dateChanged.connect(self._update_ok)
+        self.start_edit.dateChanged.connect(self._keep_end_after_start)
 
         self.problem = QLabel()
         self.buttons = QDialogButtonBox(
@@ -101,6 +102,11 @@ class PeriodDialog(QDialog):
     def set_period(self, start: date, end: date) -> None:
         self.start_edit.setDate(_qdate(start))
         self.end_edit.setDate(_qdate(end))
+
+    def _keep_end_after_start(self) -> None:
+        """A first day picked past the last one moves the last one along, e.g. to a single day."""
+        if self.end_edit.date() < self.start_edit.date():
+            self.end_edit.setDate(self.start_edit.date())
 
     @property
     def start(self) -> date:
