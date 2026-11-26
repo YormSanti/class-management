@@ -7,7 +7,7 @@ from app.repositories.gradebook_repo import GradebookRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
 from app.services.gradebook import GradebookService
-from app.services.rankings import RankingService, rank_places
+from app.services.rankings import RankingService, make_ranking, rank_places
 from app.services.roster import RosterService
 
 
@@ -25,6 +25,17 @@ def test_places_follow_the_order_given():
 
 def test_averages_equal_as_shown_share_a_place():
     assert rank_places([83.33333, 83.32999, 83.2]) == [1, 1, 3]
+
+
+def test_students_sharing_a_place_are_listed_by_name():
+    ada, bob, cy = (Student(1, first, "Pupil", id=i) for i, first in enumerate(("Ada", "Bob", "Cy"), 1))
+    # Bob is 0.08 ahead, but both show as 85.0%, so the two share 1st place in name order.
+    ranking = make_ranking([ada, bob, cy], {ada.id: 84.96, bob.id: 85.04, cy.id: 70})
+    assert [(r.place, r.student.first_name, r.shared) for r in ranking.ranked] == [
+        (1, "Ada", True),
+        (1, "Bob", True),
+        (3, "Cy", False),
+    ]
 
 
 def test_everyone_tied_is_first():

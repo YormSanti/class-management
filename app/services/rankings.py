@@ -50,7 +50,11 @@ class Ranking:
 def make_ranking(students: list[Student], averages: dict[int, float], method: str = "competition") -> Ranking:
     """Rank `students` by `averages` {student id: percent}; those without one are left
     unranked. Shared places list in name order, as `students` are given."""
-    scored = sorted((s for s in students if s.id in averages), key=lambda s: -averages[s.id])
+    # Sorted as shown, so students sharing a place stay in name order even if their
+    # averages differ in a decimal that isn't shown.
+    scored = sorted(
+        (s for s in students if s.id in averages), key=lambda s: -round(averages[s.id], TIE_DECIMALS)
+    )
     places = rank_places([averages[s.id] for s in scored], method)
     ranked = [
         RankedStudent(place, s, averages[s.id], places.count(place) > 1) for place, s in zip(places, scored)
