@@ -84,3 +84,13 @@ def test_keys_mark_nobody_when_the_find_box_matches_no_one(window: MainWindow, r
     view.find_edit.clear()  # everyone shown again: the keys work as before
     QTest.keyClick(view.table, Qt.Key.Key_A)
     assert _statuses(view) == ["absent", None]
+
+
+def test_find_ignores_accents_and_name_order(window: MainWindow, roster: RosterService):
+    view = _page(window, roster, ("José Martí", "Grace Hopper"))
+    view.find_edit.setText("jose")
+    assert [view.table.isRowHidden(i) for i in range(2)] == [True, False]  # Hopper, Martí
+    view.find_edit.setText("Marti, Jose")
+    assert [view.table.isRowHidden(i) for i in range(2)] == [True, False]
+    view.find_edit.setText("")
+    assert [view.table.isRowHidden(i) for i in range(2)] == [False, False]

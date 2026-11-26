@@ -52,7 +52,7 @@ from app.services.export import (
     write_attendance_csv,
     write_attendance_summary_csv,
 )
-from app.services.roster import RosterService, number_key
+from app.services.roster import RosterService, matches, number_key
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
 from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
@@ -605,7 +605,7 @@ class AttendanceView(QWidget):
         date_row.addSpacing(12)
         self.find_edit = QLineEdit()
         self.find_edit.setPlaceholderText("Find a student (Ctrl+F)")
-        self.find_edit.setToolTip("Show only students whose name or number contains this; Esc shows everyone")
+        self.find_edit.setToolTip("Show only students whose name, number or notes contain this, accents or not; Esc shows everyone")
         self.find_edit.setClearButtonEnabled(True)
         self.find_edit.setFixedWidth(220)
         self.find_edit.textChanged.connect(self._apply_filter)
@@ -1067,14 +1067,12 @@ class AttendanceView(QWidget):
         self.find_edit.selectAll()
 
     def _apply_filter(self) -> None:
-        """Hide the students whose name and number don't contain the text in the find box."""
+        """Hide the students the text in the find box doesn't find, as in the class list."""
         if self.register is None:
             return
-        text = self.find_edit.text().strip().casefold()
+        text = self.find_edit.text()
         for i, row in enumerate(self.register.rows):
-            student = row.student
-            found = text in student.full_name.casefold() or text in (student.student_no or "").casefold()
-            self.table.setRowHidden(i, not found)
+            self.table.setRowHidden(i, not matches(row.student, text))  # as the class list: "Jose" finds "José"
         if self.table.isRowHidden(self.table.currentRow()) or self.table.currentRow() < 0:
             visible = self._visible_rows()
             if visible:
