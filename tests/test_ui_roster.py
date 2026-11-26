@@ -52,3 +52,42 @@ def test_paste_preview_points_out_a_name_too_long_to_add(qapp: QApplication, ros
     dialog = PasteStudentsDialog(roster, class_id, text="Ada\tLovelace\nGrace\t" + "H" * 61 + "\n")
     assert "Line 2: A last name can be at most 60 characters" in dialog.problems.text()
     assert not dialog._ok.isEnabled()
+
+
+def test_enter_in_the_student_search_goes_to_the_first_student_found(
+    qapp: QApplication, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import Student
+    from app.ui.views import roster_view
+    from app.ui.views.roster_view import RosterView
+
+    edited: list[str] = []
+
+    class FakeDialog:
+        def __init__(self, save, class_id, student=None, parent=None, **kwargs):
+            edited.append(student.full_name)
+
+        def exec(self):
+            return False
+
+    monkeypatch.setattr(roster_view, "StudentDialog", FakeDialog)
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    for first, last in (("Ada", "Lovelace"), ("Alan", "Turing"), ("Tim", "Turner")):
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name=last))
+    view = RosterView(roster)
+    view.set_class(class_id)
+    view.show()
+    view.activateWindow()
+    assert QTest.qWaitForWindowActive(view)
+    view.search.setFocus()
+    QTest.keyClicks(view.search, "tur")
+    QTest.keyClick(view.search, Qt.Key.Key_Return)
+    assert edited == []  # Enter in the search box doesn't edit anyone yet
+    assert view._selected_student().full_name == "Alan Turing"
+    assert qapp.focusWidget() is view.table
+    QTest.keyClick(view.table, Qt.Key.Key_Enter)  # the number pad Enter
+    assert edited == ["Alan Turing"]
+    view.close()

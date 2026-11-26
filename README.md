@@ -62,7 +62,8 @@ finds a student's seat, and Ctrl+Z / Ctrl+Y undo and redo any change to the plan
 On the Manage classes page:
 
 - In the class list, Ctrl+N adds a student, Enter or F2 edits one and Delete deletes a
-  student added by mistake (one with anything recorded is deactivated instead).
+  student added by mistake (one with anything recorded is deactivated instead). Enter in
+  the search box goes to the first student found.
 - Ctrl+V adds the students copied from a spreadsheet, a CSV file or a typed list, after a
   preview; Ctrl+C copies the students shown. In the Add student dialog, Ctrl+Enter saves
   and starts on the next student.

@@ -56,7 +56,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Manage classes", "Delete", "Delete the selected class, while nothing is recorded in it"),
     ("Subjects", "F2", "Edit the selected subject"),
     ("Subjects", "Delete", "Delete the selected subject, while nothing is recorded in it"),
-    ("Students", "Ctrl+F", "Search; Esc clears the search"),
+    ("Students", "Ctrl+F", "Search; Enter goes to the first student found, Esc clears the search"),
     ("Students", "Ctrl+N", "Add a student"),
     ("Add student", "Ctrl+Enter", "Save and add another"),
     ("Students", "Enter or F2", "Edit the selected student"),

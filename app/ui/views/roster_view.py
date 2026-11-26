@@ -137,6 +137,7 @@ class RosterView(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         self.search.installEventFilter(self)  # Escape clears it
+        self.search.returnPressed.connect(self._go_to_found)
         self.show_inactive = QCheckBox("Show inactive")
         self.show_inactive.toggled.connect(self.refresh)
         self.add_button = QPushButton("Add student")
@@ -238,7 +239,9 @@ class RosterView(QWidget):
 
         QShortcut(QKeySequence.StandardKey.Find, self, activated=self.search.setFocus)
         QShortcut(QKeySequence.StandardKey.New, self, activated=self.add_student)
-        QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
+        for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):  # the main and the number pad Enter
+            edit = QShortcut(QKeySequence(key), self.table, activated=self.edit_selected)
+            edit.setContext(Qt.ShortcutContext.WidgetShortcut)  # in the search box, Enter goes to the list
         rename = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table, activated=self.edit_selected)
         rename.setContext(Qt.ShortcutContext.WidgetShortcut)  # F2 edits, as in a file manager
         copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
@@ -536,6 +539,16 @@ class RosterView(QWidget):
         return super().eventFilter(watched, event)
 
     # --- helpers -------------------------------------------------------------
+
+    def _go_to_found(self) -> None:
+        """Enter in the search box: select the first student found (unless one found is
+        selected already) and go to the list, where Enter edits them."""
+        if self.proxy.rowCount() == 0:
+            return
+        if self._selected_student() is None:
+            self.table.selectRow(0)
+            self.table.scrollTo(self.proxy.index(0, 0))
+        self.table.setFocus()
 
     def _show_history(self) -> None:
         if (student := self._selected_student()) is not None:
