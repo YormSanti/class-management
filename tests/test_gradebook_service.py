@@ -234,7 +234,13 @@ def test_sheet_of_a_deleted_subject_is_none(grades: GradebookService):
 def test_weights_are_shown_as_shares_of_the_average():
     categories, _ = _book()
     assert weight_shares(categories) == {1: 60, 2: 40, 3: 0}
-    assert weight_shares([Category(1, "A", 0, id=1)]) == {1: 0}
+    assert weight_shares([]) == {}
+
+
+def test_categories_all_weighted_0_are_shown_as_equal_shares():
+    """weighted_average() then counts them equally, so the shares say so too."""
+    assert weight_shares([Category(1, "A", 0, id=1)]) == {1: 100}
+    assert weight_shares([Category(1, "A", 0, id=1), Category(1, "B", 0, id=2)]) == {1: 50, 2: 50}
 
 
 def test_suggested_categories_are_added_once(grades: GradebookService, subject_id: int):

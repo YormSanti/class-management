@@ -90,9 +90,12 @@ def parse_score(text: str, max_score: float) -> float | str | None:
 
 
 def weight_shares(categories: list[Category]) -> dict[int, float]:
-    """{category id: percent of the average it makes up}, once every category has work scored."""
+    """{category id: percent of the average it makes up}, once every category has work scored.
+    When every weight is 0 the categories count equally, as in weighted_average."""
     total = sum(c.weight for c in categories)
-    return {c.id: 100 * c.weight / total if total else 0.0 for c in categories}
+    if not total:
+        return {c.id: 100 / len(categories) for c in categories}
+    return {c.id: 100 * c.weight / total for c in categories}
 
 
 def category_percents(
