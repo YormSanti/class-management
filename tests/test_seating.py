@@ -247,3 +247,15 @@ def test_a_desk_held_by_a_deactivated_student_can_go(seating: SeatingService, ro
     seating.set_desk(layout, 0, 0, desk=False)
     assert seating.seating.seats(layout) == {(0, 1): bob}  # only the desk taken away is freed
     assert seating.plan(layout).gaps == {(0, 0)}
+
+
+def test_a_plan_put_back_leaves_out_seats_gone_meanwhile(
+    seating: SeatingService, roster: RosterService, class_id: int
+):
+    layout, ada, bob, cy = _seated_class(roster, seating, class_id)
+    old = {(0, 0): ada, (1, 2): bob, (0, 1): cy}
+    seating.save_layout(replace(seating.plan(layout).layout, rows=1))  # row 2 is gone
+    roster.delete_student(cy)
+    seating.set_seats(layout, old)  # e.g. undo from before the changes
+    assert seating.plan(layout).seats == {(0, 0): ada}
+    assert seating.seating.seats(layout) == {(0, 0): ada}

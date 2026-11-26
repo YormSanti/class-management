@@ -168,8 +168,18 @@ class SeatingService:
         self.seating.set_seats(layout_id, {seat: s for seat, s in plan.seats.items() if s != student_id})
 
     def set_seats(self, layout_id: int, seats: dict[tuple[int, int], int]) -> None:
-        """Replace the whole plan, e.g. to undo a change or after filling it."""
-        self.seating.set_seats(layout_id, seats)
+        """Replace the whole plan, e.g. to undo a change or after filling it. Seats
+        outside the room, and students no longer in the class or deactivated meanwhile,
+        are left out: the room may have been made smaller or a student deleted since."""
+        plan = self.plan(layout_id)
+        if plan is None:
+            raise SeatingError("This seating plan no longer exists.")
+        students = {s.id for s in plan.students}
+        rows, cols = plan.layout.rows, plan.layout.cols
+        self.seating.set_seats(
+            layout_id,
+            {(r, c): s for (r, c), s in seats.items() if s in students and 0 <= r < rows and 0 <= c < cols},
+        )
 
     def fill(self, layout_id: int, shuffle: bool = False, rng: random.Random | None = None) -> int:
         """Seat the students without a seat in the free seats, front row first, in name

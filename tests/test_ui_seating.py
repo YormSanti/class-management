@@ -377,3 +377,19 @@ def test_find_selects_a_students_seat_or_them_under_not_seated(window: MainWindo
     assert not view.grid.selectedItems()
     view.search.setText("nobody")
     assert view.unseated.currentItem().text() == "Cy Young"  # nothing found: stays
+
+
+def test_undo_after_a_student_was_deleted_seats_the_others(window: MainWindow, roster: RosterService):
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    window.show_page("Seating")
+    view.pick(ids["Ada"])
+    _click_seat(window, 0, 0)
+    view.pick(ids["Bob"])
+    _click_seat(window, 0, 1)
+    view.unseat_at(0, 0)
+    roster.delete_student(ids["Ada"])  # added by mistake, nothing recorded now
+    window.show_page("Classes")
+    window.show_page("Seating")
+    view.undo()  # Ada's seat was put back before, which failed: she no longer exists
+    assert _grid(window)[1] == ["", "Bob Smith", ""]
