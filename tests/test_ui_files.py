@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QTextDocument  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
-from app.ui.files import write_pdf  # noqa: E402
+from app.ui.files import safe_filename, write_pdf  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -36,3 +36,20 @@ def test_write_pdf_that_fails_says_so_even_over_an_older_pdf(qapp, tmp_path: Pat
     assert warnings and str(path) in warnings[0]
     assert path.read_bytes() == b"last week's plan"  # untouched
     assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize(
+    ("text", "name"),
+    [
+        ("7B (2026/27)", "7B (2026-27)"),
+        ("Year 7 Science.", "Year 7 Science"),  # Windows would drop the dot
+        ("Tabs\tand\nnew lines", "Tabs-and-new lines"),
+        ("...", "Untitled"),
+        ("", "Untitled"),
+        ("Aux", "Aux_"),
+        ("con.2026", "con.2026_"),
+        ("Auxiliary", "Auxiliary"),
+    ],
+)
+def test_safe_filename(text: str, name: str):
+    assert safe_filename(text) == name

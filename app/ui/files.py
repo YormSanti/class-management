@@ -7,13 +7,24 @@ from pathlib import Path
 from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
-_UNSAFE = re.compile(r'[\\/:*?"<>|]+')  # not allowed in Windows file names
+_UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')  # not allowed in Windows file names
+# Device names Windows won't use as a file name, whatever the extension ("aux.csv" too).
+_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"{d}{n}" for d in ("COM", "LPT") for n in range(1, 10)}
 _last_folder: Path | None = None  # where the last export went, this session
 
 
 def safe_filename(text: str) -> str:
-    """`text` usable as a file name on every system: "7B (2026/27)" -> "7B (2026-27)"."""
-    return _UNSAFE.sub("-", text).strip()
+    """`text` usable as a file name on every system: "7B (2026/27)" -> "7B (2026-27)".
+
+    Trailing dots and spaces go too, since Windows drops them silently; a name with
+    nothing left becomes "Untitled", and a device name such as "Aux" gets a "_".
+    """
+    name = _UNSAFE.sub("-", text).strip().rstrip(". ")
+    if not name:
+        return "Untitled"
+    if name.split(".")[0].upper() in _RESERVED:
+        name += "_"
+    return name
 
 
 def ask_save_path(
