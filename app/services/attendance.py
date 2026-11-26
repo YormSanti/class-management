@@ -160,6 +160,7 @@ class MonthRegister:
     subject_id: int | None
     days: list[date]  # every weekday of the month, plus weekend days with marks
     rows: list[MonthRow]
+    first_taken: date | None = None  # the first day this register was ever taken, in any month
 
     @property
     def recorded_days(self) -> list[date]:
@@ -168,9 +169,18 @@ class MonthRegister:
         return [day for day in self.days if day in marked]
 
     def not_taken(self, today: date) -> list[date]:
-        """School days up to `today` on which no student is marked: forgotten, or holidays."""
+        """School days up to `today` on which no student is marked: forgotten, or holidays.
+
+        Days before the register was first taken don't count: the summer before the school
+        year started, or the weeks before the teacher began using it.
+        """
+        if self.first_taken is None:
+            return []
         marked = set(self.recorded_days)
-        return [day for day in self.days if day <= today and day.weekday() < 5 and day not in marked]
+        return [
+            day for day in self.days
+            if self.first_taken <= day <= today and day.weekday() < 5 and day not in marked
+        ]  # fmt: skip
 
     def unmarked(self, row: MonthRow) -> int:
         """Days the register was taken on which this student has no mark."""
@@ -314,7 +324,8 @@ class AttendanceService:
             MonthRow(s, by_student.get(s.id, {}), notes.get(s.id, {}))
             for s in self.students.list_for_class(class_id)
         ]
-        return MonthRegister(class_id, year, month, subject_id, days, rows)
+        first_taken = self.attendance.first_day(class_id, subject_id)
+        return MonthRegister(class_id, year, month, subject_id, days, rows, first_taken)
 
     def period_summary(
         self, class_id: int, start: date, end: date, subject_id: int | None = None

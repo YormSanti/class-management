@@ -101,6 +101,18 @@ class AttendanceRepository:
         )
         return [_from_row(r) for r in rows]
 
+    def first_day(self, class_id: int, subject_id: int | None) -> date | None:
+        """The earliest day any of the class's active students is marked in the register."""
+        row = self.conn.execute(
+            """
+            SELECT min(a.date) AS first FROM attendance a
+            JOIN students s ON s.id = a.student_id
+            WHERE s.class_id = ? AND s.active = 1 AND coalesce(a.subject_id, 0) = coalesce(?, 0)
+            """,
+            (class_id, subject_id),
+        ).fetchone()
+        return date.fromisoformat(row["first"]) if row["first"] else None
+
     def for_student(self, student_id: int, subject_id: int | None) -> list[AttendanceRecord]:
         """Every record of one student in one register, newest first."""
         rows = self.conn.execute(
