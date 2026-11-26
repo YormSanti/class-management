@@ -1,6 +1,6 @@
 """The gradebook of the current subject: students down the side, assignments across."""
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QStackedWidget,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -50,29 +51,43 @@ def percent_text(value: float | None) -> str:
     return "—" if value is None else f"{value:.0f}%"
 
 
+class ScoreDelegate(QStyledItemDelegate):
+    """Notes whether the Enter that ends typing a score was pressed with Shift."""
+
+    def eventFilter(self, editor, event) -> bool:
+        if event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.parent().upwards = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        return super().eventFilter(editor, event)
+
+
 class ScoreTable(QTableWidget):
     """Scores are typed down a column, one student after the other: Enter saves and goes
-    to the next student, as in a spreadsheet."""
+    to the next student, as in a spreadsheet, and Shift+Enter to the one before."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.upwards = False  # the last Enter was Shift+Enter
+        self.setItemDelegate(ScoreDelegate(self))
 
     def closeEditor(self, editor: QWidget, hint: QAbstractItemDelegate.EndEditHint) -> None:
         super().closeEditor(editor, hint)
         if hint == QAbstractItemDelegate.EndEditHint.SubmitModelCache:  # Enter, not Tab or Escape
-            self._next_row()
+            self._next_row(-1 if self.upwards else 1)
 
     def keyPressEvent(self, event) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.state() != self.State.EditingState:
-            self._next_row()
+            self._next_row(-1 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1)
             return
         super().keyPressEvent(event)
 
-    def _next_row(self) -> None:
-        """Go down to the next student shown, skipping those Find hides."""
+    def _next_row(self, step: int = 1) -> None:
+        """Go down (step 1) or up (-1) to the next student shown, skipping those Find hides."""
         row, col = self.currentRow(), self.currentColumn()
         if row < 0:
             return
-        for below in range(row + 1, self.rowCount()):
-            if not self.isRowHidden(below):
-                self.setCurrentCell(below, col)
+        for other in range(row + step, self.rowCount() if step > 0 else -1, step):
+            if not self.isRowHidden(other):
+                self.setCurrentCell(other, col)
                 return
 
 
@@ -145,7 +160,7 @@ class GradebookView(QWidget):
         sheet_layout.addLayout(summary_row)
         sheet_layout.addWidget(self.table, stretch=1)
         self.keys_hint = style.label(
-            "Type a score: points, a percentage (85%) or ex for exempt · Enter goes to the next student · "
+            "Type a score: points, a percentage (85%) or ex for exempt · Enter goes to the next student, Shift+Enter back · "
             "Delete clears · Ctrl+V pastes scores from a spreadsheet · Ctrl+Z undoes · "
             "double-click a column header to edit it, right-click for more · F1 lists every key",
             0.85,

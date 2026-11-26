@@ -316,6 +316,31 @@ def test_enter_saves_a_score_and_goes_to_the_next_student(window: MainWindow, ro
     assert view.table.currentRow() == 1
 
 
+def test_shift_enter_saves_a_score_and_goes_back_a_student(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    window.show_page("Gradebook")
+    view = window.gradebook_view
+    view.table.setFocus()
+    view.table.setCurrentCell(1, 1)
+    QTest.keyClicks(view.table, "7")
+    editor = view.table.viewport().findChild(QLineEdit)
+    QTest.keyClick(editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    QApplication.processEvents()
+    bob = view.student_at(1)
+    assert view.grades.sheet(maths).score(test, bob) == 7
+    assert (view.table.currentRow(), view.table.currentColumn()) == (0, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_Return)  # not editing: down again
+    assert view.table.currentRow() == 1
+    QTest.keyClick(view.table, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert view.table.currentRow() == 0
+    QTest.keyClick(view.table, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)  # the first: stays
+    assert view.table.currentRow() == 0
+
+
 def test_delete_clears_the_selected_scores(window: MainWindow, roster: RosterService):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest

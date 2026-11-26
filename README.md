@@ -46,11 +46,11 @@ On the Attendance page's Day tab:
 On the Month tab the same letters mark the selected cell, and Alt+← / Alt+→ (or Page Up /
 Page Down) change the month. Right-clicking a student on the Day tab lists what can be done.
 
-On the Gradebook page, type a score in a cell and press Enter to go to the next student.
-Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to and from a spreadsheet
-(one value pasted over several selected cells goes in each), Ctrl+Z undoes, Ctrl+F finds a
-student and Ctrl+N adds an assignment. Double-click a column header to edit the assignment;
-right-click it to fill its empty cells or delete it.
+On the Gradebook page, type a score in a cell and press Enter to go to the next student
+(Shift+Enter goes back). Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to
+and from a spreadsheet (one value pasted over several selected cells goes in each), Ctrl+Z
+undoes, Ctrl+F finds a student and Ctrl+N adds an assignment. Double-click a column header
+to edit the assignment; right-click it to fill its empty cells or delete it.
 
 On the Rankings page, Alt+R chooses what to rank by: all subjects or one of them, and
 Ctrl+C copies the ranking for a spreadsheet.
