@@ -629,21 +629,23 @@ class GradebookView(QWidget):
 
     def paste_scores(self, text: str) -> None:
         """Enter a block of scores copied from a spreadsheet (tab-separated, one student per
-        line), starting at the current cell. All or nothing."""
+        line), starting at the current cell. Students hidden by Find and assignments of
+        other categories are skipped, as they aren't in the block seen. All or nothing."""
         row0, col0 = self.table.currentRow(), self.table.currentColumn()
         if self.assignment_at(col0) is None or row0 < 0:
             QMessageBox.information(self, "Paste scores", "Select the score cell to paste into first.")
             return
+        rows = [r for r in range(row0, self.table.rowCount()) if not self.table.isRowHidden(r)]
+        columns = [c for c in range(col0, self.average_column()) if not self.table.isColumnHidden(c)]
         lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")
         entries, cells, left_out = [], set(), 0
         for r, line in enumerate(lines):
             for c, value in enumerate(line.split("\t")):
-                row, col = row0 + r, col0 + c
-                assignment_id = self.assignment_at(col)
-                if row >= self.table.rowCount() or assignment_id is None:
+                if r >= len(rows) or c >= len(columns):
                     left_out += bool(value.strip())
                     continue
-                entries.append((assignment_id, self.student_at(row), value))
+                row = rows[r]
+                entries.append((self.assignment_at(columns[c]), self.student_at(row), value))
                 cells.add(row)
         before = [(a, s, self._score_text(a, s)) for a, s, _text in entries]
         try:

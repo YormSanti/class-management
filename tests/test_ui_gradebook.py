@@ -316,6 +316,28 @@ def test_pasted_block_of_scores_is_entered(window: MainWindow, roster: RosterSer
     assert view.table.item(0, 1).text() == "1"
 
 
+def test_paste_skips_students_and_assignments_not_shown(window: MainWindow, roster: RosterService):
+    from app.models import Assignment, Category, Student
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    class_id = roster.get_subject(maths).class_id
+    dan = roster.save_student(Student(class_id, "Dan", "Zed")).id
+    view = window.gradebook_view
+    grades = view.grades
+    quizzes = grades.save_category(Category(maths, "Quizzes", 20)).id
+    quiz = grades.save_assignment(Assignment(maths, quizzes, "Quiz 1", 10)).id
+    view.refresh()
+    view.search.setText("a")  # Ada Lovelace and Dan Zed, not Bob Smith between them
+    view.category_filter.setCurrentIndex(view.category_filter.findData(quizzes))
+    view.table.setCurrentCell(0, view.average_column() - 1)  # Quiz 1, after the hidden tests
+    view.paste_scores("4\n7\n")
+    sheet = grades.sheet(maths)
+    assert sheet.score(quiz, ada) == 4 and sheet.score(quiz, dan) == 7
+    assert sheet.entered(test) == sheet.entered(homework) == 0
+    bob = next(s.id for s in sheet.students if s.first_name == "Bob")
+    assert not sheet.is_entered(quiz, bob)
+
+
 def test_selected_cells_are_copied_for_a_spreadsheet(window: MainWindow, roster: RosterService):
     from PySide6.QtWidgets import QTableWidgetSelectionRange
 
