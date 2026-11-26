@@ -353,6 +353,24 @@ def test_selected_cells_are_copied_for_a_spreadsheet(window: MainWindow, roster:
         "Student\tTest 1\tHomework\tAverage\nAda Lovelace\t8\t\t80% B\nBob Smith\t\t\t—\n")
 
 
+def test_copy_leaves_out_students_and_assignments_not_shown(window: MainWindow, roster: RosterService):
+    from app.models import Assignment, Category, Student
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    roster.save_student(Student(roster.get_subject(maths).class_id, "Dan", "Zed"))
+    view = window.gradebook_view
+    quizzes = view.grades.save_category(Category(maths, "Quizzes", 20)).id
+    view.grades.save_assignment(Assignment(maths, quizzes, "Quiz 1", 10))
+    view.refresh()
+    view.table.item(0, 1).setText("8")
+    view.table.item(0, 3).setText("4")
+    view.table.item(1, 3).setText("9")  # Bob, hidden below
+    view.search.setText("a")  # Ada Lovelace and Dan Zed
+    view.category_filter.setCurrentIndex(view.category_filter.findData(quizzes))
+    view.table.selectAll()
+    assert view.selection_text() == "Student\tQuiz 1\tAverage\nAda Lovelace\t4\t73% C\nDan Zed\t\t—\n"
+
+
 def test_score_changes_can_be_undone_and_redone(window: MainWindow, roster: RosterService):
     maths, ada, test, homework = _graded_class(window, roster)
     view = window.gradebook_view

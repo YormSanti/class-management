@@ -605,7 +605,8 @@ class GradebookView(QWidget):
 
     def selection_text(self) -> str:
         """The selected cells as tab-separated lines for a spreadsheet. With the names in
-        the selection, a first line gives the column titles."""
+        the selection, a first line gives the column titles. Students hidden by Find and
+        assignments of other categories are left out, as on screen."""
         ranges = self.table.selectedRanges()
         if not ranges:
             return ""
@@ -613,7 +614,7 @@ class GradebookView(QWidget):
         bottom = max(r.bottomRow() for r in ranges)
         left = min(r.leftColumn() for r in ranges)
         right = max(r.rightColumn() for r in ranges)
-        columns = range(left, right + 1)
+        columns = [c for c in range(left, right + 1) if not self.table.isColumnHidden(c)]
         lines = []
         if left == 0:
             titles = []
@@ -624,7 +625,8 @@ class GradebookView(QWidget):
                     titles.append(self.table.horizontalHeaderItem(c).text())
             lines.append("\t".join(titles))
         for row in range(top, bottom + 1):
-            lines.append("\t".join(self.table.item(row, c).text() for c in columns))
+            if not self.table.isRowHidden(row):
+                lines.append("\t".join(self.table.item(row, c).text() for c in columns))
         return "\n".join(lines) + "\n"
 
     def paste_scores(self, text: str) -> None:
