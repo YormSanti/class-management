@@ -231,3 +231,16 @@ def test_ctrl_c_copies_the_ranking(window: MainWindow, roster: RosterService):
         "1\t\tSmith\tBob\t90.0\tA",
         "2\t\tLovelace\tAda\t70.0\tC",
     ]
+
+
+def test_find_selects_a_students_place(window: MainWindow, roster: RosterService):
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7"), (test, ids["Bob"], "9")])
+    window.show_page("Rankings")
+    view = window.rankings_view
+    view.search.setText("lovel")
+    assert view.table.currentRow() == 1 and view.table.item(1, 1).text() == "Ada Lovelace"
+    view.search.setText("ward")  # nothing scored, listed last
+    assert view.table.item(view.table.currentRow(), 1).text() == "Dee Ward"
+    view.search.setText("nobody")
+    assert view.table.item(view.table.currentRow(), 1).text() == "Dee Ward"

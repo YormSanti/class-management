@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -22,7 +23,7 @@ from app.services.dashboard import letter_grade
 from app.services.export import ranking_tsv, write_ranking_csv
 from app.services.gradebook import PASS_MARK, format_number
 from app.services.rankings import Ranking, RankingService
-from app.services.roster import RosterService
+from app.services.roster import RosterService, matches
 from app.ui import style
 from app.ui.files import ask_save_path
 
@@ -100,7 +101,16 @@ class RankingsView(QWidget):
         self.ranking_page = QWidget()
         ranking_layout = QVBoxLayout(self.ranking_page)
         ranking_layout.setContentsMargins(0, 0, 0, 0)
-        ranking_layout.addWidget(self.summary)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a student (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(220)
+        self.search.textChanged.connect(self.find_student)
+        self.search.returnPressed.connect(self.table.setFocus)
+        summary_row = QHBoxLayout()
+        summary_row.addWidget(self.summary, stretch=1)
+        summary_row.addWidget(self.search)
+        ranking_layout.addLayout(summary_row)
         ranking_layout.addWidget(self.table, stretch=1)
 
         # --- empty states ---
@@ -130,7 +140,20 @@ class RankingsView(QWidget):
         copy = QShortcut(QKeySequence.StandardKey.Copy, self)
         copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         copy.activated.connect(self.copy_ranking)
+        find = QShortcut(QKeySequence.StandardKey.Find, self)
+        find.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        find.activated.connect(lambda: (self.search.setFocus(), self.search.selectAll()))
         self.refresh()
+
+    def find_student(self, text: str) -> None:
+        """Select the row of the first student matching `text` by name or number."""
+        if self.ranking is None or not text.strip():
+            return
+        students = [r.student for r in self.ranking.ranked] + self.ranking.unranked
+        row = next((i for i, s in enumerate(students) if matches(s, text)), None)
+        if row is not None:
+            self.table.selectRow(row)
+            self.table.scrollToItem(self.table.item(row, 0))
 
     def copy_ranking(self) -> None:
         """Copy the whole ranking, to paste into a spreadsheet."""
