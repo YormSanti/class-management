@@ -34,6 +34,8 @@ STUDENT_ID = Qt.ItemDataRole.UserRole
 SEAT_WIDTH = 120
 SEAT_HEIGHT = 56
 UNDO_LIMIT = 50
+# A plan as it was: (layout id, {(row, col): student id}, spots with no desk, (rows, cols)).
+Snapshot = tuple[int, dict[tuple[int, int], int], set[tuple[int, int]], tuple[int, int]]
 HINT = (
     "Click a student under Not seated, then a seat. Click a seated student, then another seat "
     "to move them; if it's taken, the two swap. Delete takes a student out of their seat; "
@@ -51,9 +53,9 @@ class SeatingView(QWidget):
         self.plan: SeatingPlan | None = None
         self.picked: int | None = None  # the student clicked, waiting for a seat
         self._last_layout: dict[int, int] = {}  # class id -> plan shown in it this session
-        # The plan before each change: (layout id, {(row, col): student id}, spots with no desk).
-        self._undo: list[tuple[int, dict[tuple[int, int], int], set[tuple[int, int]]]] = []
-        self._redo: list[tuple[int, dict[tuple[int, int], int], set[tuple[int, int]]]] = []
+        # The plan before each change, see _snapshot().
+        self._undo: list[Snapshot] = []
+        self._redo: list[Snapshot] = []
 
         self.title = style.label("Seating chart", 1.6, bold=True)
         self.subtitle = style.label("", 0.95, muted=True)
@@ -280,8 +282,11 @@ class SeatingView(QWidget):
     def edit_layout(self) -> None:
         if self.plan is None:
             return
+        before = self._snapshot(self.plan)
         dialog = LayoutDialog(self._save_resized, self.class_id, self.plan.layout, parent=self)
         if dialog.exec():
+            if dialog.saved and (dialog.saved.rows, dialog.saved.cols) != before[3]:
+                self._remember(before)  # Ctrl+Z puts the room back as it was
             self.refresh()
 
     def _save_resized(self, layout: SeatLayout) -> SeatLayout:
@@ -453,10 +458,15 @@ class SeatingView(QWidget):
 
     # --- undo ------------------------------------------------------------------
 
-    def _remember(self) -> None:
-        """Keep who sits where and where there's no desk now, before a change, so
-        Ctrl+Z can put it back."""
-        self._undo.append((self.plan.layout.id, dict(self.plan.seats), set(self.plan.gaps)))
+    @staticmethod
+    def _snapshot(plan: SeatingPlan) -> Snapshot:
+        """Who sits where, where there's no desk and the size of the room in `plan`."""
+        return plan.layout.id, dict(plan.seats), set(plan.gaps), (plan.layout.rows, plan.layout.cols)
+
+    def _remember(self, snapshot: Snapshot | None = None) -> None:
+        """Keep the plan as it is now (or `snapshot` of it), before a change, so Ctrl+Z
+        can put it back."""
+        self._undo.append(snapshot or self._snapshot(self.plan))
         del self._undo[:-UNDO_LIMIT]
         self._redo.clear()
 
@@ -473,13 +483,13 @@ class SeatingView(QWidget):
     def _step(self, source: list, target: list) -> None:
         if not source:
             return
-        layout_id, seats, gaps = source.pop()
+        layout_id, seats, gaps, size = source.pop()
         current = self.seating.plan(layout_id)
         if current is None:  # the plan was deleted meanwhile
             self.clear_undo()
             return
-        target.append((layout_id, dict(current.seats), set(current.gaps)))
-        self.seating.restore(layout_id, seats, gaps)
+        target.append(self._snapshot(current))
+        self.seating.restore(layout_id, seats, gaps, size)
         self.layout_id = layout_id
         self.refresh()
 

@@ -181,14 +181,23 @@ class SeatingService:
             plan, {(r, c): s for (r, c), s in seats.items() if s in students and 0 <= r < rows and 0 <= c < cols}
         )
 
-    def restore(self, layout_id: int, seats: dict[tuple[int, int], int], gaps: set[tuple[int, int]]) -> None:
-        """Put back who sat where and the spots with no desk, e.g. to undo a change;
-        what no longer fits is left out as in set_seats."""
+    def restore(
+        self,
+        layout_id: int,
+        seats: dict[tuple[int, int], int],
+        gaps: set[tuple[int, int]],
+        size: tuple[int, int] | None = None,
+    ) -> None:
+        """Put back who sat where, the spots with no desk and the room's (rows, cols)
+        `size`, e.g. to undo a change; what no longer fits is left out as in set_seats."""
         layout = self.seating.get_layout(layout_id)
         if layout is None:
             raise SeatingError("This seating plan no longer exists.")
-        gaps = {(r, c) for r, c in gaps if r < layout.rows and c < layout.cols}
         with transaction(self.seating.conn):
+            if size and size != (layout.rows, layout.cols):
+                layout = replace(layout, rows=size[0], cols=size[1])
+                self.seating.update_layout(layout)
+            gaps = {(r, c) for r, c in gaps if r < layout.rows and c < layout.cols}
             current = self.seating.gaps(layout_id)
             for row, col in current - gaps:
                 self.seating.set_gap(layout_id, row, col, False)

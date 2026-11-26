@@ -126,7 +126,8 @@ Click a student under **Not seated**, then a seat. Click a seated student, then 
 seat to move them; if that seat is taken, the two swap. **Seat the rest** puts everyone
 not seated yet in the free seats by name, front row first, and **Shuffle** seats the
 whole class at random; Ctrl+Z undoes either. **Edit…** renames the plan or changes the
-room, asking first if a smaller room would leave someone without a seat, **Copy…** starts
+room, asking first if a smaller room would leave someone without a seat (Ctrl+Z puts the
+room back with everyone in their seat), **Copy…** starts
 a new plan from the one shown with everyone in the same seat, and **Save PDF…** saves the
 plan to print, e.g. for a substitute teacher. The plan last shown in each class is shown
 again next time.

@@ -123,6 +123,37 @@ def test_shrinking_the_room_asks_before_unseating_students(window: MainWindow, r
     assert "Bob Smith" in _unseated(window)
 
 
+def test_making_the_room_smaller_can_be_undone(window: MainWindow, roster: RosterService, monkeypatch):
+    from dataclasses import replace
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.ui.views import seating_view
+
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Bob"], 1, 2)
+    view.seating.set_desk(layout, 1, 0, False)
+    view.refresh()
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+
+    class FakeDialog:
+        def __init__(self, save, class_id, layout=None, parent=None, default_name=""):
+            self.saved = save(replace(layout, rows=1))
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(seating_view, "LayoutDialog", FakeDialog)
+    view.edit_button.click()
+    assert view.grid.rowCount() == 1 and "Bob Smith" in _unseated(window)
+    view.undo()
+    assert view.layout_combo.currentText() == "Tests (2 × 3)"
+    assert view.plan.seats == {(1, 2): ids["Bob"]} and view.plan.gaps == {(1, 0)}
+    view.redo()
+    assert view.grid.rowCount() == 1 and "Bob Smith" in _unseated(window)
+
+
 def test_a_plan_is_deleted_after_asking(window: MainWindow, roster: RosterService, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
 
