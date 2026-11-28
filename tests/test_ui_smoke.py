@@ -1612,6 +1612,39 @@ def test_manage_classes_exports_the_school_year(
     assert told[0].startswith("Saved 2 students of 2 classes to")
 
 
+def test_manage_classes_exports_the_school_year_as_a_sheet_per_class(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    b = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    c = roster.save_class(SchoolClass(name="7C", term="2026-2027")).id
+    roster.save_class(SchoolClass(name="6A", term="2025-2026"))
+    roster.save_student(Student(class_id=b, first_name="Ada", last_name="Lovelace"))
+    roster.save_student(Student(class_id=c, first_name="Alan", last_name="Turing"))
+    window.select_class(b)
+    saved = tmp_path / "year.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    window.classes_view.year = "2026-2027"
+    window.classes_view.export_year()
+    workbook = load_workbook(saved)
+    assert workbook.sheetnames == ["7B", "7C"]
+    assert list(workbook["7C"].values)[1] == (None, "Turing", "Alan", "Active", None)
+
+
+def test_workbook_sheets_get_names_excel_accepts_once_each(tmp_path: Path):
+    from openpyxl import load_workbook
+
+    from app.services.export import write_year_roster_xlsx
+
+    long = "A class with a name far longer than Excel allows"
+    write_year_roster_xlsx(tmp_path / "y.xlsx", [("7/B", []), ("7:B", []), (long, []), (long, [])])
+    names = load_workbook(tmp_path / "y.xlsx").sheetnames
+    assert names == ["7-B", "7-B (2)", long[:31], long[:27] + " (2)"]
+
+
 def test_class_dialog_asks_before_a_mistyped_school_year(
     qapp: QApplication, roster: RosterService, monkeypatch: pytest.MonkeyPatch
 ):

@@ -126,6 +126,12 @@ def write_year_roster_csv(path: Path, classes: Sequence[tuple[str, Sequence[Stud
     _write_csv(path, rows)
 
 
+def write_year_roster_xlsx(path: Path, classes: Sequence[tuple[str, Sequence[Student]]]) -> None:
+    """Save the students of several classes as an Excel workbook with a sheet per class,
+    each with the class list's columns, in the order given."""
+    _write_workbook(path, [(name, _roster_rows(students), "A2") for name, students in classes])
+
+
 def roster_tsv(students: Sequence[Student]) -> str:
     """Students as tab-separated text with a heading row, to paste into a spreadsheet."""
     rows = [ROSTER_COLUMNS]
