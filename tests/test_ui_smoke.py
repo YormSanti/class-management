@@ -271,6 +271,26 @@ def test_roster_export_writes_csv(
     assert "Lovelace" in (tmp_path / "out.csv").read_text(encoding="utf-8-sig")
 
 
+def test_roster_export_writes_an_excel_workbook_if_chosen(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7/B", term="2026")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", notes="Glasses\x07"))
+    window.select_class(class_id)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "out"), "Excel workbooks (*.xlsx)"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    window.classes_view.roster_view.export_csv()
+    sheet = load_workbook(tmp_path / "out.xlsx").active
+    assert sheet.title == "7-B"
+    assert list(sheet.values) == [
+        ("Student #", "Last name", "First name", "Status", "Notes"),
+        (None, "Lovelace", "Ada", "Active", "Glasses"),  # a character Excel can't keep is left out
+    ]
+
+
 def test_roster_export_follows_the_table_order(
     window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

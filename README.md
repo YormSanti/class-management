@@ -84,7 +84,8 @@ before anything is added.
 
 **Copy…** under Classes sets up another class of the same school year with the same
 subjects, and **Export year…** saves the students of every class of a school year in one
-CSV file, e.g. for the school office. The class list's search ignores accents, so "Jose"
+CSV file, e.g. for the school office. The class list's **Export…** saves it as CSV or as
+an Excel workbook. The class list's search ignores accents, so "Jose"
 finds "José".
 
 ## Grades

@@ -43,27 +43,44 @@ def _write_csv(path: Path, rows: Sequence[Sequence[object]]) -> None:
 
 
 def _write_xlsx(path: Path, rows: Sequence[Sequence[object]], title: str, frozen: str = "A2") -> None:
-    """An Excel workbook of one sheet: the first row in bold, and rows and columns before
-    `frozen` kept in view while scrolling. Written next to `path` first and renamed, as
-    _write_csv does; text is never read as a formula."""
+    """An Excel workbook of one sheet (see _write_workbook)."""
+    _write_workbook(path, [(title, rows, frozen)])
+
+
+def _write_workbook(path: Path, sheets: Sequence[tuple[str, Sequence[Sequence[object]], str]]) -> None:
+    """An Excel workbook with a sheet per (title, rows, frozen): each sheet's first row in
+    bold, and the rows and columns before `frozen` kept in view while scrolling. Written
+    next to `path` first and renamed, as _write_csv does; text is never read as a formula."""
     from openpyxl import Workbook
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
 
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = safe_sheet_title(title)
-    for r, row in enumerate(rows, start=1):
-        for c, value in enumerate(row, start=1):
-            cell = sheet.cell(r, c, value)
-            if isinstance(value, str):
-                cell.data_type = "s"  # "=1+1" stays text
-            if r == 1:
-                cell.font = Font(bold=True)
-    for c in range(1, max((len(row) for row in rows), default=0) + 1):
-        longest = max((len(str(row[c - 1])) for row in rows if c <= len(row)), default=0)
-        sheet.column_dimensions[get_column_letter(c)].width = min(max(longest + 2, 6), 40)
-    sheet.freeze_panes = frozen
+    workbook.remove(workbook.active)
+    titles: set[str] = set()
+    for title, rows, frozen in sheets:
+        name, n = safe_sheet_title(title), 1
+        while name.lower() in titles:  # Excel won't have two sheets of one name
+            n += 1
+            name = f"{safe_sheet_title(title)[:27]} ({n})"
+        titles.add(name.lower())
+        sheet = workbook.create_sheet(name)
+        for r, row in enumerate(rows, start=1):
+            for c, value in enumerate(row, start=1):
+                if isinstance(value, str):
+                    value = ILLEGAL_CHARACTERS_RE.sub("", value)
+                cell = sheet.cell(r, c, value)
+                if isinstance(value, str):
+                    cell.data_type = "s"  # "=1+1" stays text
+                if r == 1:
+                    cell.font = Font(bold=True)
+        for c in range(1, max((len(row) for row in rows), default=0) + 1):
+            longest = max((len(str(row[c - 1])) for row in rows if c <= len(row)), default=0)
+            sheet.column_dimensions[get_column_letter(c)].width = min(max(longest + 2, 6), 40)
+        sheet.freeze_panes = frozen
+    if not sheets:
+        workbook.create_sheet("Sheet")
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".export-", suffix=".tmp")
     os.close(fd)
     try:
@@ -80,12 +97,21 @@ def safe_sheet_title(text: str) -> str:
     return name or "Sheet"
 
 
-def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
-    """Save students as CSV, in the order given."""
+def _roster_rows(students: Sequence[Student]) -> list[Sequence[object]]:
     rows: list[Sequence[object]] = [ROSTER_COLUMNS]
     for s in students:
         rows.append((s.student_no or "", s.last_name, s.first_name, "Active" if s.active else "Inactive", s.notes))
-    _write_csv(path, rows)
+    return rows
+
+
+def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
+    """Save students as CSV, in the order given."""
+    _write_csv(path, _roster_rows(students))
+
+
+def write_roster_xlsx(path: Path, students: Sequence[Student], title: str = "Students") -> None:
+    """Save students as an Excel workbook, the same columns as the CSV."""
+    _write_xlsx(path, _roster_rows(students), title)
 
 
 def write_year_roster_csv(path: Path, classes: Sequence[tuple[str, Sequence[Student]]]) -> None:

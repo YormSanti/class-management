@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.export import roster_tsv, write_roster_csv
+from app.services.export import roster_tsv, write_roster_csv, write_roster_xlsx
 from app.services.roster import RosterError, RosterService, number_key
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.files import ask_save_path
@@ -166,7 +166,7 @@ class RosterView(QWidget):
         self.number_button.clicked.connect(self.number_students)
         self.number_button.hide()  # until a class has students without a number
         self.export_button = QPushButton("Export…")
-        self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
+        self.export_button.setToolTip("Save the class list as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
 
         toolbar = QHBoxLayout()
@@ -485,14 +485,20 @@ class RosterView(QWidget):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        path = ask_save_path(self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv")
+        path = ask_save_path(
+            self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv",
+            others=(("Excel workbooks", ".xlsx"),),
+        )  # fmt: skip
         if path is None:
             return
         students = self._in_table_order(
             self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
         )
         try:
-            write_roster_csv(path, students)
+            if path.suffix.lower() == ".xlsx":
+                write_roster_xlsx(path, students, school_class.name)
+            else:
+                write_roster_csv(path, students)
         except OSError as exc:
             QMessageBox.warning(self, "Export students", f"The file could not be saved:\n{exc}")
             return
