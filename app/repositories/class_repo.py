@@ -35,14 +35,26 @@ class ClassRepository:
         attendance or grades of its students or subjects, still reference them.
         """
         with transaction(self.conn):
+            # Seating plans nobody sits in are setup too; one with students seated stops the delete.
+            self.conn.execute(
+                """
+                DELETE FROM seat_layouts WHERE class_id = ? AND NOT EXISTS
+                    (SELECT 1 FROM seats WHERE layout_id = seat_layouts.id AND student_id IS NOT NULL)
+                """,
+                (class_id,),
+            )
             self.conn.execute("DELETE FROM students WHERE class_id = ?", (class_id,))
+            # Grade categories are setup, not records; one with assignments still stops the delete.
+            self.conn.execute(
+                "DELETE FROM categories WHERE subject_id IN (SELECT id FROM subjects WHERE class_id = ?)", (class_id,)
+            )
             self.conn.execute("DELETE FROM subjects WHERE class_id = ?", (class_id,))
             self.conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
 
     def recorded(self, class_id: int) -> dict[str, int]:
         """How much is recorded for the class's students and subjects, i.e. what stops
-        delete() from removing it: {"attendance", "scores", "assignments", "categories",
-        "seating": count}. Seating counts its layouts and others its students sit in."""
+        delete() from removing it: {"attendance", "scores", "assignments", "seating": count}. Seating counts the plans,
+        its own or another class's, that its students or anyone sits in; empty plans are setup."""
         row = self.conn.execute(
             """
             WITH st AS (SELECT id FROM students WHERE class_id = :c),
@@ -52,9 +64,9 @@ class ClassRepository:
               (SELECT count(*) FROM scores WHERE student_id IN st
                   OR assignment_id IN (SELECT id FROM assignments WHERE subject_id IN sub)) AS scores,
               (SELECT count(*) FROM assignments WHERE subject_id IN sub) AS assignments,
-              (SELECT count(*) FROM categories WHERE subject_id IN sub) AS categories,
-              (SELECT count(*) FROM seat_layouts WHERE class_id = :c
-                  OR id IN (SELECT layout_id FROM seats WHERE student_id IN st)) AS seating
+              (SELECT count(DISTINCT layout_id) FROM seats WHERE student_id IN st
+                  OR (student_id IS NOT NULL
+                      AND layout_id IN (SELECT id FROM seat_layouts WHERE class_id = :c))) AS seating
             """,
             {"c": class_id},
         ).fetchone()
@@ -69,11 +81,10 @@ class ClassRepository:
         return [_from_row(r) for r in rows]
 
     def find_by_name(self, name: str, term: str) -> SchoolClass | None:
-        """Case-insensitive, so "7b" and "7B" in the same school year count as the same class."""
-        row = self.conn.execute(
-            "SELECT * FROM classes WHERE name = ? COLLATE NOCASE AND term = ?", (name, term)
-        ).fetchone()
-        return _from_row(row) if row else None
+        """Case-insensitive, so "7b" and "7B" (or "Ä1" and "ä1") in the same school year
+        count as the same class; SQLite's NOCASE only folds A to Z."""
+        rows = self.conn.execute("SELECT * FROM classes WHERE term = ? ORDER BY id", (term,))
+        return next((_from_row(r) for r in rows if r["name"].casefold() == name.casefold()), None)
 
     def list_terms(self) -> list[str]:
         """Distinct non-empty school years, newest first ("2026-2027" before "2025-2026")."""
@@ -104,12 +115,13 @@ class ClassRepository:
         return {r["class_id"]: r["n"] for r in rows}
 
     def totals(self) -> dict[str, int]:
-        """How much the whole data file holds: {"classes", "students", "attendance": count}."""
+        """How much the whole data file holds: {"classes", "students", "attendance", "scores": count}."""
         row = self.conn.execute(
             """
             SELECT (SELECT count(*) FROM classes) AS classes,
                    (SELECT count(*) FROM students) AS students,
-                   (SELECT count(*) FROM attendance) AS attendance
+                   (SELECT count(*) FROM attendance) AS attendance,
+                   (SELECT count(*) FROM scores WHERE score IS NOT NULL) AS scores
             """
         ).fetchone()
         return dict(row)

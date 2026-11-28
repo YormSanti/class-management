@@ -27,12 +27,16 @@ from app.db.connection import close_db, connect, find_problems, init_db
 from app.repositories.attendance_repo import AttendanceRepository
 from app.repositories.class_repo import ClassRepository
 from app.repositories.dashboard_repo import DashboardRepository
+from app.repositories.gradebook_repo import GradebookRepository
+from app.repositories.seating_repo import SeatingRepository
 from app.repositories.student_repo import StudentRepository
 from app.repositories.subject_repo import SubjectRepository
 from app.services.attendance import AttendanceService
 from app.services.backup import auto_backup, restore_backup
 from app.services.dashboard import DashboardService
+from app.services.gradebook import GradebookService
 from app.services.roster import RosterService
+from app.services.seating import SeatingService
 from app.ui.dialogs.setup_dialog import SetupDialog
 from app.ui.main_window import MainWindow
 from app.ui.theme import apply_theme
@@ -100,6 +104,21 @@ def _choose_data_dir(message: str = "", current: Path | None = None) -> Path | N
             current = chosen
 
 
+def _remember(config: AppConfig) -> None:
+    """Save the chosen data folder in config.json. If the settings folder can't be written
+    to, say so and carry on with the folder for this session instead of failing to start."""
+    try:
+        save_config(config)
+    except OSError as exc:
+        log.warning("Could not save the config: %s", exc)
+        QMessageBox.warning(
+            None,
+            "Settings not saved",
+            f"The data folder {config.data_dir} will be used now, but it couldn't be "
+            f"remembered for next time:\n{exc}\n\nYou will be asked for it again when the app starts.",
+        )
+
+
 def _resolve_config() -> AppConfig | None:
     """Load config.json, running first-launch setup or recovery if needed."""
     config = load_config()
@@ -108,7 +127,7 @@ def _resolve_config() -> AppConfig | None:
         if data_dir is None:
             return None
         config = AppConfig(data_dir=data_dir)
-        save_config(config)
+        _remember(config)
         return config
 
     if not config.data_dir.is_dir():
@@ -123,7 +142,26 @@ def _resolve_config() -> AppConfig | None:
         if data_dir is None:
             return None
         config = replace(config, data_dir=data_dir)
-        save_config(config)
+        _remember(config)
+        return config
+
+    try:
+        prepare_data_dir(config.data_dir)
+    except OSError as exc:
+        # e.g. a USB stick with its write-protect switch on: every change would fail.
+        log.warning("Data folder %s can't be written to: %s", config.data_dir, exc)
+        data_dir = _choose_data_dir(
+            message=(
+                f"Classroom Manager can't save changes in the data folder {config.data_dir} "
+                f"({exc.strerror or exc}). If it is on a USB stick, check that it isn't "
+                "write-protected and choose it again, or pick another folder."
+            ),
+            current=config.data_dir,
+        )
+        if data_dir is None:
+            return None
+        config = replace(config, data_dir=data_dir)
+        _remember(config)
     return config
 
 
@@ -186,16 +224,19 @@ def main() -> int:
     roster = RosterService(ClassRepository(conn), students, subjects)
     dashboard = DashboardService(DashboardRepository(conn), students, subjects)
     attendance = AttendanceService(AttendanceRepository(conn), students, subjects)
+    grades = GradebookService(GradebookRepository(conn), students, subjects)
     # Window layout lives next to config.json, never in the (possibly shared) data folder.
     settings = QSettings(str(settings_dir() / "window.ini"), QSettings.Format.IniFormat)
     window = MainWindow(
         roster,
         dashboard,
         attendance,
+        grades,
         config,
         settings,
         save_config,
         restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
+        seating=SeatingService(SeatingRepository(conn), students, roster.classes),
     )
     window.show()
     try:

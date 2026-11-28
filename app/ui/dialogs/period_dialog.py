@@ -53,14 +53,15 @@ class PeriodDialog(QDialog):
             edit.setCalendarPopup(True)
             edit.setDisplayFormat("ddd d MMM yyyy")
             edit.dateChanged.connect(self._update_ok)
+        self.start_edit.dateChanged.connect(self._keep_end_after_start)
 
         self.problem = QLabel()
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export CSV…")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export…")  # CSV or Excel, asked next
         self.buttons.accepted.connect(self.accept)
-        self.as_pdf = False  # the PDF button was pressed rather than the CSV one
+        self.as_pdf = False  # the PDF button was pressed rather than Export
         self.pdf_button = self.buttons.addButton("Save PDF…", QDialogButtonBox.ButtonRole.ActionRole)
         self.pdf_button.setAutoDefault(False)
         self.pdf_button.clicked.connect(self._accept_pdf)
@@ -101,6 +102,11 @@ class PeriodDialog(QDialog):
     def set_period(self, start: date, end: date) -> None:
         self.start_edit.setDate(_qdate(start))
         self.end_edit.setDate(_qdate(end))
+
+    def _keep_end_after_start(self) -> None:
+        """A first day picked past the last one moves the last one along, e.g. to a single day."""
+        if self.end_edit.date() < self.start_edit.date():
+            self.end_edit.setDate(self.start_edit.date())
 
     @property
     def start(self) -> date:

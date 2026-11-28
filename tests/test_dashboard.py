@@ -143,11 +143,20 @@ def test_missing_work_counts_only_past_dated_assignments(service, roster, conn, 
     ada = _student(roster, class_id, "Ada")
     cat = _category(conn, maths, "Homework", 1)
     _score(conn, _assignment(conn, maths, cat, "Scored", 10, TODAY), ada, 0)  # 0 is a score
-    _score(conn, _assignment(conn, maths, cat, "Not submitted", 10, TODAY), ada, None)
+    _score(conn, _assignment(conn, maths, cat, "Exempt", 10, TODAY), ada, None)  # not missing
     _assignment(conn, maths, cat, "No row yet", 10, TODAY - timedelta(days=1))
     _assignment(conn, maths, cat, "Due later", 10, TODAY + timedelta(days=1))
     _assignment(conn, maths, cat, "Undated", 10, None)
-    assert service.summary(class_id, TODAY).missing_total == 2
+    assert service.summary(class_id, TODAY).missing_total == 1
+
+
+def test_work_due_today_is_not_missing_until_the_day_has_passed(service, roster, conn, class_id, maths):
+    ada = _student(roster, class_id, "Ada")
+    cat = _category(conn, maths, "Homework", 1)
+    _assignment(conn, maths, cat, "Test today", 10, TODAY)  # scores not entered yet
+    assert service.summary(class_id, TODAY).missing_total == 0
+    assert service.summary(class_id, TODAY + timedelta(days=1)).missing_total == 1
+    assert ada not in {i.student.id for i in service.summary(class_id, TODAY).attention}
 
 
 def test_needs_attention_uses_most_serious_reason(service, roster, conn, class_id, maths):
@@ -209,6 +218,17 @@ def test_recent_assignments_newest_first(service, roster, conn, class_id, maths)
     assert titles == ["New", "Old", "Undated"]
 
 
+def test_recent_assignments_leave_out_work_not_due_yet(service, roster, conn, class_id, maths):
+    _student(roster, class_id, "Ada")
+    cat = _category(conn, maths, "Tests", 1)
+    _assignment(conn, maths, cat, "Next week's test", 10, TODAY + timedelta(days=7))
+    _assignment(conn, maths, cat, "Today's quiz", 10, TODAY)
+    titles = [a.title for a in service.summary(class_id, TODAY).recent_assignments]
+    assert titles == ["Today's quiz"]
+    later = service.summary(class_id, TODAY + timedelta(days=7)).recent_assignments
+    assert [a.title for a in later] == ["Next week's test", "Today's quiz"]
+
+
 def test_each_subject_counts_equally(service, roster, conn, class_id, maths):
     ada = _student(roster, class_id, "Ada")
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
@@ -246,6 +266,27 @@ def test_subject_summaries(service, roster, conn, class_id, maths):
     assert list(by_name) == ["Art", "Maths"]
     assert (by_name["Maths"].average, by_name["Maths"].scored, by_name["Maths"].below_pass) == (70, 2, 1)
     assert (by_name["Art"].average, by_name["Art"].scored, by_name["Art"].subject.teacher) == (None, 0, "Ms. Chen")
+
+
+def test_subject_summaries_name_the_students_under_the_pass_mark_lowest_first(service, roster, conn, class_id, maths):
+    ada, alan, bea = (_student(roster, class_id, name) for name in ("Ada", "Alan", "Bea"))
+    test = _assignment(conn, maths, _category(conn, maths, "Tests", 1), "Test", 10, TODAY)
+    for student, points in ((ada, 9), (alan, 5), (bea, 3)):
+        _score(conn, test, student, points)
+
+    (summary,) = service.summary(class_id, TODAY).subjects
+    assert summary.below_pass_names == ["Bea Test 30%", "Alan Test 50%"]
+
+
+def test_grade_distribution_names_the_students_with_each_letter_best_first(service, roster, conn, class_id, maths):
+    ada, alan, bea = (_student(roster, class_id, name) for name in ("Ada", "Alan", "Bea"))
+    test = _assignment(conn, maths, _category(conn, maths, "Tests", 1), "Test", 100, TODAY)
+    for student, points in ((ada, 91), (alan, 95), (bea, 30)):
+        _score(conn, test, student, points)
+
+    s = service.summary(class_id, TODAY)
+    assert s.grade_names["A"] == ["Alan Test 95%", "Ada Test 91%"]
+    assert s.grade_names["F"] == ["Bea Test 30%"] and s.grade_names["B"] == []
 
 
 def test_low_grades_name_the_subject(service, roster, conn, class_id, maths):

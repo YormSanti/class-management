@@ -90,6 +90,19 @@ def test_describe_data(roster: RosterService, class_id: int):
     assert roster.describe_data() == "1 class · 2 students · 0 attendance marks"
 
 
+def test_describe_data_counts_scores_once_there_are_any(roster: RosterService, class_id: int, conn):
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    subject = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    category = conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject,)).lastrowid
+    quiz = conn.execute(
+        "INSERT INTO assignments (subject_id, category_id, title, max_score) VALUES (?, ?, 'Quiz', 10)", (subject, category)
+    ).lastrowid
+    conn.execute("INSERT INTO scores (assignment_id, student_id, score) VALUES (?, ?, NULL)", (quiz, ada.id))
+    assert roster.describe_data() == "1 class · 1 student · 0 attendance marks"  # an exemption isn't a score
+    conn.execute("UPDATE scores SET score = 8")
+    assert roster.describe_data() == "1 class · 1 student · 0 attendance marks · 1 score"
+
+
 @pytest.mark.parametrize("typed", ["me", "Me", " myself ", "You"])
 def test_a_subject_taught_by_me_is_taught_by_the_user(roster: RosterService, class_id: int, typed: str):
     subject = roster.save_subject(Subject(class_id=class_id, name="Maths", teacher=typed))
@@ -304,9 +317,10 @@ def test_subject_with_grades_cannot_be_deleted(roster: RosterService, class_id: 
         "INSERT INTO attendance (student_id, subject_id, date, status) VALUES (?, ?, '2026-09-01', 'late')",
         (ada.id, maths),
     )
-    with pytest.raises(RosterError, match="it has 1 attendance mark and 1 grade category recorded"):
+    with pytest.raises(RosterError, match="it has 1 attendance mark recorded"):
         roster.delete_subject(maths)
-    roster.delete_subject(art)
+    conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (art,))
+    roster.delete_subject(art)  # categories alone are setup, not records
     assert [s.name for s in roster.list_subjects(class_id)] == ["Maths"]
 
 
@@ -319,10 +333,25 @@ def test_class_with_only_empty_subjects_can_be_deleted(roster: RosterService):
 def test_class_with_graded_subject_cannot_be_deleted(roster: RosterService, conn):
     school_class = roster.save_class(SchoolClass(name="8A"), first_subject="Science")
     subject_id = roster.list_subjects(school_class.id)[0].id
-    conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,))
-    with pytest.raises(RosterError, match="it has 1 grade category recorded"):
+    category = conn.execute(
+        "INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,)
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO assignments (subject_id, category_id, title, max_score) VALUES (?, ?, 'Quiz', 10)",
+        (subject_id, category),
+    )
+    with pytest.raises(RosterError, match="it has 1 assignment recorded"):
         roster.delete_class(school_class.id)
     assert roster.list_subjects(school_class.id)  # nothing was half-deleted
+    assert conn.execute("SELECT count(*) FROM categories").fetchone()[0] == 1
+
+
+def test_class_whose_subjects_only_have_categories_can_be_deleted(roster: RosterService, conn):
+    school_class = roster.save_class(SchoolClass(name="8A"), first_subject="Science")
+    subject_id = roster.list_subjects(school_class.id)[0].id
+    conn.execute("INSERT INTO categories (subject_id, name, weight) VALUES (?, 'Tests', 1)", (subject_id,))
+    roster.delete_class(school_class.id)  # e.g. copied by mistake, with its subjects' categories
+    assert roster.list_classes() == []
 
 
 @pytest.mark.parametrize(
@@ -349,6 +378,12 @@ def test_terms_and_classes_by_year(roster: RosterService):
     assert [c.name for c in roster.list_classes("2025-2026")] == ["7B", "7C"]
     assert [c.name for c in roster.list_classes("")] == ["Club"]
     assert len(roster.list_classes()) == 4
+
+
+def test_school_years_are_listed_newest_first_by_their_years(roster: RosterService):
+    for term in ("Spring 2025", "Fall 2026", "Summer school", "Term 2 2026", "2024-25"):
+        roster.save_class(SchoolClass(name="7B", term=term))
+    assert roster.list_terms() == ["Term 2 2026", "Fall 2026", "Spring 2025", "2024-25", "Summer school"]
 
 
 def test_start_new_year_copies_subjects_and_active_students(roster: RosterService):
@@ -475,6 +510,49 @@ def test_parse_student_list_reads_semicolon_columns():
         (None, "Grace", "Hopper"),
     ]
     assert problems == ["Line 4: expected first and last name columns: ;;"]
+
+
+def test_parse_student_list_keeps_empty_cells_in_their_column():
+    from app.services.roster import parse_student_list
+
+    text = "S1\tAda\tLovelace\nS2\t\tHopper\n\tAlan\tTuring\t\n\tKatherine\tJohnson\tGlasses\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name, s.notes) for s in students] == [
+        ("S1", "Ada", "Lovelace", ""),
+        (None, "Alan", "Turing", ""),
+        (None, "Katherine", "Johnson", "Glasses"),
+    ]
+    assert problems == [
+        "Line 2: needs a first and a last name: S2\t\tHopper",  # not a student called S2 Hopper
+    ]
+
+
+def test_parse_student_list_reads_the_columns_a_heading_names():
+    from app.services.roster import parse_student_list
+
+    text = "Surname\tFirst name\tStudent no.\tClass\tRemarks\nLovelace\tAda\tS1\t7B\tGlasses\nHopper\tGrace\n"
+    students, problems = parse_student_list(text)
+    assert [(s.student_no, s.first_name, s.last_name, s.notes) for s in students] == [
+        ("S1", "Ada", "Lovelace", "Glasses"),
+        (None, "Grace", "Hopper", ""),
+    ]
+    assert problems == []
+
+    students, _ = parse_student_list("Name;Name\nAda;Lovelace\n")  # no columns named: the usual order
+    assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace")]
+
+
+def test_parse_student_list_reads_a_csv_file_of_two_columns_after_its_heading():
+    from app.services.roster import parse_student_list
+
+    students, problems = parse_student_list("First name,Last name\nAda,Lovelace\nGrace, Hopper\n")
+    assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace"), ("Grace", "Hopper")]
+    assert problems == []
+    students, problems = parse_student_list("Last name,First name\r\nLovelace,Ada\r\n")
+    assert [(s.first_name, s.last_name) for s in students] == [("Ada", "Lovelace")]
+    # Without such a heading, one comma is "Last, First".
+    students, _ = parse_student_list("Surin, Forest\nLovelace, Ada\n")
+    assert [(s.first_name, s.last_name) for s in students] == [("Forest", "Surin"), ("Ada", "Lovelace")]
 
 
 def test_parse_student_list_leaves_out_quotes_around_cells():
@@ -625,6 +703,17 @@ def test_transfer_student_without_records_moves_them(roster: RosterService, clas
     assert [s.id for s in roster.list_students(other)] == [ada.id]
 
 
+def test_transfer_student_gets_a_number_that_is_taken_in_their_old_class(roster: RosterService, class_id: int):
+    other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace", no="1")
+    _add(roster, class_id, "Grace", "Hopper", no="3")
+    _add(roster, other, "Alan", "Turing", no="1")
+    _add(roster, other, "Edsger", "Dijkstra", no="2")
+    moved = roster.transfer_student(ada.id, other)  # 1 is taken in 7C; the next free one, 3, only in 7B
+    assert (moved.id, moved.class_id, moved.student_no) == (ada.id, other, "3")
+    assert {s.full_name: s.student_no for s in roster.list_students(other)}["Ada Lovelace"] == "3"
+
+
 def test_transfer_student_with_records_keeps_history_in_old_class(roster: RosterService, class_id: int, conn):
     other = roster.save_class(SchoolClass(name="7C", term="2026 T1")).id
     ada = _add(roster, class_id, "Ada", "Lovelace", no="5")
@@ -769,10 +858,8 @@ def test_class_records_are_counted_and_described(roster: RosterService, conn):
     conn.execute("INSERT INTO seats (layout_id, row, col, student_id) VALUES (?, 0, 0, ?)", (layout, ada.id))
 
     counts = ClassRepository(conn).recorded(class_id)
-    assert counts == {"attendance": 2, "scores": 1, "assignments": 1, "categories": 1, "seating": 1}
-    assert describe_records(counts) == (
-        "2 attendance marks, 1 score, 1 assignment, 1 grade category and 1 seating plan"
-    )
+    assert counts == {"attendance": 2, "scores": 1, "assignments": 1, "seating": 1}
+    assert describe_records(counts) == "2 attendance marks, 1 score, 1 assignment and 1 seating plan"
     assert describe_records({"attendance": 0}) == ""
 
 
@@ -780,3 +867,73 @@ def test_number_key_sorts_numbers_as_people_read_them():
     students = [Student(class_id=1, first_name=n, last_name="X", student_no=no)
                 for n, no in (("a", "S10"), ("b", None), ("c", "s2"), ("d", "S1"), ("e", ""))]  # fmt: skip
     assert [s.first_name for s in sorted(students, key=number_key)] == ["d", "c", "a", "b", "e"]
+
+
+def test_copied_subjects_bring_their_grade_categories(roster, conn):
+    from app.models import Category
+    from app.repositories.gradebook_repo import GradebookRepository
+
+    grades = GradebookRepository(conn)
+    seventh = roster.save_class(SchoolClass(name="7B", term="2025-2026")).id
+    maths = roster.save_subject(Subject(class_id=seventh, name="Maths")).id
+    grades.add_category(Category(maths, "Tests", 60))
+    grades.add_category(Category(maths, "Homework", 40))
+
+    def categories(class_id):
+        (subject,) = roster.list_subjects(class_id)
+        return [(c.name, c.weight) for c in grades.categories(subject.id)]
+
+    (eighth,) = roster.start_new_year("2026-2027", [(seventh, "8B")])
+    assert categories(eighth.id) == [("Tests", 60), ("Homework", 40)]
+    sister = roster.copy_class(seventh, "7C")
+    assert categories(sister.id) == [("Tests", 60), ("Homework", 40)]
+    other = roster.save_class(SchoolClass(name="7D", term="2025-2026")).id
+    roster.copy_subjects(seventh, other)
+    assert categories(other) == [("Tests", 60), ("Homework", 40)]
+
+
+def test_class_with_only_empty_seating_plans_can_be_deleted(conn, roster: RosterService):
+    from app.models import SeatLayout
+    from app.repositories.class_repo import ClassRepository
+    from app.repositories.seating_repo import SeatingRepository
+
+    seating = SeatingRepository(conn)
+    class_id = roster.save_class(SchoolClass(name="8A")).id
+    ada = _add(roster, class_id, "Ada", "Lovelace")
+    empty = seating.add_layout(SeatLayout(class_id, "Tests", 2, 2)).id
+    seating.set_gap(empty, 0, 1, True)  # an aisle is setup too
+    used = seating.add_layout(SeatLayout(class_id, "Group work", 2, 2)).id
+    seating.set_seats(used, {(0, 0): ada.id})
+    assert ClassRepository(conn).recorded(class_id)["seating"] == 1
+    with pytest.raises(RosterError, match="1 seating plan"):
+        roster.delete_class(class_id)
+    assert len(seating.layouts(class_id)) == 2  # nothing deleted
+    seating.set_seats(used, {})
+    roster.delete_class(class_id)
+    assert roster.get_class(class_id) is None
+    assert seating.layouts(class_id) == []
+
+
+def test_too_long_names_the_pasted_lines_that_would_be_refused():
+    from app.services.roster import too_long
+
+    pasted, _ = parse_student_list(f"1\tAda\tLovelace\n{'9' * 21}\tGrace\t{'H' * 61}\n3\tAlan\tTuring\t{'n' * 1001}\n")
+    assert too_long(pasted) == [
+        "Line 2: A student number can be at most 20 characters; this one has 21.",
+        "Line 2: A last name can be at most 60 characters; this one has 61.",
+        "Line 3: The notes can be at most 1000 characters; this one has 1001.",
+    ]
+
+
+def test_names_differing_only_in_the_case_of_accented_letters_are_the_same(roster: RosterService, class_id: int):
+    roster.save_class(SchoolClass(name="Éco 1", term="2026 T1"))
+    with pytest.raises(RosterError, match="already a class called Éco 1"):
+        roster.save_class(SchoolClass(name="éco 1", term="2026 T1"))
+    roster.save_subject(Subject(class_id=class_id, name="Économie"))
+    with pytest.raises(RosterError, match="already has a subject called Économie"):
+        roster.save_subject(Subject(class_id=class_id, name="économie"))
+    élodie = _add(roster, class_id, "Élodie", "Ñúñez")
+    same = roster.same_name_students(Student(class_id=class_id, first_name="élodie", last_name="ñúñez"))
+    assert [s.id for s in same] == [élodie.id]
+    pasted, _ = parse_student_list("ÉLODIE ÑÚÑEZ\n")
+    assert roster.already_in_class(class_id, pasted) == pasted

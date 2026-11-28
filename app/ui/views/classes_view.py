@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.services.export import write_year_roster_csv
+from app.services.export import write_year_roster_csv, write_year_roster_xlsx
 from app.services.roster import RosterService
 from app.ui.files import ask_save_path
 from app.ui.views.roster_view import RosterView
@@ -94,7 +94,9 @@ class ClassesView(QWidget):
         self.rename_year_button.setToolTip("Change the school year of every class in it, e.g. to fix a typo")
         self.rename_year_button.clicked.connect(self._rename_year)
         self.export_year_button = QPushButton("Export year…")
-        self.export_year_button.setToolTip("Save the students of every class shown in one CSV file, e.g. for the office")
+        self.export_year_button.setToolTip(
+            "Save the students of every class shown in one CSV file, or an Excel workbook with a sheet per class"
+        )
         self.export_year_button.clicked.connect(self.export_year)
         year_row.addWidget(self.export_year_button)
         year_row.addWidget(self.rename_year_button)
@@ -360,13 +362,18 @@ class ClassesView(QWidget):
         if not classes:
             return
         name = {ALL_YEARS: "All years", "": "No school year"}.get(self.year, self.year)
-        path = ask_save_path(self, "Export year", f"{name} students", "CSV files", ".csv")
+        path = ask_save_path(
+            self, "Export year", f"{name} students", "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),)
+        )
         if path is None:
             return
         rows = [(c.display_name if self.year == ALL_YEARS else c.name, self.roster.list_students(c.id))
                 for c in classes]  # fmt: skip
         try:
-            write_year_roster_csv(path, rows)
+            if path.suffix.lower() == ".xlsx":  # a sheet per class
+                write_year_roster_xlsx(path, rows)
+            else:
+                write_year_roster_csv(path, rows)
         except OSError as exc:
             QMessageBox.warning(self, "Export year", f"The file could not be saved:\n{exc}")
             return

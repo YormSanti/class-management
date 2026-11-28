@@ -46,6 +46,7 @@ class MarkDaysDialog(QDialog):
             edit.setCalendarPopup(True)
             edit.setDisplayFormat("ddd d MMM yyyy")
             edit.dateChanged.connect(self._update)
+        self.start_edit.dateChanged.connect(self._keep_end_after_start)
         self.status_combo = QComboBox()
         for status in CHOICES:
             self.status_combo.addItem(status.value.capitalize(), status)
@@ -77,6 +78,11 @@ class MarkDaysDialog(QDialog):
         layout.addWidget(self.days_label)
         layout.addWidget(self.buttons)
         self._update()
+
+    def _keep_end_after_start(self) -> None:
+        """A first day picked past the last one moves the last one along, e.g. to a single day."""
+        if self.end_edit.date() < self.start_edit.date():
+            self.end_edit.setDate(self.start_edit.date())
 
     @property
     def start(self) -> date:

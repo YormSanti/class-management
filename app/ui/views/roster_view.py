@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Student
-from app.services.export import roster_tsv, write_roster_csv
+from app.services.export import roster_tsv, write_roster_csv, write_roster_xlsx
 from app.services.roster import RosterError, RosterService, number_key
 from app.ui.dialogs.paste_students_dialog import PasteStudentsDialog
 from app.ui.files import ask_save_path
@@ -137,6 +137,7 @@ class RosterView(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         self.search.installEventFilter(self)  # Escape clears it
+        self.search.returnPressed.connect(self._go_to_found)
         self.show_inactive = QCheckBox("Show inactive")
         self.show_inactive.toggled.connect(self.refresh)
         self.add_button = QPushButton("Add student")
@@ -165,7 +166,7 @@ class RosterView(QWidget):
         self.number_button.clicked.connect(self.number_students)
         self.number_button.hide()  # until a class has students without a number
         self.export_button = QPushButton("Export…")
-        self.export_button.setToolTip("Save the class list as a CSV file for Excel or other programs")
+        self.export_button.setToolTip("Save the class list as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
 
         toolbar = QHBoxLayout()
@@ -238,7 +239,9 @@ class RosterView(QWidget):
 
         QShortcut(QKeySequence.StandardKey.Find, self, activated=self.search.setFocus)
         QShortcut(QKeySequence.StandardKey.New, self, activated=self.add_student)
-        QShortcut(QKeySequence(Qt.Key.Key_Return), self.table, activated=self.edit_selected)
+        for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):  # the main and the number pad Enter
+            edit = QShortcut(QKeySequence(key), self.table, activated=self.edit_selected)
+            edit.setContext(Qt.ShortcutContext.WidgetShortcut)  # in the search box, Enter goes to the list
         rename = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table, activated=self.edit_selected)
         rename.setContext(Qt.ShortcutContext.WidgetShortcut)  # F2 edits, as in a file manager
         copy = QShortcut(QKeySequence.StandardKey.Copy, self.table, activated=self.copy_list)
@@ -482,14 +485,20 @@ class RosterView(QWidget):
         school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
         if school_class is None:
             return
-        path = ask_save_path(self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv")
+        path = ask_save_path(
+            self, "Export students", f"{school_class.display_name} students", "CSV files", ".csv",
+            others=(("Excel workbooks", ".xlsx"),),
+        )  # fmt: skip
         if path is None:
             return
         students = self._in_table_order(
             self.roster.list_students(school_class.id, include_inactive=self.show_inactive.isChecked())
         )
         try:
-            write_roster_csv(path, students)
+            if path.suffix.lower() == ".xlsx":
+                write_roster_xlsx(path, students, school_class.name)
+            else:
+                write_roster_csv(path, students)
         except OSError as exc:
             QMessageBox.warning(self, "Export students", f"The file could not be saved:\n{exc}")
             return
@@ -536,6 +545,16 @@ class RosterView(QWidget):
         return super().eventFilter(watched, event)
 
     # --- helpers -------------------------------------------------------------
+
+    def _go_to_found(self) -> None:
+        """Enter in the search box: select the first student found (unless one found is
+        selected already) and go to the list, where Enter edits them."""
+        if self.proxy.rowCount() == 0:
+            return
+        if self._selected_student() is None:
+            self.table.selectRow(0)
+            self.table.scrollTo(self.proxy.index(0, 0))
+        self.table.setFocus()
 
     def _show_history(self) -> None:
         if (student := self._selected_student()) is not None:

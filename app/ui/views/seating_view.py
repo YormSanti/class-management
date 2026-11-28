@@ -1,0 +1,596 @@
+"""The seating chart of the current class: desks in rows, the front of the room at the bottom."""
+
+from PySide6.QtCore import QSignalBlocker, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app.services.roster import RosterService, matches
+from app.models import SeatLayout
+from app.services.export import seating_plan_html, seating_tsv
+from app.services.seating import SeatingError, SeatingPlan, SeatingService
+from app.ui import style
+from app.ui.dialogs.layout_dialog import LayoutDialog
+from app.ui.files import ask_save_path, write_pdf
+
+STUDENT_ID = Qt.ItemDataRole.UserRole
+SEAT_WIDTH = 120
+SEAT_HEIGHT = 56
+UNDO_LIMIT = 50
+# A plan as it was: (layout id, {(row, col): student id}, spots with no desk, (rows, cols)).
+Snapshot = tuple[int, dict[tuple[int, int], int], set[tuple[int, int]], tuple[int, int]]
+HINT = (
+    "Click a student under Not seated, then a seat. Click a seated student, then another seat "
+    "to move them; if it's taken, the two swap. Delete takes a student out of their seat; "
+    "right-click a free seat if there's no desk there, e.g. an aisle."
+)
+
+
+def student_tip(student) -> str:
+    """The student's full name and number, and their notes, which often matter for a seat,
+    e.g. "Glasses: sits at the front"."""
+    first = student.full_name + (f" · No. {student.student_no}" if student.student_no else "")
+    notes = student.notes.strip()
+    return f"{first}\n{notes}" if notes else first
+
+
+class SeatingView(QWidget):
+    def __init__(self, seating: SeatingService, roster: RosterService, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.seating = seating
+        self.roster = roster
+        self.class_id: int | None = None
+        self.layout_id: int | None = None
+        self.plan: SeatingPlan | None = None
+        self.picked: int | None = None  # the student clicked, waiting for a seat
+        self.students_view = False  # the room as the students see it: front at the top, left and right swapped
+        self._last_layout: dict[int, int] = {}  # class id -> plan shown in it this session
+        # The plan before each change, see _snapshot().
+        self._undo: list[Snapshot] = []
+        self._redo: list[Snapshot] = []
+
+        self.title = style.label("Seating chart", 1.6, bold=True)
+        self.subtitle = style.label("", 0.95, muted=True)
+        titles = QVBoxLayout()
+        titles.setSpacing(2)
+        titles.addWidget(self.title)
+        titles.addWidget(self.subtitle)
+        self.layout_combo = QComboBox()
+        self.layout_combo.setToolTip("The class's seating plans, e.g. one for tests and one for group work")
+        self.layout_combo.currentIndexChanged.connect(self._layout_picked)
+        plan_label = QLabel("&Plan")
+        plan_label.setBuddy(self.layout_combo)
+        self.new_button = QPushButton("&New plan…")
+        self.new_button.setObjectName("Primary")
+        self.new_button.clicked.connect(self.new_layout)
+        self.edit_button = QPushButton("&Edit…")
+        self.edit_button.setToolTip("Rename the plan or change the rows and seats of the room")
+        self.edit_button.clicked.connect(self.edit_layout)
+        self.copy_button = QPushButton("&Copy…")
+        self.copy_button.setToolTip("Start a new plan from this one, with everyone in the same seat")
+        self.copy_button.clicked.connect(self.copy_layout)
+        self.delete_button = QPushButton("&Delete")
+        self.delete_button.setToolTip("Delete the plan shown")
+        self.delete_button.clicked.connect(self.delete_layout)
+        header = QHBoxLayout()
+        header.addLayout(titles, stretch=1)
+        header.addWidget(plan_label, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.layout_combo, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.edit_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.copy_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.delete_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        self.pdf_button = QPushButton("Save PD&F…")
+        self.pdf_button.setToolTip("Save the plan as a PDF to print, e.g. for a substitute teacher")
+        self.pdf_button.clicked.connect(self.save_pdf)
+        header.addWidget(self.pdf_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        header.addWidget(self.new_button, alignment=Qt.AlignmentFlag.AlignBottom)
+
+        # --- the room ---
+        self.summary = style.label("", 0.95, muted=True)
+        self.fill_button = QPushButton("Seat the &rest")
+        self.fill_button.setToolTip("Seat the students not seated yet in the free seats, front row first, by name")
+        self.fill_button.clicked.connect(lambda: self.fill(shuffle=False))
+        self.shuffle_button = QPushButton("&Shuffle")
+        self.shuffle_button.setToolTip("Seat everyone at random, front row first (Ctrl+Z undoes)")
+        self.shuffle_button.clicked.connect(lambda: self.fill(shuffle=True))
+        self.clear_button = QPushButton("C&lear")
+        self.clear_button.setToolTip("Take every student out of their seat (Ctrl+Z undoes)")
+        self.clear_button.clicked.connect(self.clear_seats)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a student (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(220)
+        self.search.textChanged.connect(self.find_student)
+        self.search.returnPressed.connect(self._leave_search)
+        summary_row = QHBoxLayout()
+        summary_row.addWidget(self.summary, stretch=1)
+        self.view_box = QCheckBox("Students' &view")
+        self.view_box.setToolTip("Show the room as the students see it, the front at the top, e.g. to put on the board")
+        self.view_box.toggled.connect(self.set_students_view)
+        summary_row.addWidget(self.view_box)
+        summary_row.addWidget(self.search)
+        for button in (self.fill_button, self.shuffle_button, self.clear_button):
+            summary_row.addWidget(button)
+        self.grid = QTableWidget()
+        self.grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.grid.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.grid.setWordWrap(True)
+        for head in (self.grid.horizontalHeader(), self.grid.verticalHeader()):
+            head.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.grid.horizontalHeader().setDefaultSectionSize(SEAT_WIDTH)
+        self.grid.verticalHeader().setDefaultSectionSize(SEAT_HEIGHT)
+        self.front = style.label("Front of the room", 0.9, muted=True)
+        self.front.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.room = QVBoxLayout()
+        self.room.addWidget(self.grid, stretch=1)
+        self.room.addWidget(self.front)
+        self.unseated = QListWidget()
+        self.unseated.setMaximumWidth(240)
+        side = QVBoxLayout()
+        self.unseated_label = style.label("Not seated", 1.0, bold=True)
+        side.addWidget(self.unseated_label)
+        side.addWidget(self.unseated, stretch=1)
+        body = QHBoxLayout()
+        body.addLayout(self.room, stretch=1)
+        body.addLayout(side)
+        self.plan_page = QWidget()
+        plan_layout = QVBoxLayout(self.plan_page)
+        plan_layout.setContentsMargins(0, 0, 0, 0)
+        plan_layout.addLayout(summary_row)
+        plan_layout.addLayout(body, stretch=1)
+        self.hint = style.label(HINT, 0.85, muted=True)
+        self.hint.setWordWrap(True)
+        plan_layout.addWidget(self.hint)
+        self.grid.cellClicked.connect(lambda r, c: self.seat_clicked(*self.seat_at(r, c)))
+        self.unseated.itemClicked.connect(lambda item: self.pick(item.data(STUDENT_ID)))
+        for widget, act in (
+            (self.grid, lambda: self.grid.currentRow() >= 0 and self.seat_clicked(
+                *self.seat_at(self.grid.currentRow(), self.grid.currentColumn()))),
+            (self.unseated, lambda: self.unseated.currentItem() and self.pick(
+                self.unseated.currentItem().data(STUDENT_ID))),
+        ):
+            for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+                shortcut = QShortcut(QKeySequence(key), widget)
+                shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+                shortcut.activated.connect(act)
+        for key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            unseat = QShortcut(QKeySequence(key), self.grid)
+            unseat.setContext(Qt.ShortcutContext.WidgetShortcut)
+            unseat.activated.connect(
+                lambda: self.grid.currentRow() >= 0
+                and self.unseat_at(*self.seat_at(self.grid.currentRow(), self.grid.currentColumn()))
+            )
+        self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(self._show_seat_menu)
+        for keys in ("Shift+F10", QKeySequence(Qt.Key.Key_Menu)):
+            menu_key = QShortcut(QKeySequence(keys), self.grid)
+            menu_key.setContext(Qt.ShortcutContext.WidgetShortcut)
+            menu_key.activated.connect(self._show_current_seat_menu)
+        cancel = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        cancel.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        cancel.activated.connect(lambda: self.pick(None))
+        find = QShortcut(QKeySequence.StandardKey.Find, self)
+        find.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        find.activated.connect(lambda: (self.search.setFocus(), self.search.selectAll()))
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self)
+        copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy.activated.connect(self.copy_plan)
+        undo = QShortcut(QKeySequence.StandardKey.Undo, self)
+        undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        undo.activated.connect(self.undo)
+        for keys in ("Ctrl+Y", "Ctrl+Shift+Z"):
+            redo = QShortcut(QKeySequence(keys), self)
+            redo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            redo.activated.connect(self.redo)
+
+        # --- empty states ---
+        self.empty_label = QLabel()
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setWordWrap(True)
+        self.empty_button = QPushButton("New seating plan…")
+        self.empty_button.setObjectName("Primary")
+        self.empty_button.clicked.connect(self.new_layout)
+        empty = QWidget()
+        empty_layout = QVBoxLayout(empty)
+        empty_layout.addStretch()
+        empty_layout.addWidget(self.empty_label)
+        empty_layout.addWidget(self.empty_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addStretch()
+
+        self.pages = QStackedWidget()
+        self.pages.addWidget(empty)
+        self.pages.addWidget(self.plan_page)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setSpacing(12)
+        layout.addLayout(header)
+        layout.addWidget(self.pages, stretch=1)
+        self.setStyleSheet(style.card_stylesheet(self))
+        self.refresh()
+
+    # --- page protocol ---------------------------------------------------------
+
+    def set_class(self, class_id: int | None) -> None:
+        if class_id != self.class_id:
+            self.layout_id = self._last_layout.get(class_id) if class_id is not None else None
+            self.clear_undo()
+        self.class_id = class_id
+        self.refresh()
+
+    def show_layout(self, layout_id: int) -> None:
+        """Show plan `layout_id`, if it is one of the current class's."""
+        if layout_id in [x.id for x in self.seating.list_layouts(self.class_id or 0)]:
+            self.layout_id = layout_id
+            self.refresh()
+
+    def showEvent(self, event) -> None:
+        # Students may have been added or deactivated meanwhile.
+        super().showEvent(event)
+        self.refresh()
+
+    def refresh(self) -> None:
+        """Read the current plan from the database again."""
+        self.pick(None)
+        school_class = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if school_class is None:
+            self.class_id = None
+        self.subtitle.setText(school_class.display_name if school_class else "")
+        layouts = self.seating.list_layouts(self.class_id) if self.class_id is not None else []
+        if self.layout_id not in [x.id for x in layouts]:
+            self.layout_id = layouts[0].id if layouts else None
+        if self.class_id is not None and self.layout_id is not None:
+            self._last_layout[self.class_id] = self.layout_id
+        with QSignalBlocker(self.layout_combo):
+            self.layout_combo.clear()
+            for x in layouts:
+                self.layout_combo.addItem(f"{x.name} ({x.rows} × {x.cols})", x.id)
+            self.layout_combo.setCurrentIndex(self.layout_combo.findData(self.layout_id))
+        for widget in (self.layout_combo, self.edit_button, self.copy_button, self.delete_button, self.pdf_button):
+            widget.setEnabled(bool(layouts))
+        self.new_button.setEnabled(self.class_id is not None)
+        self.plan = self.seating.plan(self.layout_id) if self.layout_id is not None else None
+        if self.class_id is None:
+            self._empty("<h2>No class selected</h2><p>Create a class to plan where its students sit.</p>")
+        elif self.plan is None:
+            self._empty(
+                "<h2>No seating plan yet</h2><p>Set out the desks of the room in rows and seats, "
+                "then seat the students. A class can keep several plans, e.g. one for tests.</p>",
+                button=True,
+            )
+        else:
+            self._fill()
+            self.pages.setCurrentWidget(self.plan_page)
+
+    def _empty(self, text: str, button: bool = False) -> None:
+        self.empty_label.setText(text)
+        self.empty_button.setVisible(button)
+        self.pages.setCurrentIndex(0)
+
+    def _layout_picked(self, index: int) -> None:
+        layout_id = self.layout_combo.itemData(index)
+        if layout_id is not None and layout_id != self.layout_id:
+            self.layout_id = layout_id
+            self.refresh()
+
+    def new_layout(self) -> None:
+        if self.class_id is None:
+            return
+        name = "Seating plan" if not self.seating.list_layouts(self.class_id) else ""
+        dialog = LayoutDialog(self.seating.save_layout, self.class_id, parent=self, default_name=name)
+        if dialog.exec() and dialog.saved:
+            self.layout_id = dialog.saved.id
+            self.refresh()
+
+    def edit_layout(self) -> None:
+        if self.plan is None:
+            return
+        before = self._snapshot(self.plan)
+        dialog = LayoutDialog(self._save_resized, self.class_id, self.plan.layout, parent=self)
+        if dialog.exec():
+            if dialog.saved and (dialog.saved.rows, dialog.saved.cols) != before[3]:
+                self._remember(before)  # Ctrl+Z puts the room back as it was
+            self.refresh()
+
+    def _save_resized(self, layout: SeatLayout) -> SeatLayout:
+        """Save an edited layout, after asking if the smaller room leaves students without a seat."""
+        losing = self.seating.seated_outside(layout.id, layout.rows, layout.cols)
+        if losing:
+            names = ", ".join(s.full_name for s in losing)
+            answer = QMessageBox.question(
+                self,
+                "Edit seating plan",
+                f"The smaller room has no seat for {names}. Make it smaller anyway? "
+                "They will be listed under Not seated.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                raise SeatingError("Choose more rows or seats, or Cancel to keep the room as it is.")
+        return self.seating.save_layout(layout)
+
+    def copy_layout(self) -> None:
+        if self.plan is None:
+            return
+        name, ok = QInputDialog.getText(
+            self, "Copy seating plan", "Name of the new plan:", text=self.seating.copy_name(self.plan.layout)
+        )
+        if not ok:
+            return
+        try:
+            copy = self.seating.copy_layout(self.plan.layout.id, name)
+        except SeatingError as exc:
+            QMessageBox.warning(self, "Copy seating plan", str(exc))
+            return
+        self.layout_id = copy.id
+        self.refresh()
+
+    def save_pdf(self) -> None:
+        """Save the plan shown as a landscape A4 PDF, ready to print, the way the room is shown."""
+        if self.plan is None:
+            return
+        title = f"{self.subtitle.text()} · {self.plan.layout.name}"
+        name = f"{self.subtitle.text()} {self.plan.layout.name} seating"
+        path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
+        page = seating_plan_html(self.plan, title, students_view=self.students_view)  # as shown
+        if path is not None and write_pdf(self, path, title, page, True):
+            QMessageBox.information(self, "Save PDF", f"Saved the seating plan to\n{path}")
+
+    def copy_plan(self) -> None:
+        """Copy the desks as a table of names, the way the room is shown, to paste into a spreadsheet."""
+        if self.plan is None:
+            return
+        QApplication.clipboard().setText(seating_tsv(self.plan, self.students_view))
+        self.summary.setText("Copied the plan · paste it into a spreadsheet or a document")
+
+    def delete_layout(self) -> None:
+        if self.plan is None:
+            return
+        answer = QMessageBox.question(
+            self, "Delete seating plan", f"Delete the seating plan {self.plan.layout.name}?\n\nThis can't be undone."
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.seating.delete_layout(self.plan.layout.id)
+            self.layout_id = None
+            self.refresh()
+
+    def find_student(self, text: str) -> None:
+        """Select the seat of the first student matching `text`, or them under Not seated."""
+        if self.plan is None or not text.strip():
+            return
+        student = next((x for x in self.plan.students if matches(x, text)), None)
+        if student is None:
+            return
+        seat = self.plan.seat_of(student.id)
+        if seat is not None:
+            self.unseated.clearSelection()
+            self.grid.setCurrentCell(*self.cell_of(*seat))
+            self.grid.scrollToItem(self.grid.currentItem())
+        else:
+            self.grid.clearSelection()
+            for i in range(self.unseated.count()):
+                if self.unseated.item(i).data(STUDENT_ID) == student.id:
+                    self.unseated.setCurrentRow(i)
+
+    def _leave_search(self) -> None:
+        """Enter in Find goes to the student found, to move them with Enter."""
+        (self.grid if self.grid.selectedItems() else self.unseated).setFocus()
+
+    # --- seating students -------------------------------------------------------
+
+    def pick(self, student_id: int | None) -> None:
+        """Take up a student to seat with the next seat clicked; None puts them down."""
+        student = next((s for s in self.plan.students if s.id == student_id), None) if self.plan else None
+        self.picked = student.id if student else None
+        if student is None:
+            self.hint.setText(HINT)
+        else:
+            if self.plan.seat_of(student.id):
+                self.hint.setText(f"Now click where {student.full_name} should sit; in a taken seat, the two swap · Esc cancels")
+            else:
+                self.hint.setText(f"Now click a seat for {student.full_name} · Esc cancels")
+
+    def seat_clicked(self, row: int, col: int) -> None:
+        """Seat the student picked here, or pick up whoever sits here."""
+        if self.plan is None or (row, col) in self.plan.gaps:
+            return  # no desk there to sit at
+        if self.picked is None:
+            occupant = self.plan.student_at(row, col)
+            if occupant is not None:
+                self.pick(occupant.id)
+            return
+        picked, self.picked = self.picked, None
+        if self.plan.seat_of(picked) != (row, col):
+            self._remember()
+            try:
+                self.seating.place(self.plan.layout.id, picked, row, col)
+            except SeatingError as exc:
+                QMessageBox.warning(self, "Seating chart", str(exc))
+        self.refresh()
+        self.grid.setCurrentCell(*self.cell_of(row, col))
+        self.pick(None)
+
+    def unseat_at(self, row: int, col: int) -> None:
+        """Take whoever sits at (row, col) out of their seat."""
+        occupant = self.plan.student_at(row, col) if self.plan else None
+        if occupant is None:
+            return
+        self._remember()
+        self.seating.unseat(self.plan.layout.id, occupant.id)
+        self.refresh()
+        self.grid.setCurrentCell(*self.cell_of(row, col))
+
+    def seat_menu(self, row: int, col: int) -> QMenu | None:
+        """What can be done with the seat (row, col) and whoever sits there."""
+        if self.plan is None:
+            return None
+        menu = QMenu(self)
+        occupant = self.plan.student_at(row, col)
+        if occupant is not None:
+            menu.addAction(f"&Move {occupant.full_name}…", lambda: self.pick(occupant.id))
+            menu.addAction("&Take out of the seat\tDelete", lambda: self.unseat_at(row, col))
+        elif (row, col) in self.plan.gaps:
+            menu.addAction("&Put a desk here", lambda: self.set_desk(row, col, True))
+        else:
+            menu.addAction("&No desk here, e.g. an aisle", lambda: self.set_desk(row, col, False))
+        return menu
+
+    def set_desk(self, row: int, col: int, desk: bool) -> None:
+        self._remember()
+        try:
+            self.seating.set_desk(self.plan.layout.id, row, col, desk)
+        except SeatingError as exc:
+            self._undo.pop()  # nothing changed
+            QMessageBox.warning(self, "Seating chart", str(exc))
+        self.refresh()
+
+    def _show_seat_menu(self, pos) -> None:
+        index = self.grid.indexAt(pos)
+        if index.isValid() and (menu := self.seat_menu(*self.seat_at(index.row(), index.column()))):
+            menu.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def _show_current_seat_menu(self) -> None:
+        """The selected seat's menu, from the keyboard (Shift+F10 or the menu key)."""
+        index = self.grid.currentIndex()
+        if index.isValid():
+            self._show_seat_menu(self.grid.visualRect(index).center())
+
+    def fill(self, shuffle: bool) -> None:
+        """Seat the rest by name, or everyone at random."""
+        if self.plan is None:
+            return
+        self._remember()
+        self.seating.fill(self.plan.layout.id, shuffle=shuffle)
+        self.refresh()
+        if self.plan.unseated:
+            names = ", ".join(s.full_name for s in self.plan.unseated)
+            QMessageBox.information(
+                self, "Seating chart", f"There's no free seat for {names}. Add seats with Edit…"
+            )
+
+    def clear_seats(self) -> None:
+        if self.plan is None or not self.plan.seats:
+            return
+        self._remember()
+        self.seating.clear(self.plan.layout.id)
+        self.refresh()
+
+    # --- undo ------------------------------------------------------------------
+
+    @staticmethod
+    def _snapshot(plan: SeatingPlan) -> Snapshot:
+        """Who sits where, where there's no desk and the size of the room in `plan`."""
+        return plan.layout.id, dict(plan.seats), set(plan.gaps), (plan.layout.rows, plan.layout.cols)
+
+    def _remember(self, snapshot: Snapshot | None = None) -> None:
+        """Keep the plan as it is now (or `snapshot` of it), before a change, so Ctrl+Z
+        can put it back."""
+        self._undo.append(snapshot or self._snapshot(self.plan))
+        del self._undo[:-UNDO_LIMIT]
+        self._redo.clear()
+
+    def clear_undo(self) -> None:
+        self._undo.clear()
+        self._redo.clear()
+
+    def undo(self) -> None:
+        self._step(self._undo, self._redo)
+
+    def redo(self) -> None:
+        self._step(self._redo, self._undo)
+
+    def _step(self, source: list, target: list) -> None:
+        if not source:
+            return
+        layout_id, seats, gaps, size = source.pop()
+        current = self.seating.plan(layout_id)
+        if current is None:  # the plan was deleted meanwhile
+            self.clear_undo()
+            return
+        target.append(self._snapshot(current))
+        self.seating.restore(layout_id, seats, gaps, size)
+        self.layout_id = layout_id
+        self.refresh()
+
+    # --- the room --------------------------------------------------------------
+
+    def _fill(self) -> None:
+        plan = self.plan
+        grid = self.grid
+        grid.clear()
+        grid.setRowCount(plan.layout.rows)
+        grid.setColumnCount(plan.layout.cols)
+        # Rows are numbered from the front and seats from the teacher's left, whichever way the room is shown.
+        grid.setVerticalHeaderLabels([str(self.seat_at(r, 0)[0] + 1) for r in range(plan.layout.rows)])
+        grid.setHorizontalHeaderLabels([str(self.seat_at(0, c)[1] + 1) for c in range(plan.layout.cols)])
+        for row in range(plan.layout.rows):
+            for col in range(plan.layout.cols):
+                grid.setItem(*self.cell_of(row, col), self._seat_item(row, col))
+        self.unseated.clear()
+        for student in plan.unseated:
+            item = QListWidgetItem(student.full_name)
+            item.setData(STUDENT_ID, student.id)
+            item.setToolTip(student_tip(student))
+            self.unseated.addItem(item)
+        seated = len(plan.seats)
+        free = len(plan.free_seats)
+        self.summary.setText(
+            f"{seated} of {len(plan.students)} students seated · {free} free seat{'' if free == 1 else 's'}"
+        )
+        self.unseated_label.setText(f"Not seated ({len(plan.unseated)})")
+        self.fill_button.setEnabled(bool(plan.unseated and plan.free_seats))
+        self.shuffle_button.setEnabled(bool(plan.students))
+        self.clear_button.setEnabled(bool(plan.seats))
+
+    def cell_of(self, row: int, col: int) -> tuple[int, int]:
+        """The grid cell of seat (row, col); row 0 is the front, shown at the bottom as the
+        teacher sees the room, or at the top with left and right swapped in the students' view."""
+        if self.students_view:
+            return row, self.plan.layout.cols - 1 - col
+        return self.plan.layout.rows - 1 - row, col
+
+    def seat_at(self, grid_row: int, grid_col: int) -> tuple[int, int]:
+        """The seat (row, col) shown in a grid cell; cell_of() the other way round."""
+        return self.cell_of(grid_row, grid_col)  # each view's mapping is its own inverse
+
+    def set_students_view(self, on: bool) -> None:
+        """Show the room as the students see it, or as the teacher does, keeping the seat selected."""
+        current = self.grid.currentRow(), self.grid.currentColumn()
+        seat = self.seat_at(*current) if self.plan is not None and min(current) >= 0 else None
+        self.students_view = on
+        with QSignalBlocker(self.view_box):
+            self.view_box.setChecked(on)
+        self.room.removeWidget(self.front)
+        self.room.insertWidget(0 if on else 1, self.front)
+        self.refresh()
+        if seat is not None and self.plan is not None:
+            self.grid.setCurrentCell(*self.cell_of(*seat))
+
+    def _seat_item(self, row: int, col: int) -> QTableWidgetItem:
+        student = self.plan.student_at(row, col)
+        item = QTableWidgetItem(student.full_name if student else "")
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if student:
+            item.setData(STUDENT_ID, student.id)
+            item.setToolTip(student_tip(student))
+        elif (row, col) in self.plan.gaps:
+            item.setBackground(style.border(self))
+            item.setToolTip("No desk here; right-click to put one")
+        return item

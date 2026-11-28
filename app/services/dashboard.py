@@ -1,7 +1,7 @@
 """Overview numbers for one class: attendance, grades and students who need a look.
 
-Inactive students are left out of every figure. Scores that are NULL (not submitted
-or exempt) are ignored in averages, unlike a score of 0. A student's overall average
+Inactive students are left out of every figure. Scores that are NULL (exempt) are
+ignored in averages, unlike a score of 0, and aren't missing work. A student's overall average
 is the mean of their subject averages, so each subject counts equally.
 """
 
@@ -24,7 +24,7 @@ LATE_LIMIT = 3
 NAMED_ABSENT = 5  # absent students named in "Today's register is done"
 STREAK_LIMIT = 2  # absent in this many daily registers in a row
 MISSING_LIMIT = 2
-LOW_AVERAGE = 60.0
+LOW_AVERAGE = 60.0  # the pass mark until Settings says otherwise: the D/F boundary
 
 PRESENT, ABSENT, LATE, EXCUSED = (s.value for s in AttendanceStatus)
 
@@ -47,7 +47,8 @@ class SubjectSummary:
     subject: Subject
     average: float | None  # mean of the students' averages in this subject
     scored: int  # students with at least one score
-    below_pass: int  # students whose average is under LOW_AVERAGE
+    below_pass: int  # students whose average is under the pass mark
+    below_pass_names: list[str] = field(default_factory=list)  # e.g. "Ada Lovelace 45%", lowest first
 
 
 @dataclass
@@ -62,6 +63,7 @@ class DashboardSummary:
     attention: list[AttentionItem] = field(default_factory=list)
     recent_assignments: list[AssignmentStats] = field(default_factory=list)
     grade_distribution: dict[str, int] = field(default_factory=dict)
+    grade_names: dict[str, list[str]] = field(default_factory=dict)  # letter -> "Ada Lovelace 85%", best first
     subjects: list[SubjectSummary] = field(default_factory=list)
     today_counts: dict[str, int] = field(default_factory=dict)  # today's daily register, status -> students
     absent_today: list[str] = field(default_factory=list)  # names, in the daily register
@@ -165,6 +167,7 @@ class DashboardService:
         self.dashboard = dashboard
         self.students = students
         self.subjects = subjects
+        self.pass_mark = LOW_AVERAGE  # percent: an average under this is pointed out
 
     def summary(self, class_id: int, today: date | None = None) -> DashboardSummary:
         today = today or date.today()
@@ -187,11 +190,12 @@ class DashboardService:
         missing = self.dashboard.missing_by_student(class_id, today)
         subjects = self.subjects.list_for_class(class_id)
 
+        names = {s.id: s.full_name for s in self.students.list_for_class(class_id)} if subjects else {}
         subject_summaries = []
         low_subjects: dict[int, list[tuple[str, float]]] = {}  # student id -> failing subjects
         for subject in subjects:
             scores = {sid: pct for (sid, sub_id), pct in by_subject.items() if sub_id == subject.id}
-            low = {sid: pct for sid, pct in scores.items() if pct < LOW_AVERAGE}
+            low = {sid: pct for sid, pct in scores.items() if pct < self.pass_mark}
             for sid, pct in low.items():
                 low_subjects.setdefault(sid, []).append((subject.name, pct))
             subject_summaries.append(
@@ -200,12 +204,20 @@ class DashboardService:
                     average=sum(scores.values()) / len(scores) if scores else None,
                     scored=len(scores),
                     below_pass=len(low),
+                    below_pass_names=[
+                        f"{names[sid]} {pct:.0f}%"
+                        for sid, pct in sorted(low.items(), key=lambda item: item[1])
+                        if sid in names
+                    ],
                 )
             )
 
         distribution = {letter: 0 for letter, _ in GRADE_SCALE}
-        for percent in averages.values():
+        grade_names: dict[str, list[str]] = {letter: [] for letter, _ in GRADE_SCALE}
+        for sid, percent in sorted(averages.items(), key=lambda item: -item[1]):
             distribution[letter_grade(percent)] += 1
+            if sid in names:
+                grade_names[letter_grade(percent)].append(f"{names[sid]} {percent:.0f}%")
 
         return DashboardSummary(
             active_students=active,
@@ -216,8 +228,9 @@ class DashboardService:
             missing_total=sum(missing.values()),
             attendance_days=[DayAttendance(d, chart_counts.get(d, {})) for d in chart_dates],
             attention=self._needs_attention(class_id, today, low_subjects, missing),
-            recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS),
+            recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS, today),
             grade_distribution=distribution,
+            grade_names=grade_names,
             subjects=subject_summaries,
             today_counts=by_date.get(today, {}),
             absent_today=self._absent_on(class_id, today),
@@ -257,7 +270,7 @@ class DashboardService:
             if len(low) == 1:
                 grades_reason = f"{low[0][0]} average is {low[0][1]:.0f}%"
             else:
-                grades_reason = f"Below {LOW_AVERAGE:.0f}% in {len(low)} subjects"
+                grades_reason = f"Below {self.pass_mark:.0f}% in {len(low)} subjects"
             checks = [
                 ("absent", absences >= ABSENCE_LIMIT or streak >= STREAK_LIMIT, absent_reason),
                 ("grades", bool(low), grades_reason),

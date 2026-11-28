@@ -23,6 +23,16 @@ def test_corrupt_config_is_treated_as_missing(tmp_path: Path):
     assert load_config(path) is None
 
 
+def test_config_without_a_full_data_path_is_treated_as_missing(tmp_path: Path):
+    # Otherwise the data would end up in whatever folder the app was started from.
+    path = tmp_path / "config.json"
+    for data_dir in ("", "ClassroomData", "."):
+        path.write_text(json.dumps({"data_dir": data_dir}), encoding="utf-8")
+        assert load_config(path) is None
+    path.write_text(json.dumps({"data_dir": 5}), encoding="utf-8")
+    assert load_config(path) is None
+
+
 def test_unknown_ranking_method_falls_back_to_competition(tmp_path: Path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"data_dir": str(tmp_path), "ranking_method": "bogus"}))
@@ -48,3 +58,16 @@ def test_theme_defaults_to_system(tmp_path: Path):
     assert load_config(path).theme == "system"  # config.json from before themes existed
     path.write_text(json.dumps({"data_dir": str(tmp_path), "theme": "purple"}))
     assert load_config(path).theme == "system"
+
+
+def test_pass_mark_is_kept_and_a_strange_one_ignored(tmp_path):
+    import json
+
+    from app.config import AppConfig, load_config, save_config
+
+    path = tmp_path / "config.json"
+    save_config(AppConfig(data_dir=tmp_path, pass_mark=60), path)
+    assert load_config(path).pass_mark == 60
+    for strange in (120, -1, "sixty", True, None):
+        path.write_text(json.dumps({"data_dir": str(tmp_path), "pass_mark": strange}), encoding="utf-8")
+        assert load_config(path).pass_mark == 60

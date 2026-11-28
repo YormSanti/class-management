@@ -67,11 +67,17 @@ def manual_backup_reminder(last: datetime | None, now: datetime) -> str | None:
 
 
 def list_auto_backups(backup_dir: Path) -> list[Path]:
-    """Automatic backups, newest first."""
+    """Automatic backups, newest first.
+
+    Only files named like one (see backup_time) count, so another file put in the
+    folder, e.g. "classroom_old.db", is neither listed nor pruned and can't take the
+    place of a real backup among the ones kept.
+    """
     if not backup_dir.is_dir():
         return []
+    found = [p for p in backup_dir.glob(f"{AUTO_BACKUP_PREFIX}*.db") if backup_time(p) is not None]
     # Timestamps are zero-padded, so name order is chronological order.
-    return sorted(backup_dir.glob(f"{AUTO_BACKUP_PREFIX}*.db"), reverse=True)
+    return sorted(found, reverse=True)
 
 
 def backup_time(path: Path) -> datetime | None:
@@ -144,6 +150,29 @@ def auto_backup(
     return dest
 
 
+def data_file_problem(path: Path) -> str | None:
+    """Why the app can't use the data file at `path`, worded to follow "This file", e.g.
+    "was made by a newer version of the app"; None when it can be used."""
+    if problems := find_problems(path):
+        return f"is damaged ({problems[0]})"
+    try:
+        check = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            version = check.execute("PRAGMA user_version").fetchone()[0]
+            tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        finally:
+            check.close()
+    except sqlite3.Error as exc:
+        return f"can't be read ({exc})"
+    if version > SCHEMA_VERSION:
+        return "was made by a newer version of the app"
+    # Every version of the app numbers its data and has these tables; another program's
+    # SQLite file would otherwise replace the data with nothing the app can use.
+    if version < 1 or not REQUIRED_TABLES <= tables:
+        return "isn't Classroom Manager data"
+    return None
+
+
 def restore_backup(backup: Path, conn: sqlite3.Connection, db_path: Path, backup_dir: Path) -> Path:
     """Replace the data in the open database `conn` (the file `db_path`) with `backup`.
 
@@ -152,20 +181,8 @@ def restore_backup(backup: Path, conn: sqlite3.Connection, db_path: Path, backup
     Raises BackupError if the backup is damaged, from a newer version of the app or
     not the app's data at all (e.g. another program's SQLite file).
     """
-    if problems := find_problems(backup):
-        raise BackupError(f"This backup is damaged and can't be restored:\n{problems[0]}")
-    check = sqlite3.connect(backup.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
-        version = check.execute("PRAGMA user_version").fetchone()[0]
-        tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    finally:
-        check.close()
-    if version > SCHEMA_VERSION:
-        raise BackupError("This backup was made by a newer version of the app.")
-    # Every version of the app numbers its data and has these tables; another program's
-    # SQLite file would otherwise replace the data with nothing the app can use.
-    if version < 1 or not REQUIRED_TABLES <= tables:
-        raise BackupError("This file isn't Classroom Manager data, so it can't be restored.")
+    if problem := data_file_problem(backup):
+        raise BackupError(f"This backup {problem}, so it can't be restored.")
 
     stamp = datetime.now().strftime(TIMESTAMP_FORMAT)
     safety = backup_dir / f"{AUTO_BACKUP_PREFIX}{stamp}{BEFORE_RESTORE_SUFFIX}.db"

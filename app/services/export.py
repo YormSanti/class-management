@@ -10,7 +10,10 @@ from pathlib import Path
 
 from app.models import AttendanceStatus, Student
 from app.services.attendance import DayRegister, MonthRegister, PeriodSummary, RegisterRow, StudentHistory
-from app.services.dashboard import attendance_rate
+from app.services.dashboard import attendance_rate, letter_grade
+from app.services.gradebook import GradeSheet, format_number
+from app.services.rankings import Ranking
+from app.services.seating import SeatingPlan
 
 ROSTER_COLUMNS = ("Student #", "Last name", "First name", "Status", "Notes")
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
@@ -39,12 +42,76 @@ def _write_csv(path: Path, rows: Sequence[Sequence[object]]) -> None:
         raise
 
 
-def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
-    """Save students as CSV, in the order given."""
+def _write_xlsx(path: Path, rows: Sequence[Sequence[object]], title: str, frozen: str = "A2") -> None:
+    """An Excel workbook of one sheet (see _write_workbook)."""
+    _write_workbook(path, [(title, rows, frozen)])
+
+
+def _write_workbook(path: Path, sheets: Sequence[tuple[str, Sequence[Sequence[object]], str]]) -> None:
+    """An Excel workbook with a sheet per (title, rows, frozen): each sheet's first row in
+    bold, and the rows and columns before `frozen` kept in view while scrolling. Written
+    next to `path` first and renamed, as _write_csv does; text is never read as a formula."""
+    from openpyxl import Workbook
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    titles: set[str] = set()
+    for title, rows, frozen in sheets:
+        name, n = safe_sheet_title(title), 1
+        while name.lower() in titles:  # Excel won't have two sheets of one name
+            n += 1
+            name = f"{safe_sheet_title(title)[:27]} ({n})"
+        titles.add(name.lower())
+        sheet = workbook.create_sheet(name)
+        for r, row in enumerate(rows, start=1):
+            for c, value in enumerate(row, start=1):
+                if isinstance(value, str):
+                    value = ILLEGAL_CHARACTERS_RE.sub("", value)
+                cell = sheet.cell(r, c, value)
+                if isinstance(value, str):
+                    cell.data_type = "s"  # "=1+1" stays text
+                if r == 1:
+                    cell.font = Font(bold=True)
+        for c in range(1, max((len(row) for row in rows), default=0) + 1):
+            longest = max((len(str(row[c - 1])) for row in rows if c <= len(row)), default=0)
+            sheet.column_dimensions[get_column_letter(c)].width = min(max(longest + 2, 6), 40)
+        sheet.freeze_panes = frozen
+    if not sheets:
+        workbook.create_sheet("Sheet")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".export-", suffix=".tmp")
+    os.close(fd)
+    try:
+        workbook.save(tmp_name)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def safe_sheet_title(text: str) -> str:
+    """`text` as an Excel sheet name: at most 31 characters, none of []:*?/\\."""
+    name = "".join("-" if ch in '[]:*?/\\' else ch for ch in text).strip("' ")[:31]
+    return name or "Sheet"
+
+
+def _roster_rows(students: Sequence[Student]) -> list[Sequence[object]]:
     rows: list[Sequence[object]] = [ROSTER_COLUMNS]
     for s in students:
         rows.append((s.student_no or "", s.last_name, s.first_name, "Active" if s.active else "Inactive", s.notes))
-    _write_csv(path, rows)
+    return rows
+
+
+def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
+    """Save students as CSV, in the order given."""
+    _write_csv(path, _roster_rows(students))
+
+
+def write_roster_xlsx(path: Path, students: Sequence[Student], title: str = "Students") -> None:
+    """Save students as an Excel workbook, the same columns as the CSV."""
+    _write_xlsx(path, _roster_rows(students), title)
 
 
 def write_year_roster_csv(path: Path, classes: Sequence[tuple[str, Sequence[Student]]]) -> None:
@@ -57,6 +124,12 @@ def write_year_roster_csv(path: Path, classes: Sequence[tuple[str, Sequence[Stud
             rows.append((name, s.student_no or "", s.last_name, s.first_name,
                          "Active" if s.active else "Inactive", s.notes))  # fmt: skip
     _write_csv(path, rows)
+
+
+def write_year_roster_xlsx(path: Path, classes: Sequence[tuple[str, Sequence[Student]]]) -> None:
+    """Save the students of several classes as an Excel workbook with a sheet per class,
+    each with the class list's columns, in the order given."""
+    _write_workbook(path, [(name, _roster_rows(students), "A2") for name, students in classes])
 
 
 def roster_tsv(students: Sequence[Student]) -> str:
@@ -106,14 +179,20 @@ def write_attendance_csv(path: Path, register: MonthRegister) -> None:
     _write_csv(path, _month_rows(register))
 
 
+def write_attendance_xlsx(path: Path, register: MonthRegister, title: str) -> None:
+    """Save a month of attendance as an Excel workbook, the columns of the CSV, with the
+    students' names kept in view while scrolling through the days."""
+    _write_xlsx(path, _month_rows(register), title, frozen="D2")
+
+
 def attendance_month_tsv(register: MonthRegister) -> str:
     """A month of attendance as tab-separated text, to paste into a spreadsheet."""
     return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _month_rows(register))
 
 
-def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
-    """Save each student's totals for a period, e.g. a term, with their attendance rate,
-    and a last "Whole class" row with the class's totals and rate."""
+def _summary_rows(summary: PeriodSummary) -> list[Sequence[object]]:
+    """Each student's totals for a period, e.g. a term, with their attendance rate, and a
+    last "Whole class" row with the class's totals and rate."""
     rows: list[Sequence[object]] = [
         ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"]
     ]
@@ -129,7 +208,18 @@ def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
             ["", WHOLE_CLASS, "", totals["present"], totals["late"], totals["absent"], totals["excused"],
              sum(row.unmarked for row in summary.rows), _rate_cell(attendance_rate(totals))]
         )  # fmt: skip
-    _write_csv(path, rows)
+    return rows
+
+
+def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
+    """Save each student's totals for a period as CSV; see _summary_rows()."""
+    _write_csv(path, _summary_rows(summary))
+
+
+def write_attendance_summary_xlsx(path: Path, summary: PeriodSummary) -> None:
+    """Save each student's totals for a period as an Excel workbook; see _summary_rows()."""
+    title = f"{summary.start.day} {summary.start:%b %Y} to {summary.end.day} {summary.end:%b %Y}"
+    _write_xlsx(path, _summary_rows(summary), title, frozen="D2")
 
 
 def write_student_history_csv(path: Path, history: StudentHistory) -> None:
@@ -319,3 +409,166 @@ def _notes_html(register: MonthRegister) -> str:
         name = f"{row.student.last_name}, {row.student.first_name}"
         items.append(f"<li>{day:%a} {day.day}: {html.escape(name)}{mark}: {html.escape(note)}</li>")
     return '<h3 style="margin-bottom: 2px;">Notes</h3><ul style="margin-top: 2px;">' + "".join(items) + "</ul>"
+
+
+def _gradebook_rows(sheet: GradeSheet) -> list[Sequence[object]]:
+    """Students down, then each assignment's points, each category's percent and the average.
+    An exempt student's cell says "ex"; one with nothing entered is empty."""
+    header = ["Student #", "Last name", "First name"]
+    header += [f"{a.title} (/{format_number(a.max_score)})" for a in sheet.assignments]
+    header += [f"{c.name} %" for c in sheet.categories]
+    header += ["Average %", "Grade"]
+    rows: list[Sequence[object]] = [header]
+    for student in sheet.students:
+        row: list[object] = [student.student_no or "", student.last_name, student.first_name]
+        for a in sheet.assignments:
+            if not sheet.is_entered(a.id, student.id):
+                row.append("")
+            else:
+                score = sheet.score(a.id, student.id)
+                row.append("ex" if score is None else int(score) if score == int(score) else score)  # 8, not 8.0
+        percents = sheet.category_percents(student.id)
+        row += [round(percents[c.id], 1) if c.id in percents else "" for c in sheet.categories]
+        average = sheet.average(student.id)
+        row += [round(average, 1), letter_grade(average)] if average is not None else ["", ""]
+        rows.append(row)
+    return rows
+
+
+def write_gradebook_csv(path: Path, sheet: GradeSheet) -> None:
+    """Save one subject's gradebook as CSV, e.g. for the school's report cards."""
+    _write_csv(path, _gradebook_rows(sheet))
+
+
+def write_gradebook_xlsx(path: Path, sheet: GradeSheet) -> None:
+    """Save one subject's gradebook as an Excel workbook, the same columns as the CSV,
+    with the students' names kept in view while scrolling."""
+    _write_xlsx(path, _gradebook_rows(sheet), sheet.subject.name, frozen="D2")
+
+
+def _ranking_rows(ranking: Ranking, overall: bool) -> list[Sequence[object]]:
+    """A ranking best first; students with nothing scored come last without a place.
+    An `overall` ranking also says how many subjects each average is made of."""
+    header = ["Place", "Student #", "Last name", "First name", "Average %", "Grade"]
+    if overall:
+        header.append("Subjects")
+    rows: list[Sequence[object]] = [header]
+    for r in ranking.ranked:
+        s = r.student
+        row = [r.place, s.student_no or "", s.last_name, s.first_name, round(r.average, 1), letter_grade(r.average)]
+        if overall:
+            row.append(ranking.subjects_counted.get(s.id, 0))
+        rows.append(row)
+    for s in ranking.unranked:
+        rows.append(["", s.student_no or "", s.last_name, s.first_name, "", ""] + ([0] if overall else []))
+    return rows
+
+
+def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> None:
+    """Save a ranking as CSV (see _ranking_rows)."""
+    _write_csv(path, _ranking_rows(ranking, overall))
+
+
+def write_ranking_xlsx(path: Path, ranking: Ranking, overall: bool = False, title: str = "Ranking") -> None:
+    """Save a ranking as an Excel workbook, the same columns as the CSV."""
+    _write_xlsx(path, _ranking_rows(ranking, overall), title)
+
+
+def ranking_tsv(ranking: Ranking, overall: bool = False) -> str:
+    """A ranking as tab-separated text, to paste into a spreadsheet."""
+    return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _ranking_rows(ranking, overall))
+
+
+def ranking_html(
+    ranking: Ranking, title: str, pass_mark: float, overall: bool = False, printed: date | None = None
+) -> str:
+    """A ranking as a printable page, best first, averages under `pass_mark` in red;
+    students with nothing scored come last without a place."""
+    printed = printed or date.today()
+    cell = 'style="border: 1px solid #999; padding: 3px 6px; text-align: center;"'
+    name_cell = 'style="border: 1px solid #999; padding: 3px 6px; text-align: left;"'
+    labels = ["Place", "Student", "Average", "Grade"] + (["Subjects"] if overall else [])
+    lines = ["<tr>" + "".join(f"<th {name_cell if x == 'Student' else cell}>{x}</th>" for x in labels) + "</tr>"]
+    for r in ranking.ranked:
+        place = f"{r.place}{'=' if r.shared else ''}"
+        low = ' color: #b00020; font-weight: bold;' if r.average < pass_mark else ""
+        mark = f'style="border: 1px solid #999; padding: 3px 6px; text-align: center;{low}"'
+        cells = [f"<td {cell}>{place}</td>", f"<td {name_cell}>{html.escape(r.student.full_name)}</td>",
+                 f"<td {mark}>{r.average:.1f}%</td>", f"<td {mark}>{letter_grade(r.average)}</td>"]  # fmt: skip
+        if overall:
+            cells.append(f"<td {cell}>{ranking.subjects_counted.get(r.student.id, 0)}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    for s in ranking.unranked:
+        cells = [f"<td {cell}>—</td>", f'<td {name_cell}>{html.escape(s.full_name)}</td>']
+        cells += [f"<td {cell}>—</td>", f"<td {cell}></td>"] + ([f"<td {cell}>0</td>"] if overall else [])
+        lines.append('<tr style="color: #777;">' + "".join(cells) + "</tr>")
+    n = len(ranking.ranked)
+    about = f"{n} student{'' if n == 1 else 's'} ranked"
+    failing = sum(r.average < pass_mark for r in ranking.ranked)
+    if failing:
+        about += f" · {failing} under the pass mark of {format_number(pass_mark)}%, in red"
+    if ranking.unranked:
+        about += f" · {len(ranking.unranked)} with nothing scored yet, listed last"
+    about += f" · printed {printed.day} {printed:%B} {printed.year}"
+    return (
+        '<html><body style="font-family: sans-serif; font-size: 10pt;">'
+        f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
+        f'<p style="color: #555;">{about}</p>'
+        '<table width="100%" style="border-collapse: collapse;" cellspacing="0">' + "".join(lines) + "</table>"
+        "</body></html>"
+    )
+
+
+def seating_tsv(plan: SeatingPlan, students_view: bool = False) -> str:
+    """The desks as tab-separated names, laid out as seating_plan_html() lays them out,
+    with the front of the room on its own line; a free seat or a spot without a desk is empty."""
+    layout = plan.layout
+    rows = range(layout.rows) if students_view else reversed(range(layout.rows))
+    lines = []
+    for row in rows:
+        cols = reversed(range(layout.cols)) if students_view else range(layout.cols)
+        names = [(s.full_name if (s := plan.student_at(row, col)) else "") for col in cols]
+        lines.append("\t".join(str(_safe_cell(name)) for name in names))
+    return "\n".join(["Front of the room", *lines] if students_view else [*lines, "Front of the room"]) + "\n"
+
+
+def seating_plan_html(
+    plan: SeatingPlan, title: str, printed: date | None = None, students_view: bool = False
+) -> str:
+    """A printable seating plan: the desks as the teacher sees them, the front of the
+    room at the bottom, then the students without a seat. A spot with no desk is blank.
+    In the `students_view` the front is at the top and left and right are swapped."""
+    printed = printed or date.today()
+    layout = plan.layout
+    width = f"{100 / layout.cols:.1f}%"
+    seat = f'style="border: 1px solid #777; padding: 14px 4px; text-align: center; width: {width};"'
+    lines = []
+    rows = range(layout.rows) if students_view else reversed(range(layout.rows))
+    for row in rows:
+        cells = []
+        for col in reversed(range(layout.cols)) if students_view else range(layout.cols):
+            if (row, col) in plan.gaps:  # no desk: no box
+                cells.append(f'<td style="width: {width};">&nbsp;</td>')
+                continue
+            student = plan.student_at(row, col)
+            name = f"{html.escape(student.first_name)}<br>{html.escape(student.last_name)}" if student else "&nbsp;"
+            cells.append(f"<td {seat}>{name}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    front = (
+        f'<tr><td colspan="{layout.cols}" style="padding: 8px; text-align: center; color: #555;">'
+        "Front of the room</td></tr>"
+    )
+    seated = len(plan.seats)
+    summary = f"{seated} of {len(plan.students)} students seated · printed {printed.day} {printed:%B} {printed.year}"
+    unseated = ""
+    if plan.unseated:
+        names = ", ".join(html.escape(s.full_name) for s in plan.unseated)
+        unseated = f"<p><b>Not seated:</b> {names}</p>"
+    return (
+        '<html><body style="font-family: sans-serif; font-size: 10pt;">'
+        f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
+        f'<p style="color: #555;">{summary}</p>'
+        '<table width="100%" style="border-collapse: collapse;" cellspacing="6">'
+        + (front + "".join(lines) if students_view else "".join(lines) + front)
+        + "</table>" + unseated + "</body></html>"
+    )

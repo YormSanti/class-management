@@ -2,7 +2,7 @@ import calendar
 from datetime import date
 
 from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPageLayout, QPageSize, QPalette, QPdfWriter, QShortcut, QTextDocument
+from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -51,13 +51,15 @@ from app.services.export import (
     attendance_period_html,
     write_attendance_csv,
     write_attendance_summary_csv,
+    write_attendance_summary_xlsx,
+    write_attendance_xlsx,
 )
-from app.services.roster import RosterService, number_key
+from app.services.roster import RosterService, matches, number_key
 from app.ui import style
 from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
 from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
 from app.ui.dialogs.period_dialog import PeriodDialog
-from app.ui.files import ask_save_path
+from app.ui.files import ask_save_path, write_pdf
 
 STATUSES = (AttendanceStatus.PRESENT, AttendanceStatus.LATE, AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED)
 KEYS = {Qt.Key.Key_P: STATUSES[0], Qt.Key.Key_L: STATUSES[1], Qt.Key.Key_A: STATUSES[2], Qt.Key.Key_E: STATUSES[3]}
@@ -79,23 +81,6 @@ def _fill(widget: QWidget, name: str) -> QColor:
 
 def _rgba(color: QColor) -> str:
     return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
-
-
-def _write_pdf(parent: QWidget, path, title: str, page_html: str, landscape: bool) -> bool:
-    """Print `page_html` to an A4 PDF at `path`; says so and returns False if it failed."""
-    writer = QPdfWriter(str(path))
-    writer.setTitle(title)
-    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-    orientation = QPageLayout.Orientation.Landscape if landscape else QPageLayout.Orientation.Portrait
-    writer.setPageOrientation(orientation)
-    document = QTextDocument()
-    document.setHtml(page_html)
-    document.print_(writer)
-    del writer  # finishes the file
-    if not path.exists() or path.stat().st_size == 0:
-        QMessageBox.warning(parent, "Save PDF", f"The PDF could not be saved to\n{path}")
-        return False
-    return True
 
 
 class StatusButtons(QWidget):
@@ -165,11 +150,13 @@ class MonthView(QWidget):
         self.this_month_button = QPushButton("This month")
         self.this_month_button.setToolTip("Go to this month (Alt+Home)")
         self.this_month_button.clicked.connect(lambda: self.set_month(self._today().year, self._today().month))
-        self.export_button = QPushButton("Export CSV…")
-        self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
+        self.export_button = QPushButton("Export…")
+        self.export_button.setToolTip("Save this month as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
         self.export_period_button = QPushButton("Export period…")
-        self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
+        self.export_period_button.setToolTip(
+            "Save each student's totals for any dates, e.g. a term, as CSV, an Excel workbook or a PDF"
+        )
         self.export_period_button.clicked.connect(self.export_period)
         self.copy_button = QPushButton("Copy")
         self.copy_button.setToolTip("Copy this month as a table, to paste into a spreadsheet")
@@ -199,6 +186,13 @@ class MonthView(QWidget):
             toolbar.addWidget(style.label(text, 0.9, muted=True))
             toolbar.addSpacing(8)
         toolbar.addStretch()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a student (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(200)
+        self.search.textChanged.connect(self.find_student)
+        self.search.returnPressed.connect(lambda: self.table.setFocus())  # the table comes next
+        toolbar.addWidget(self.search)
         toolbar.addWidget(self.copy_button)
         toolbar.addWidget(self.pdf_button)
         toolbar.addWidget(self.export_period_button)
@@ -219,8 +213,8 @@ class MonthView(QWidget):
             shortcut.activated.connect(lambda months=months: self.step(months))
 
         hint = style.label(
-            "Hover over a mark to see its note; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
-            "double-click a day (or press Enter) to open its register, or a name for the student's history. "
+            "Hover over a mark to see its note; Ctrl+F finds a student; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
+            "double-click a day (or press Enter) to open its register, or a name (or press H) for the student's history. "
             "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
             0.85,
@@ -418,6 +412,9 @@ class MonthView(QWidget):
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self._open_cell(row, col)
                 return True
+            if plain and key == Qt.Key.Key_H and self.register is not None and 0 <= row < len(self.register.rows):
+                self.history_requested.emit(self.register.rows[row].student.id)  # as on the Day tab
+                return True
             cell = self._cell(row, col)
             if plain and cell is not None and (key in KEYS or key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)):
                 student_id, day = cell
@@ -426,6 +423,20 @@ class MonthView(QWidget):
                     self.table.setCurrentCell(min(row + 1, len(self.register.rows) - 1), col)
                 return True
         return super().eventFilter(watched, event)
+
+    def find_student(self, text: str) -> None:
+        """Select the first student matching `text` by name or number, in the day selected or else today's."""
+        if self.register is None or not text.strip():
+            return
+        row = next((i for i, r in enumerate(self.register.rows) if matches(r.student, text)), None)
+        if row is None:
+            return
+        col = self.table.currentColumn()
+        if not 1 <= col <= len(self.register.days):
+            today = self._today()
+            col = self.register.days.index(today) + 1 if today in self.register.days else 0
+        self.table.setCurrentCell(row, col)
+        self.table.scrollToItem(self.table.item(row, col))
 
     def _cell(self, row: int, col: int) -> tuple[int, date] | None:
         """(student id, day) of a mark cell of the table, None for names, totals and the last row."""
@@ -438,11 +449,14 @@ class MonthView(QWidget):
             return
         first = date(self.year, self.month, 1)
         name = f"{self.file_label} attendance {first:%B} {first.year}"
-        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),))
         if path is None:
             return
         try:
-            write_attendance_csv(path, self.register)
+            if path.suffix.lower() == ".xlsx":
+                write_attendance_xlsx(path, self.register, f"{first:%B} {first.year}")
+            else:
+                write_attendance_csv(path, self.register)
         except OSError as exc:
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
@@ -460,7 +474,7 @@ class MonthView(QWidget):
         title = f"{self.file_label} · attendance {first:%B} {first.year}"
         name = f"{self.file_label} attendance {first:%B} {first.year}"
         path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
-        if path is not None and _write_pdf(self, path, title, attendance_month_html(self.register, title), True):
+        if path is not None and write_pdf(self, path, title, attendance_month_html(self.register, title), True):
             QMessageBox.information(self, "Save PDF", f"Saved {first:%B} {first.year} to\n{path}")
 
     def export_period(self) -> None:
@@ -484,14 +498,17 @@ class MonthView(QWidget):
         if dialog.as_pdf:
             title = f"{self.file_label} · attendance {start.day} {start:%b %Y} to {end.day} {end:%b %Y}"
             path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
-            if path is not None and _write_pdf(self, path, title, attendance_period_html(summary, title), False):
+            if path is not None and write_pdf(self, path, title, attendance_period_html(summary, title), False):
                 QMessageBox.information(self, "Save PDF", f"Saved {recorded} to\n{path}")
             return
-        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),))
         if path is None:
             return
         try:
-            write_attendance_summary_csv(path, summary)
+            if path.suffix.lower() == ".xlsx":
+                write_attendance_summary_xlsx(path, summary)
+            else:
+                write_attendance_summary_csv(path, summary)
         except OSError as exc:
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
@@ -622,7 +639,7 @@ class AttendanceView(QWidget):
         date_row.addSpacing(12)
         self.find_edit = QLineEdit()
         self.find_edit.setPlaceholderText("Find a student (Ctrl+F)")
-        self.find_edit.setToolTip("Show only students whose name or number contains this; Esc shows everyone")
+        self.find_edit.setToolTip("Show only students whose name, number or notes contain this, accents or not; Esc shows everyone")
         self.find_edit.setClearButtonEnabled(True)
         self.find_edit.setFixedWidth(220)
         self.find_edit.textChanged.connect(self._apply_filter)
@@ -770,7 +787,7 @@ class AttendanceView(QWidget):
             rest.activated.connect(lambda: self.mark_rest_button.isEnabled() and self.mark_rest_present())
         copy = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
         copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        copy.activated.connect(self.copy_absences)
+        copy.activated.connect(lambda: self.copy_button.isEnabled() and self.copy_absences())
         find = QShortcut(QKeySequence.StandardKey.Find, self)  # like the class list: whole window, page shown
         find.activated.connect(self._start_find)
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)  # a note being typed keeps its own undo
@@ -1079,19 +1096,17 @@ class AttendanceView(QWidget):
     # --- finding a student ---------------------------------------------------
 
     def _start_find(self) -> None:
-        self.tabs.setCurrentIndex(0)
-        self.find_edit.setFocus()
-        self.find_edit.selectAll()
+        find = self.month_view.search if self.tabs.currentWidget() is self.month_view else self.find_edit
+        find.setFocus()
+        find.selectAll()
 
     def _apply_filter(self) -> None:
-        """Hide the students whose name and number don't contain the text in the find box."""
+        """Hide the students the text in the find box doesn't find, as in the class list."""
         if self.register is None:
             return
-        text = self.find_edit.text().strip().casefold()
+        text = self.find_edit.text()
         for i, row in enumerate(self.register.rows):
-            student = row.student
-            found = text in student.full_name.casefold() or text in (student.student_no or "").casefold()
-            self.table.setRowHidden(i, not found)
+            self.table.setRowHidden(i, not matches(row.student, text))  # as the class list: "Jose" finds "José"
         if self.table.isRowHidden(self.table.currentRow()) or self.table.currentRow() < 0:
             visible = self._visible_rows()
             if visible:
@@ -1153,18 +1168,21 @@ class AttendanceView(QWidget):
             self.attendance.set_note(row.student.id, self.day, text, self.subject_id)
         except AttendanceError as exc:
             self._forget()
+            self._row_widgets[i][1].setText(row.note)  # show the note that is saved, not the one refused
             QMessageBox.information(self, "Attendance", str(exc))
+            return
         row.note = text  # editingFinished can fire twice (Return, then losing focus)
 
     def mark_rest_present(self) -> None:
         if self.class_id is None:
             return
-        if self.day > date.today():
+        day = self.day
+        if day > date.today() or day.weekday() >= 5:  # a whole class marked on a wrong day is a lot to undo
+            why = "hasn't happened yet" if day > date.today() else "is a weekend day"
             answer = QMessageBox.question(
                 self,
                 "Mark the rest present",
-                f"{self.day:%A} {self.day.day} {self.day:%B} hasn't happened yet. "
-                "Mark everyone who isn't marked as present anyway?",
+                f"{day:%A} {day.day} {day:%B} {why}. Mark everyone who isn't marked as present anyway?",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -1338,10 +1356,15 @@ class AttendanceView(QWidget):
             history, self.register_name, self, registers,
             lambda subject_id: self.attendance.student_history(student_id, subject_id), self.subject_id,
         )  # fmt: skip
-        if dialog.exec() and dialog.chosen_day is not None:
-            if dialog.chosen_subject != self.subject_id:  # a day picked in another register
-                self.register_combo.setCurrentIndex(self.register_combo.findData(dialog.chosen_subject))
-            self.set_day(dialog.chosen_day)
+        if not dialog.exec() or (dialog.chosen_day is None and dialog.chosen_month is None):
+            return
+        if dialog.chosen_subject != self.subject_id:  # a day or month picked in another register
+            self.register_combo.setCurrentIndex(self.register_combo.findData(dialog.chosen_subject))
+        if dialog.chosen_day is not None:
+            self.open_day(dialog.chosen_day)  # on the Day tab, also when asked from the Month tab
+        else:
+            self.tabs.setCurrentWidget(self.month_view)
+            self.month_view.set_month(dialog.chosen_month.year, dialog.chosen_month.month)
 
     # --- undo ----------------------------------------------------------------
 
@@ -1419,6 +1442,8 @@ class AttendanceView(QWidget):
         plain = not (event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier)
         if watched is self.table and plain:
             i = self.table.currentRow()
+            if not self._visible_rows() and key not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+                return True  # the find box matches no one: no key may mark or select a hidden student
             if 0 <= i < len(self.register.rows):
                 if key in KEYS:
                     self._set_status(i, KEYS[key])
