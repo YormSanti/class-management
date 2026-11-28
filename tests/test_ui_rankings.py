@@ -288,3 +288,22 @@ def test_save_pdf_saves_the_ranking_to_print(window: MainWindow, roster: RosterS
     assert asked[0].endswith("Maths 7B (2026-2027) ranking.pdf")
     assert target.read_bytes().startswith(b"%PDF")
     assert infos[0].startswith("Saved the ranking to")
+
+
+def test_export_saves_the_ranking_as_an_excel_workbook_if_chosen(
+    window: MainWindow, roster: RosterService, tmp_path, monkeypatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7"), (test, ids["Bob"], "9")])
+    view = window.rankings_view
+    view.refresh()
+    target = tmp_path / "ranking.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(target), "CSV files (*.csv)"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    view.export_button.click()  # the .xlsx typed wins over the filter
+    sheet = load_workbook(target).active
+    assert sheet.title == "Maths"
+    assert list(sheet.values)[1:3] == [(1, None, "Smith", "Bob", 90, "A"), (2, None, "Lovelace", "Ada", 70, "C")]

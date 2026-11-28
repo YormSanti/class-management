@@ -420,6 +420,11 @@ def write_ranking_csv(path: Path, ranking: Ranking, overall: bool = False) -> No
     _write_csv(path, _ranking_rows(ranking, overall))
 
 
+def write_ranking_xlsx(path: Path, ranking: Ranking, overall: bool = False, title: str = "Ranking") -> None:
+    """Save a ranking as an Excel workbook, the same columns as the CSV."""
+    _write_xlsx(path, _ranking_rows(ranking, overall), title)
+
+
 def ranking_tsv(ranking: Ranking, overall: bool = False) -> str:
     """A ranking as tab-separated text, to paste into a spreadsheet."""
     return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _ranking_rows(ranking, overall))

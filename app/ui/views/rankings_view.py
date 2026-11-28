@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.dashboard import letter_grade
-from app.services.export import ranking_html, ranking_tsv, write_ranking_csv
+from app.services.export import ranking_html, ranking_tsv, write_ranking_csv, write_ranking_xlsx
 from app.services.gradebook import PASS_MARK, format_number
 from app.services.rankings import Ranking, RankingService
 from app.services.roster import RosterService, matches
@@ -85,7 +85,7 @@ class RankingsView(QWidget):
         header.addWidget(rank_by, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.scope, alignment=Qt.AlignmentFlag.AlignBottom)
         self.export_button = QPushButton("E&xport…")
-        self.export_button.setToolTip("Save the ranking as a CSV file")
+        self.export_button.setToolTip("Save the ranking as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
         header.addWidget(self.export_button, alignment=Qt.AlignmentFlag.AlignBottom)
         self.pdf_button = QPushButton("Save PD&F…")
@@ -214,11 +214,16 @@ class RankingsView(QWidget):
         if self.ranking is None or not self.ranking.ranked:
             return
         name = self.subtitle.text().replace(" · ", " ")  # e.g. "Maths 7B (2026-2027)"
-        path = ask_save_path(self, "Export ranking", f"{name} ranking", "CSV files", ".csv")
+        path = ask_save_path(
+            self, "Export ranking", f"{name} ranking", "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),)
+        )
         if path is None:
             return
         try:
-            write_ranking_csv(path, self.ranking, overall=self.overall)
+            if path.suffix.lower() == ".xlsx":
+                write_ranking_xlsx(path, self.ranking, self.overall, self.subtitle.text().split(" · ")[0])
+            else:
+                write_ranking_csv(path, self.ranking, overall=self.overall)
         except OSError as exc:
             QMessageBox.warning(self, "Export ranking", f"The file could not be saved:\n{exc}")
             return
