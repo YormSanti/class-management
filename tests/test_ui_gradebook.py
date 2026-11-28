@@ -735,3 +735,32 @@ def test_gradebook_lists_students_added_on_another_page(window: MainWindow, rost
     roster.save_student(Student(roster.get_subject(maths).class_id, "Cy", "Young"))
     window.show_page("Gradebook")
     assert window.gradebook_view.table.rowCount() == 3
+
+
+def test_work_due_before_today_with_nothing_entered_is_shaded_as_missing(window: MainWindow, roster: RosterService):
+    from datetime import date, timedelta
+
+    from PySide6.QtCore import Qt
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    grades = window.gradebook_view.grades
+    tests = grades.list_categories(maths)[0].id
+    past = date.today() - timedelta(days=3)
+    late = grades.save_assignment(Assignment(maths, tests, "Essay", 10, past)).id
+    grades.save_assignment(Assignment(maths, tests, "Today's quiz", 10, date.today()))  # not due until tomorrow
+    grades.enter_score(late, ada, "ex")
+    view = window.gradebook_view
+    view.refresh()
+    columns = {view.table.horizontalHeaderItem(c).text().split("\n")[0]: c for c in range(1, 5)}
+    essay, quiz = columns["Essay"], columns["Today's quiz"]
+    missing = view.table.item(1, essay)  # Bob
+    assert missing.background().style() != Qt.BrushStyle.NoBrush
+    assert missing.toolTip() == f"Missing: due {past.day} {past:%b %Y} and nothing entered yet"
+    assert view.table.item(0, essay).background().style() == Qt.BrushStyle.NoBrush  # exempt isn't missing
+    assert view.table.item(1, quiz).background().style() == Qt.BrushStyle.NoBrush
+    assert view.table.item(1, columns["Test 1"]).background().style() == Qt.BrushStyle.NoBrush  # undated
+    assert view.summary.text() == "4 assignments · 1 missing, shaded"
+
+    missing.setText("7")
+    assert view.table.item(1, essay).background().style() == Qt.BrushStyle.NoBrush
+    assert "missing" not in view.summary.text()

@@ -101,8 +101,8 @@ empty cells are left out, while a 0 counts. Points above the maximum are bonus p
 Averages under the pass mark (60% unless changed under **Settings → Grades**) are shown
 in red, here and on the dashboard. Clicking **Average** lists the best average first, and
 **Export…** saves the scores, category percents, averages and letter grades as CSV.
-An empty cell of a dated assignment counts as missing work on the dashboard once the date
-has passed; an exempt one doesn't.
+An empty cell of a dated assignment counts as missing work once the date has passed: it is
+shaded in the gradebook and counted on the dashboard. An exempt one isn't missing.
 
 New school year, **Copy…** and Copy subjects bring each subject's categories along.
 

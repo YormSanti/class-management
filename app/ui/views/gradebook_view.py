@@ -1,5 +1,7 @@
 """The gradebook of the current subject: students down the side, assignments across."""
 
+from datetime import date
+
 from PySide6.QtCore import QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -543,17 +545,34 @@ class GradebookView(QWidget):
         return item
 
     def _show_score(self, item: QTableWidgetItem, assignment_id: int, student_id: int) -> None:
-        """The score, with points above the maximum shown as a bonus."""
+        """The score, with points above the maximum shown as a bonus and missing work shaded."""
         item.setText(self._score_text(assignment_id, student_id))
         score = self.sheet.score(assignment_id, student_id)
-        maximum = next(a.max_score for a in self.sheet.assignments if a.id == assignment_id)
-        if score is not None and score > maximum:
+        assignment = next(a for a in self.sheet.assignments if a.id == assignment_id)
+        maximum = assignment.max_score
+        missing = self._is_missing(assignment, student_id)
+        if missing:
+            item.setBackground(style.soft(self, "warn"))
+        else:
+            item.setData(Qt.ItemDataRole.BackgroundRole, None)
+        if missing:
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
+            item.setToolTip(f"Missing: due {assignment.date.day} {assignment.date:%b %Y} and nothing entered yet")
+        elif score is not None and score > maximum:
             item.setForeground(style.color(self, "info"))
             item.setToolTip(f"{format_number(score - maximum)} bonus points above the maximum of {format_number(maximum)}")
         else:
             item.setData(Qt.ItemDataRole.ForegroundRole, None)
             item.setToolTip("Exempt: left out of the average" if self.sheet.is_entered(assignment_id, student_id)
                             and score is None else "")  # fmt: skip
+
+    def _is_missing(self, assignment, student_id: int) -> bool:
+        """Nothing entered once the assignment's date has passed, as the dashboard counts missing work."""
+        return (
+            assignment.date is not None
+            and assignment.date < date.today()
+            and not self.sheet.is_entered(assignment.id, student_id)
+        )
 
     def _assignment_tip(self, assignment) -> str:
         """e.g. "Tests · 3 Oct 2026 · out of 20 / Class average 72% · 24 of 25 scores entered"."""
@@ -770,4 +789,7 @@ class GradebookView(QWidget):
         parts = [f"{n} assignment{'' if n == 1 else 's'}" if n else "No assignments yet"]
         if (average := sheet.class_average()) is not None:
             parts.append(f"class average {percent_text(average)}")
+        missing = sum(self._is_missing(a, st.id) for a in sheet.assignments for st in sheet.students)
+        if missing:
+            parts.append(f"{missing} missing, shaded")
         return " · ".join(parts)
