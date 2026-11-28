@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.dashboard_view.day_requested.connect(self.show_attendance_day)
         self.dashboard_view.history_requested.connect(self.show_attendance_history)
+        self.dashboard_view.gradebook_requested.connect(self.show_gradebook)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
         self.attendance_view.navigate_requested.connect(self.show_page)
@@ -384,6 +385,13 @@ class MainWindow(QMainWindow):
         self.show_page("Attendance")
         self.attendance_view.register_combo.setCurrentIndex(0)  # the dashboard counts the daily register
         self.attendance_view.show_student_history(student_id)
+
+    def show_gradebook(self, subject_id: int, assignment_id: int = 0) -> None:
+        """Open the gradebook of `subject_id`, at `assignment_id`'s column if given."""
+        self.select_subject(subject_id)
+        self.show_page("Gradebook")
+        if assignment_id:
+            self.gradebook_view.go_to_assignment(assignment_id)
 
     def show_subjects(self) -> None:
         """Open Manage classes on the Subjects tab of the current class."""

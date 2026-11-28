@@ -2954,3 +2954,20 @@ def test_mark_days_dialog_says_when_days_are_still_ahead(qapp: QApplication):
     assert dialog.days_label.text() == "3 school days"
     dialog.set_period(date(1990, 1, 1), friday)
     assert dialog.start == date(2000, 1, 1)  # no earlier than the service allows
+
+
+def test_clicking_a_subject_on_the_dashboard_opens_its_gradebook(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.views.dashboard_view import ClickableLabel
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    names = {label.text(): label for label in window.dashboard_view.findChildren(ClickableLabel)}
+    assert names["Science"].toolTip() == "Click to open the Science gradebook"
+    QTest.mouseClick(names["Science"], Qt.MouseButton.LeftButton)
+    assert window.stack.currentWidget() is window.gradebook_view
+    assert window.subject_id == science

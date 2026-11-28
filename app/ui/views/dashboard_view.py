@@ -206,12 +206,30 @@ class ClickableRow(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class ClickableLabel(QLabel):
+    """A label that reports left clicks and shows a pointing hand, for names that open something."""
+
+    clicked = Signal()
+
+    def __init__(self, text: str, tip: str, parent: QWidget | None = None):
+        super().__init__(text, parent)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(tip)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class DashboardView(QWidget):
     """Overview of the selected class: key numbers, attendance, grades, students to check on."""
 
     navigate_requested = Signal(str)  # page name, e.g. "Attendance"
     day_requested = Signal(object)  # a date whose register to open on the Attendance page
     history_requested = Signal(int)  # a student whose attendance history to show
+    gradebook_requested = Signal(int, int)  # a subject whose gradebook to open, and an assignment in it (0: none)
     create_class_requested = Signal()
     manage_subjects_requested = Signal()
 
@@ -594,7 +612,12 @@ class DashboardView(QWidget):
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(caption, 0, col)
         for row, s in enumerate(subjects, start=1):
-            grid.addWidget(style.label(s.subject.name, bold=True), row, 0)
+            name = ClickableLabel(s.subject.name, f"Click to open the {s.subject.name} gradebook")
+            font = name.font()
+            font.setBold(True)
+            name.setFont(font)
+            name.clicked.connect(lambda sid=s.subject.id: self.gradebook_requested.emit(sid, 0))
+            grid.addWidget(name, row, 0)
             grid.addWidget(style.label(s.subject.teacher or "You", 0.92, muted=True), row, 1)
 
             average = QHBoxLayout()
