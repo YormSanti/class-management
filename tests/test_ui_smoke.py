@@ -2971,3 +2971,32 @@ def test_clicking_a_subject_on_the_dashboard_opens_its_gradebook(window: MainWin
     QTest.mouseClick(names["Science"], Qt.MouseButton.LeftButton)
     assert window.stack.currentWidget() is window.gradebook_view
     assert window.subject_id == science
+
+
+def test_clicking_a_recent_assignment_on_the_dashboard_opens_it_in_the_gradebook(
+    window: MainWindow, roster: RosterService, conn
+):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import Assignment
+    from app.ui.views.dashboard_view import ClickableLabel
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    grades = _grades(conn)
+    category = grades.add_categories(science, (("Quizzes", 20),))[0]
+    for title in ("Quiz 1", "Quiz 2"):
+        grades.save_assignment(Assignment(subject_id=science, category_id=category.id, title=title, max_score=10, date=date.today()))
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    titles = {label.text(): label for label in window.dashboard_view.findChildren(ClickableLabel)}
+    assert titles["Quiz 1"].toolTip() == "Click to open Quiz 1 in the Science gradebook"
+    QTest.mouseClick(titles["Quiz 1"], Qt.MouseButton.LeftButton)
+    view = window.gradebook_view
+    assert window.stack.currentWidget() is view
+    assert window.subject_id == science
+    assert view.table.horizontalHeaderItem(view.table.currentColumn()).text().startswith("Quiz 1")

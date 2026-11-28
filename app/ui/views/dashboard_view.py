@@ -207,13 +207,16 @@ class ClickableRow(QFrame):
 
 
 class ClickableLabel(QLabel):
-    """A label that reports left clicks and shows a pointing hand, for names that open something."""
+    """A bold label that reports left clicks and shows a pointing hand, for names that open something."""
 
     clicked = Signal()
 
     def __init__(self, text: str, tip: str, parent: QWidget | None = None):
         super().__init__(text, parent)
         self.setTextFormat(Qt.TextFormat.PlainText)
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(tip)
 
@@ -569,7 +572,9 @@ class DashboardView(QWidget):
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(caption, 0, col)
         for row, a in enumerate(assignments, start=1):
-            grid.addWidget(style.label(a.title, bold=True), row, 0)
+            title = ClickableLabel(a.title, f"Click to open {a.title} in the {a.subject} gradebook")
+            title.clicked.connect(lambda sid=a.subject_id, aid=a.id: self.gradebook_requested.emit(sid, aid))
+            grid.addWidget(title, row, 0)
             subject = style.label(a.subject, 0.92, muted=True)
             subject.setToolTip(a.category)
             grid.addWidget(subject, row, 1)
@@ -613,9 +618,6 @@ class DashboardView(QWidget):
             grid.addWidget(caption, 0, col)
         for row, s in enumerate(subjects, start=1):
             name = ClickableLabel(s.subject.name, f"Click to open the {s.subject.name} gradebook")
-            font = name.font()
-            font.setBold(True)
-            name.setFont(font)
             name.clicked.connect(lambda sid=s.subject.id: self.gradebook_requested.emit(sid, 0))
             grid.addWidget(name, row, 0)
             grid.addWidget(style.label(s.subject.teacher or "You", 0.92, muted=True), row, 1)

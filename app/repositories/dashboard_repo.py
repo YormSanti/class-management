@@ -32,6 +32,7 @@ class AssignmentStats:
     max_score: float
     submitted: int  # active students with a score (not NULL)
     average_percent: float | None
+    subject_id: int = 0
 
 
 class DashboardRepository:
@@ -162,7 +163,7 @@ class DashboardRepository:
         `on_or_before`, e.g. next week's test, aren't recent and are left out."""
         rows = self.conn.execute(
             """
-            SELECT a.id, a.title, sub.name AS subject, c.name AS category, a.date, a.max_score,
+            SELECT a.id, a.title, a.subject_id, sub.name AS subject, c.name AS category, a.date, a.max_score,
                    count(s.id) AS submitted,
                    avg(CASE WHEN s.id IS NOT NULL THEN sc.score * 100.0 / a.max_score END) AS avg_pct
             FROM assignments a
@@ -187,6 +188,7 @@ class DashboardRepository:
                 max_score=r["max_score"],
                 submitted=r["submitted"],
                 average_percent=r["avg_pct"],
+                subject_id=r["subject_id"],
             )
             for r in rows
         ]
