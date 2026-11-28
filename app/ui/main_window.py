@@ -20,10 +20,16 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.config import LOG_FILENAME, AppConfig, settings_dir
+from app.repositories.class_repo import ClassRepository
+from app.repositories.seating_repo import SeatingRepository
+from app.repositories.student_repo import StudentRepository
 from app.services.attendance import AttendanceService
 from app.services.backup import copy_database, manual_backup_reminder
 from app.services.dashboard import DashboardService
+from app.services.gradebook import GradebookService
+from app.services.rankings import RankingService
 from app.services.roster import RosterError, RosterService, sister_class_name
+from app.services.seating import SeatingService
 from app.ui.dialogs.class_dialog import ClassDialog
 from app.ui.dialogs.new_year_dialog import NewYearDialog
 from app.ui.dialogs.shortcuts_dialog import ShortcutsDialog
@@ -32,7 +38,9 @@ from app.ui.files import ask_save_path
 from app.ui.views.attendance_view import AttendanceView
 from app.ui.views.classes_view import ClassesView
 from app.ui.views.dashboard_view import DashboardView
-from app.ui.views.placeholder_view import PlaceholderView
+from app.ui.views.gradebook_view import GradebookView
+from app.ui.views.rankings_view import RankingsView
+from app.ui.views.seating_view import SeatingView
 from app.ui.views.settings_view import SettingsView
 
 BOTTOM_PAGES = ("Settings",)  # pinned to the bottom of the sidebar
@@ -52,14 +60,17 @@ class MainWindow(QMainWindow):
         roster: RosterService,
         dashboard: DashboardService,
         attendance: AttendanceService,
+        grades: GradebookService,
         config: AppConfig,
         settings: QSettings | None = None,
         save_config: Callable[[AppConfig], None] | None = None,
         restore_backup: Callable[[Path], Path] | None = None,
+        seating: SeatingService | None = None,
     ):
         """`settings` keeps window state between sessions; None remembers nothing.
         `save_config` writes changes made on the Settings page; None keeps them for this session.
-        `restore_backup` replaces the data with a backup's (see SettingsView); None hides Restore."""
+        `restore_backup` replaces the data with a backup's (see SettingsView); None hides Restore.
+        `seating` defaults to one on the roster's database."""
         super().__init__()
         self.roster = roster
         self.config = config
@@ -76,14 +87,30 @@ class MainWindow(QMainWindow):
         self.dashboard_view.manage_subjects_requested.connect(self.show_subjects)
         self.dashboard_view.day_requested.connect(self.show_attendance_day)
         self.dashboard_view.history_requested.connect(self.show_attendance_history)
+        self.dashboard_view.gradebook_requested.connect(self.show_gradebook)
         self.attendance_view = AttendanceView(attendance, roster)
         self.attendance_view.class_selected.connect(self.select_class)
         self.attendance_view.navigate_requested.connect(self.show_page)
+        self.gradebook_view = GradebookView(grades, roster)
+        self.gradebook_view.pass_mark = config.pass_mark
+        dashboard.pass_mark = config.pass_mark
+        self.gradebook_view.manage_subjects_requested.connect(self.show_subjects)
+        self.rankings_view = RankingsView(RankingService(grades), roster)
+        self.rankings_view.rankings.method = config.ranking_method
+        self.rankings_view.pass_mark = config.pass_mark
+        self.rankings_view.manage_subjects_requested.connect(self.show_subjects)
+        self.rankings_view.navigate_requested.connect(self.show_page)
+        self.rankings_view.subject_selected.connect(self.select_subject)
+        self.rankings_view.student_requested.connect(self.show_student_scores)
+        if seating is None:
+            conn = roster.classes.conn
+            seating = SeatingService(SeatingRepository(conn), StudentRepository(conn), ClassRepository(conn))
+        self.seating_view = SeatingView(seating, roster)
         self.settings_view = SettingsView(config, save_config, restore_backup, describe_data=roster.describe_data)
         self.settings_view.restored.connect(self._data_replaced)
         self.settings_view.close_requested.connect(self.close)
         self.settings_view.back_up_requested.connect(self.back_up_now)
-        self.settings_view.config_changed.connect(lambda changed: setattr(self, "config", changed))
+        self.settings_view.config_changed.connect(self._config_changed)
         self.classes_view = ClassesView(roster)
         self.classes_view.roster_view.create_class_requested.connect(lambda: self.new_class())
         self.classes_view.roster_view.history_requested.connect(self.show_attendance_history)
@@ -103,9 +130,9 @@ class MainWindow(QMainWindow):
         self.pages: list[tuple[str, QWidget]] = [
             ("Dashboard", self.dashboard_view),
             ("Attendance", self.attendance_view),
-            ("Gradebook", PlaceholderView("Gradebook", "Coming in Phase 3.")),
-            ("Rankings", PlaceholderView("Rankings", "Coming in Phase 4.")),
-            ("Seating", PlaceholderView("Seating chart", "Coming in Phase 5.")),
+            ("Gradebook", self.gradebook_view),
+            ("Rankings", self.rankings_view),
+            ("Seating", self.seating_view),
             ("Manage classes", self.classes_view),
             ("Settings", self.settings_view),
         ]
@@ -164,6 +191,15 @@ class MainWindow(QMainWindow):
                 self.attendance_view.tabs.setCurrentIndex(tab)
             if self.settings.value("session/attendance_by_number", False, type=bool):
                 self.attendance_view.set_order(by_number=True)
+            if self.settings.value("session/gradebook_by_average", False, type=bool):
+                self.gradebook_view.set_order(by_average=True)
+            if self.settings.value("session/rankings_overall", False, type=bool):
+                self.rankings_view.set_overall(True)
+            if self.settings.value("session/seating_students_view", False, type=bool):
+                self.seating_view.set_students_view(True)
+            layout = self._saved_id("seating_layout")  # the seating plan shown last
+            if layout is not None:
+                self.seating_view.show_layout(layout)
             tab = self._saved_id("classes_tab")  # Students or Subjects
             if tab is not None and 0 <= tab < self.classes_view.tabs.count():
                 self.classes_view.tabs.setCurrentIndex(tab)
@@ -191,6 +227,12 @@ class MainWindow(QMainWindow):
         view_menu = self.menuBar().addMenu("&View")
         reload_action = view_menu.addAction("&Reload page", self.reload_page)
         reload_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Refresh))
+        view_menu.addSeparator()
+        # With Shift: Ctrl+Page Up / Page Down alone switch the tabs of the Attendance and Manage classes pages.
+        previous_class = view_menu.addAction("&Previous class", lambda: self.step_class(-1))
+        previous_class.setShortcut(QKeySequence("Ctrl+Shift+PgUp"))
+        next_class = view_menu.addAction("&Next class", lambda: self.step_class(1))
+        next_class.setShortcut(QKeySequence("Ctrl+Shift+PgDown"))
 
         help_menu = self.menuBar().addMenu("&Help")
         shortcuts = help_menu.addAction("&Keyboard shortcuts", self.show_shortcuts)
@@ -233,6 +275,22 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"{reminder} Save a copy, e.g. on a USB stick: File → Back up now (Ctrl+Shift+B)."
             )
+
+    def _config_changed(self, changed: AppConfig) -> None:
+        """A setting was changed on the Settings page."""
+        pass_mark_changed = changed.pass_mark != self.config.pass_mark
+        method_changed = changed.ranking_method != self.config.ranking_method
+        self.config = changed
+        if method_changed:
+            self.rankings_view.rankings.method = changed.ranking_method
+            self.rankings_view.refresh()
+        if pass_mark_changed:
+            self.gradebook_view.pass_mark = changed.pass_mark
+            self.gradebook_view.refresh()
+            self.dashboard_view.dashboard.pass_mark = changed.pass_mark
+            self.dashboard_view.refresh()
+            self.rankings_view.pass_mark = changed.pass_mark
+            self.rankings_view.refresh()
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.data_dir)))
@@ -292,6 +350,11 @@ class MainWindow(QMainWindow):
             self.settings.setValue("session/page", self.pages[self.stack.currentIndex()][0])
             self.settings.setValue("session/attendance_tab", self.attendance_view.tabs.currentIndex())
             self.settings.setValue("session/attendance_by_number", self.attendance_view.by_number)
+            self.settings.setValue("session/gradebook_by_average", self.gradebook_view.by_average)
+            self.settings.setValue("session/rankings_overall", self.rankings_view.overall)
+            layout = self.seating_view.layout_id
+            self.settings.setValue("session/seating_layout", "" if layout is None else layout)
+            self.settings.setValue("session/seating_students_view", self.seating_view.students_view)
             self.settings.setValue("session/classes_tab", self.classes_view.tabs.currentIndex())
             roster_view = self.classes_view.roster_view
             self.settings.setValue("session/roster_show_inactive", roster_view.show_inactive.isChecked())
@@ -333,6 +396,18 @@ class MainWindow(QMainWindow):
         self.attendance_view.register_combo.setCurrentIndex(0)  # the dashboard counts the daily register
         self.attendance_view.show_student_history(student_id)
 
+    def show_gradebook(self, subject_id: int, assignment_id: int = 0) -> None:
+        """Open the gradebook of `subject_id`, at `assignment_id`'s column if given."""
+        self.select_subject(subject_id)
+        self.show_page("Gradebook")
+        if assignment_id:
+            self.gradebook_view.go_to_assignment(assignment_id)
+
+    def show_student_scores(self, student_id: int) -> None:
+        """Open the current subject's gradebook at `student_id`'s row."""
+        self.show_page("Gradebook")
+        self.gradebook_view.go_to_student(student_id)
+
     def show_subjects(self) -> None:
         """Open Manage classes on the Subjects tab of the current class."""
         self.show_page("Manage classes")
@@ -341,6 +416,8 @@ class MainWindow(QMainWindow):
     def _data_replaced(self) -> None:
         """Reload every page after the whole database was swapped, e.g. by a restore."""
         self.attendance_view.clear_undo()  # its snapshots belong to the old data
+        self.gradebook_view.clear_undo()
+        self.seating_view.clear_undo()
         self.select_class(self.class_id)
 
     # --- classes -------------------------------------------------------------
@@ -362,6 +439,21 @@ class MainWindow(QMainWindow):
         for _name, page in self.pages:
             page.set_class(self.class_id)
         self.select_subject()
+
+    def step_class(self, step: int) -> None:
+        """Go to the next (1) or previous (-1) class of the current class's school year,
+        in Manage classes order, round from the last to the first; the page shown stays."""
+        current = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if current is None:
+            return
+        classes = self.roster.list_classes(current.term)
+        ids = [c.id for c in classes]
+        if len(ids) < 2:
+            self.statusBar().showMessage(f"{current.display_name} is the only class of its school year", 4000)
+            return
+        chosen = classes[(ids.index(current.id) + step) % len(ids)]
+        self.select_class(chosen.id)
+        self.statusBar().showMessage(f"Class: {chosen.display_name}", 4000)
 
     def new_class(self, term: str | None = None) -> None:
         """Ask for a new class, suggesting `term` (default: the newest school year)."""

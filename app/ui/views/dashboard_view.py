@@ -25,7 +25,6 @@ from app.services.dashboard import (
     EXCUSED,
     GRADE_SCALE,
     LATE,
-    LOW_AVERAGE,
     PRESENT,
     AttentionItem,
     DashboardService,
@@ -52,7 +51,7 @@ KPI_HELP = {
         "The mean of the students' averages. Each student's average is the mean of their subject "
         "averages, weighted by grade category; work not handed in is left out, unlike a score of 0."
     ),
-    "Missing work": "Scores not entered for dated assignments up to today, over all active students.",
+    "Missing work": "Scores not entered for assignments dated before today, over all active students.",
 }
 
 
@@ -207,12 +206,33 @@ class ClickableRow(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class ClickableLabel(QLabel):
+    """A bold label that reports left clicks and shows a pointing hand, for names that open something."""
+
+    clicked = Signal()
+
+    def __init__(self, text: str, tip: str, parent: QWidget | None = None):
+        super().__init__(text, parent)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(tip)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class DashboardView(QWidget):
     """Overview of the selected class: key numbers, attendance, grades, students to check on."""
 
     navigate_requested = Signal(str)  # page name, e.g. "Attendance"
     day_requested = Signal(object)  # a date whose register to open on the Attendance page
     history_requested = Signal(int)  # a student whose attendance history to show
+    gradebook_requested = Signal(int, int)  # a subject whose gradebook to open, and an assignment in it (0: none)
     create_class_requested = Signal()
     manage_subjects_requested = Signal()
 
@@ -413,7 +433,7 @@ class DashboardView(QWidget):
         self.chart.set_days(summary.attendance_days, today)
         self._show_attention(summary.attention)
         self._show_assignments(summary.recent_assignments, summary.active_students)
-        self._show_grades(summary.grade_distribution)
+        self._show_grades(summary.grade_distribution, summary.grade_names)
         self._show_subjects(summary.subjects)
 
     # --- Qt events -------------------------------------------------------------
@@ -552,7 +572,9 @@ class DashboardView(QWidget):
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(caption, 0, col)
         for row, a in enumerate(assignments, start=1):
-            grid.addWidget(style.label(a.title, bold=True), row, 0)
+            title = ClickableLabel(a.title, f"Click to open {a.title} in the {a.subject} gradebook")
+            title.clicked.connect(lambda sid=a.subject_id, aid=a.id: self.gradebook_requested.emit(sid, aid))
+            grid.addWidget(title, row, 0)
             subject = style.label(a.subject, 0.92, muted=True)
             subject.setToolTip(a.category)
             grid.addWidget(subject, row, 1)
@@ -572,12 +594,16 @@ class DashboardView(QWidget):
             grid.addWidget(average, row, 4)
         grid.setColumnStretch(0, 1)
 
-    def _show_grades(self, distribution: dict[str, int]) -> None:
+    def _show_grades(self, distribution: dict[str, int], names: dict[str, list[str]]) -> None:
+        """How many students have each letter grade; pointing at a row names them, best first."""
         biggest = max(distribution.values(), default=0) or 1
         for letter, (meter, count) in self.grade_rows.items():
             n = distribution.get(letter, 0)
             meter.set_value(n, biggest, "warn" if letter in ("D", "F") else "accent")
             count.setText(str(n))
+            tip = f"{letter}:\n" + "\n".join(names[letter]) if names.get(letter) else ""
+            meter.setToolTip(tip)
+            count.setToolTip(tip)
 
     def _show_subjects(self, subjects: list[SubjectSummary]) -> None:
         grid = self.subjects_grid
@@ -589,20 +615,22 @@ class DashboardView(QWidget):
             grid.addWidget(hint, 0, 0)
             return
 
-        for col, text in enumerate(("Subject", "Teacher", "Class average", f"Below {LOW_AVERAGE:.0f}%")):
+        for col, text in enumerate(("Subject", "Teacher", "Class average", f"Below {self.dashboard.pass_mark:.0f}%")):
             caption = style.caption(text)
             if col == 3:
                 caption.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(caption, 0, col)
         for row, s in enumerate(subjects, start=1):
-            grid.addWidget(style.label(s.subject.name, bold=True), row, 0)
+            name = ClickableLabel(s.subject.name, f"Click to open the {s.subject.name} gradebook")
+            name.clicked.connect(lambda sid=s.subject.id: self.gradebook_requested.emit(sid, 0))
+            grid.addWidget(name, row, 0)
             grid.addWidget(style.label(s.subject.teacher or "You", 0.92, muted=True), row, 1)
 
             average = QHBoxLayout()
             average.setSpacing(10)
             meter = Meter(height=8)
             if s.average is not None:
-                color = "danger" if s.average < LOW_AVERAGE else "warn" if s.average < 70 else "accent"
+                color = "danger" if s.average < self.dashboard.pass_mark else "warn" if s.average < 70 else "accent"
                 meter.set_value(s.average, 100, color)
             average.addWidget(meter, stretch=1)
             value = style.label("No scores" if s.average is None else f"{s.average:.0f}% {letter_grade(s.average)}", 0.92, bold=s.average is not None, muted=s.average is None)
@@ -614,5 +642,6 @@ class DashboardView(QWidget):
             below.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if s.below_pass:
                 style.set_color(below, style.color(self, "danger"))
+                below.setToolTip(f"Under {self.dashboard.pass_mark:.0f}%:\n" + "\n".join(s.below_pass_names))
             grid.addWidget(below, row, 3)
         grid.setColumnStretch(2, 1)

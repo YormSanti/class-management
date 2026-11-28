@@ -30,6 +30,7 @@ class AppConfig:
     data_dir: Path
     ranking_method: str = "competition"
     theme: str = "system"
+    pass_mark: float = 60.0  # percent: an average under this is failing
 
     @property
     def db_path(self) -> Path:
@@ -64,6 +65,9 @@ def load_config(path: Path | None = None) -> AppConfig | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
         data_dir = Path(raw["data_dir"])
+        # "" or a relative path would put the data wherever the app happens to be started.
+        if not data_dir.is_absolute():
+            raise ValueError(f"the data folder {raw['data_dir']!r} isn't a full path")
     except FileNotFoundError:
         return None
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -76,7 +80,10 @@ def load_config(path: Path | None = None) -> AppConfig | None:
     theme = raw.get("theme", "system")
     if theme not in THEMES:
         theme = "system"
-    return AppConfig(data_dir=data_dir, ranking_method=ranking_method, theme=theme)
+    pass_mark = raw.get("pass_mark", 60.0)
+    if not isinstance(pass_mark, (int, float)) or isinstance(pass_mark, bool) or not 0 <= pass_mark <= 100:
+        pass_mark = 60.0
+    return AppConfig(data_dir=data_dir, ranking_method=ranking_method, theme=theme, pass_mark=float(pass_mark))
 
 
 def save_config(config: AppConfig, path: Path | None = None) -> None:

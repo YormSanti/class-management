@@ -32,6 +32,7 @@ class AssignmentStats:
     max_score: float
     submitted: int  # active students with a score (not NULL)
     average_percent: float | None
+    subject_id: int = 0
 
 
 class DashboardRepository:
@@ -138,8 +139,10 @@ class DashboardRepository:
             for r in rows
         ]
 
-    def missing_by_student(self, class_id: int, on_or_before: date) -> dict[int, int]:
-        """{student_id: number of dated assignments up to `on_or_before` without a score}."""
+    def missing_by_student(self, class_id: int, today: date) -> dict[int, int]:
+        """{student_id: number of assignments dated before `today` with nothing entered}.
+        One dated today isn't missing yet: its scores are often entered later that day.
+        An exempt student (a NULL score) isn't missing anything."""
         rows = self.conn.execute(
             """
             SELECT s.id AS student_id, count(*) AS n
@@ -148,18 +151,19 @@ class DashboardRepository:
             JOIN assignments a ON a.subject_id = sub.id
             LEFT JOIN scores sc ON sc.assignment_id = a.id AND sc.student_id = s.id
             WHERE s.class_id = ? AND s.active = 1
-              AND a.date IS NOT NULL AND a.date <= ? AND sc.score IS NULL
+              AND a.date IS NOT NULL AND a.date < ? AND sc.id IS NULL
             GROUP BY s.id
             """,
-            (class_id, on_or_before.isoformat()),
+            (class_id, today.isoformat()),
         )
         return {r["student_id"]: r["n"] for r in rows}
 
-    def recent_assignments(self, class_id: int, limit: int) -> list[AssignmentStats]:
-        """Newest assignments first; undated ones come last."""
+    def recent_assignments(self, class_id: int, limit: int, on_or_before: date) -> list[AssignmentStats]:
+        """Newest assignments first; undated ones come last. Assignments dated after
+        `on_or_before`, e.g. next week's test, aren't recent and are left out."""
         rows = self.conn.execute(
             """
-            SELECT a.id, a.title, sub.name AS subject, c.name AS category, a.date, a.max_score,
+            SELECT a.id, a.title, a.subject_id, sub.name AS subject, c.name AS category, a.date, a.max_score,
                    count(s.id) AS submitted,
                    avg(CASE WHEN s.id IS NOT NULL THEN sc.score * 100.0 / a.max_score END) AS avg_pct
             FROM assignments a
@@ -167,12 +171,12 @@ class DashboardRepository:
             JOIN categories c ON c.id = a.category_id
             LEFT JOIN scores sc ON sc.assignment_id = a.id AND sc.score IS NOT NULL
             LEFT JOIN students s ON s.id = sc.student_id AND s.active = 1
-            WHERE sub.class_id = ?
+            WHERE sub.class_id = ? AND (a.date IS NULL OR a.date <= ?)
             GROUP BY a.id
             ORDER BY a.date IS NULL, a.date DESC, a.id DESC
             LIMIT ?
             """,
-            (class_id, limit),
+            (class_id, on_or_before.isoformat(), limit),
         )
         return [
             AssignmentStats(
@@ -184,6 +188,7 @@ class DashboardRepository:
                 max_score=r["max_score"],
                 submitted=r["submitted"],
                 average_percent=r["avg_pct"],
+                subject_id=r["subject_id"],
             )
             for r in rows
         ]

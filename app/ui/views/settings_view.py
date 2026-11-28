@@ -3,7 +3,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -32,6 +33,7 @@ from app.services.backup import (
     BackupError,
     backup_time,
     copy_database,
+    data_file_problem,
     is_before_restore,
     list_auto_backups,
 )
@@ -199,6 +201,22 @@ class SettingsView(QWidget):
             lambda button, checked: checked and self._choose("ranking_method", self.ranking_buttons, button)
         )
 
+        # --- grades ---
+        grades = style.Panel("Grades", "Averages under the pass mark are shown in red in the gradebook and pointed out on the dashboard.")
+        self.pass_mark = QSpinBox()
+        self.pass_mark.setRange(0, 100)
+        self.pass_mark.setSuffix(" %")
+        self.pass_mark.setValue(round(config.pass_mark))
+        # Typed marks apply on Enter or leaving the box, not at every digit: typing 75
+        # would otherwise save 7 first and recolour every page on the way.
+        self.pass_mark.setKeyboardTracking(False)
+        self.pass_mark.valueChanged.connect(self._pass_mark_changed)
+        pass_row = QHBoxLayout()
+        pass_row.addWidget(QLabel("Pass mark"))
+        pass_row.addWidget(self.pass_mark)
+        pass_row.addStretch()
+        grades.body.addLayout(pass_row)
+
         # --- appearance ---
         appearance = style.Panel("Appearance")
         self.theme_group = QButtonGroup(self)
@@ -239,7 +257,7 @@ class SettingsView(QWidget):
         column.setSpacing(16)
         column.addWidget(style.caption("Classroom Manager"))
         column.addWidget(style.label("Settings", 1.9))
-        for panel in (data, backups, appearance, rankings, about):
+        for panel in (data, backups, appearance, grades, rankings, about):
             column.addWidget(panel)
         column.addStretch()
         content.setMaximumWidth(760)
@@ -338,6 +356,15 @@ class SettingsView(QWidget):
             QMessageBox.information(self, "Move data", "Your data is already in that folder.")
             return
         target = new_dir / DB_FILENAME
+        if target.exists() and (problem := data_file_problem(target)):
+            # Switching would leave the app unable to open its data next time.
+            QMessageBox.warning(
+                self,
+                "Move data",
+                f"{new_dir} already has a {DB_FILENAME}, but that file {problem}.\n\n"
+                "Your data stays where it is. Choose another folder, or move that file away first.",
+            )
+            return
         if target.exists():
             question = (
                 f"{new_dir} already has Classroom Manager data.\n\nSwitch to the data in that folder? "
@@ -430,20 +457,31 @@ class SettingsView(QWidget):
     def _choose(self, field: str, buttons: dict[str, QRadioButton], button: QRadioButton) -> None:
         """Save the option picked with `button` as the config's `field`, and use it."""
         value = next(v for v, b in buttons.items() if b is button)
-        if value == getattr(self.config, field):
+        if not self._set(field, value):
+            buttons[getattr(self.config, field)].setChecked(True)  # put it back
             return
+        if field == "theme" and (app := QApplication.instance()) is not None:
+            apply_theme(app, value)
+
+    def _pass_mark_changed(self, value: int) -> None:
+        if not self._set("pass_mark", float(value)):
+            with QSignalBlocker(self.pass_mark):
+                self.pass_mark.setValue(round(self.config.pass_mark))
+
+    def _set(self, field: str, value) -> bool:
+        """Save `value` as the config's `field` and tell the window; False if it couldn't be saved."""
+        if value == getattr(self.config, field):
+            return True
         changed = replace(self.config, **{field: value})
         if self.save is not None:
             try:
                 self.save(changed)
             except OSError as exc:
                 QMessageBox.warning(self, "Settings", f"The setting could not be saved:\n{exc}")
-                buttons[getattr(self.config, field)].setChecked(True)  # put it back
-                return
+                return False
         self.config = changed
-        if field == "theme" and (app := QApplication.instance()) is not None:
-            apply_theme(app, value)
         self.config_changed.emit(changed)
+        return True
 
     # --- Qt events -------------------------------------------------------------
 

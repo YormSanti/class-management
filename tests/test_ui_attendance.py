@@ -1,0 +1,307 @@
+"""The Attendance page, driven offscreen in the real window."""
+
+import os
+import sqlite3
+from collections.abc import Iterator
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from app.config import AppConfig  # noqa: E402
+from app.models import AttendanceStatus, SchoolClass, Student  # noqa: E402
+from app.repositories.attendance_repo import AttendanceRepository  # noqa: E402
+from app.repositories.dashboard_repo import DashboardRepository  # noqa: E402
+from app.repositories.gradebook_repo import GradebookRepository  # noqa: E402
+from app.repositories.student_repo import StudentRepository  # noqa: E402
+from app.repositories.subject_repo import SubjectRepository  # noqa: E402
+from app.services.attendance import AttendanceService  # noqa: E402
+from app.services.dashboard import DashboardService  # noqa: E402
+from app.services.gradebook import GradebookService  # noqa: E402
+from app.services.roster import RosterService  # noqa: E402
+from app.ui.main_window import MainWindow  # noqa: E402
+
+FRIDAY = date(2026, 11, 6)
+
+
+@pytest.fixture(scope="session")
+def qapp() -> QApplication:
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def window(
+    qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
+) -> Iterator[MainWindow]:
+    students, subjects = StudentRepository(conn), SubjectRepository(conn)
+    window = MainWindow(
+        roster,
+        DashboardService(DashboardRepository(conn), students, subjects),
+        AttendanceService(AttendanceRepository(conn), students, subjects),
+        GradebookService(GradebookRepository(conn), students, subjects),
+        AppConfig(data_dir=tmp_path),
+    )
+    window.show()
+    yield window
+    window.close()
+    window.deleteLater()
+
+
+def _page(window: MainWindow, roster: RosterService, names=("Ada Lovelace", "Grace Hopper"), day=FRIDAY):
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    for name in names:
+        first, last = name.split()
+        roster.save_student(Student(class_id=class_id, first_name=first, last_name=last))
+    window.select_class(class_id)
+    window.show_page("Attendance")
+    view = window.attendance_view
+    view.set_day(day)
+    return view
+
+
+def _statuses(view) -> list[str | None]:
+    return [row.status.value if row.status else None for row in view.register.rows]
+
+
+def test_keys_mark_nobody_when_the_find_box_matches_no_one(window: MainWindow, roster: RosterService):
+    view = _page(window, roster)
+    view.find_edit.setText("zzz")
+    assert all(view.table.isRowHidden(i) for i in range(view.table.rowCount()))
+    QTest.keyClick(view.find_edit, Qt.Key.Key_Return)
+    QTest.keyClick(view.table, Qt.Key.Key_A)
+    assert _statuses(view) == [None, None]
+    view.attendance.mark(view.register.rows[0].student.id, FRIDAY, AttendanceStatus.LATE)
+    view.refresh()
+    QTest.keyClick(view.table, Qt.Key.Key_Delete)
+    assert _statuses(view) == ["late", None]
+
+    view.find_edit.clear()  # everyone shown again: the keys work as before
+    QTest.keyClick(view.table, Qt.Key.Key_A)
+    assert _statuses(view) == ["absent", None]
+
+
+def test_find_ignores_accents_and_name_order(window: MainWindow, roster: RosterService):
+    view = _page(window, roster, ("José Martí", "Grace Hopper"))
+    view.find_edit.setText("jose")
+    assert [view.table.isRowHidden(i) for i in range(2)] == [True, False]  # Hopper, Martí
+    view.find_edit.setText("Marti, Jose")
+    assert [view.table.isRowHidden(i) for i in range(2)] == [True, False]
+    view.find_edit.setText("")
+    assert [view.table.isRowHidden(i) for i in range(2)] == [False, False]
+
+
+def _shortcut(view, keys: str):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    return next(s for s in view.findChildren(QShortcut) if s.key() == QKeySequence(keys))
+
+
+def test_ctrl_shift_c_copies_nothing_before_anyone_is_marked(window: MainWindow, roster: RosterService):
+    view = _page(window, roster)
+    QApplication.clipboard().setText("before")
+    _shortcut(view, "Ctrl+Shift+C").activated.emit()
+    assert QApplication.clipboard().text() == "before"  # as the Copy absences button, which is disabled
+    assert not view.status_label.text().startswith("Copied")
+
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    _shortcut(view, "Ctrl+Shift+C").activated.emit()
+    assert "Grace Hopper" in QApplication.clipboard().text()
+    assert view.status_label.text().startswith("Copied")
+
+
+def test_mark_the_rest_present_asks_first_on_a_weekend(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _page(window, roster, day=date(2026, 11, 7))  # a Saturday
+    asked = []
+
+    def answer(_parent, _title, text, *args):
+        asked.append(text)
+        return reply
+
+    monkeypatch.setattr(QMessageBox, "question", answer)
+    reply = QMessageBox.StandardButton.No
+    view.mark_rest_button.click()
+    assert asked == ["Saturday 7 November is a weekend day. Mark everyone who isn't marked as present anyway?"]
+    assert _statuses(view) == [None, None]
+
+    reply = QMessageBox.StandardButton.Yes
+    view.mark_rest_button.click()
+    assert _statuses(view) == ["present", "present"]
+
+    view.set_day(FRIDAY)  # a school day in the past: no question
+    view.mark_rest_button.click()
+    assert len(asked) == 2 and _statuses(view) == ["present", "present"]
+
+
+def test_h_on_the_month_tab_shows_the_students_history(window: MainWindow, roster: RosterService):
+    view = _page(window, roster)
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    shown = []
+    month.history_requested.disconnect()  # instead of the dialog, which would wait for a click
+    month.history_requested.connect(shown.append)
+    month.table.setCurrentCell(1, 1 + month.register.days.index(FRIDAY))  # Lovelace, on a day
+    QTest.keyClick(month.table, Qt.Key.Key_H)
+    assert shown == [month.register.rows[1].student.id]
+    assert _statuses(view) == [None, None]  # H marks nothing
+
+    month.table.setCurrentCell(len(month.register.rows), 1)  # the "Absent that day" row: no student
+    QTest.keyClick(month.table, Qt.Key.Key_H)
+    assert len(shown) == 1
+
+
+def test_a_first_day_past_the_last_moves_the_last_along(qapp: QApplication):
+    from PySide6.QtCore import QDate
+
+    from app.ui.dialogs.mark_days_dialog import MarkDaysDialog
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    marks = MarkDaysDialog("Ada Lovelace", "Daily (homeroom)", FRIDAY, today=FRIDAY)
+    period = PeriodDialog("Export", date(2026, 11, 2), FRIDAY, today=FRIDAY)
+    for dialog in (marks, period):
+        dialog.start_edit.setDate(QDate(2026, 11, 10))
+        assert (dialog.start, dialog.end) == (date(2026, 11, 10), date(2026, 11, 10))
+        dialog.start_edit.setDate(QDate(2026, 11, 9))  # back before the last day: the last stays
+        assert dialog.end == date(2026, 11, 10)
+        dialog.end_edit.setDate(QDate(2026, 11, 5))  # a last day before the first is still pointed out
+        assert dialog.start == date(2026, 11, 9)
+    assert marks.days_label.text() == "The last day is before the first."
+    assert period.problem.text() == "The last day is before the first."
+    marks.deleteLater()
+    period.deleteLater()
+
+
+def test_a_note_that_cant_be_saved_isnt_left_showing(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.services.attendance import AttendanceError
+
+    view = _page(window, roster)
+    buttons, note = view._row_widgets[0]
+    buttons.buttons[AttendanceStatus.ABSENT].click()
+    note.setText("Dentist")
+    note.editingFinished.emit()
+
+    def refuse(*_args):
+        raise AttendanceError("Grace Hopper is inactive. Reactivate them to take attendance.")
+
+    told = []
+    monkeypatch.setattr(view.attendance, "set_note", refuse)
+    monkeypatch.setattr(QMessageBox, "information", lambda _parent, _title, text: told.append(text))
+    note.setText("Sick")
+    note.editingFinished.emit()
+    assert told == ["Grace Hopper is inactive. Reactivate them to take attendance."]
+    assert note.text() == "Dentist" and view.register.rows[0].note == "Dentist"
+    assert view.undo_button.toolTip().startswith("Undo: note for Grace Hopper")  # the saved note, not the refused one
+
+
+def test_a_month_picked_in_the_history_opens_on_the_month_tab(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _page(window, roster)
+    student = view.register.rows[0].student.id
+    maths = view.register_combo.itemData(1)
+    view.attendance.mark(student, date(2026, 9, 14), AttendanceStatus.ABSENT, maths)
+    view.attendance.mark(student, FRIDAY, AttendanceStatus.LATE, maths)
+
+    history = view.attendance.student_history(student, maths)
+    dialog = AttendanceHistoryDialog(history, "Maths", subject_id=maths)
+    assert [dialog.months_table.item(i, 0).text() for i in range(2)] == ["November 2026", "September 2026"]
+    dialog.months_table.setCurrentCell(1, 0)
+    QTest.keyClick(dialog.months_table, Qt.Key.Key_Return)
+    assert dialog.chosen_month == date(2026, 9, 1) and dialog.chosen_day is None
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+    def exec_picking_september(self):
+        self._open_month(1, 0)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", exec_picking_september)
+    view.register_combo.setCurrentIndex(1)
+    view.show_history(0)  # from the Day tab, in the Maths register
+    assert view.tabs.currentWidget() is view.month_view
+    assert (view.month_view.year, view.month_view.month) == (2026, 9)
+    assert view.subject_id == maths and view.day == FRIDAY  # the day shown stays
+
+
+def test_a_day_picked_in_the_history_opens_on_the_day_tab_from_the_month_tab(
+    window: MainWindow, roster: RosterService, monkeypatch: pytest.MonkeyPatch
+):
+    from PySide6.QtWidgets import QDialog
+
+    from app.ui.dialogs.attendance_history_dialog import AttendanceHistoryDialog
+
+    view = _page(window, roster)
+    student = view.register.rows[0].student.id
+    view.attendance.mark(student, date(2026, 11, 3), AttendanceStatus.ABSENT)
+    view.refresh()
+
+    def exec_picking_the_absence(self):
+        self._open_day(0, 0)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AttendanceHistoryDialog, "exec", exec_picking_the_absence)
+    view.tabs.setCurrentWidget(view.month_view)
+    view.month_view.history_requested.emit(student)  # a name double-clicked on the Month tab
+    assert view.tabs.currentIndex() == 0
+    assert view.day == date(2026, 11, 3)
+
+
+def test_ctrl_f_on_the_month_tab_finds_a_student_there(window: MainWindow, roster: RosterService):
+    view = _page(window, roster, names=("Ada Lovelace", "Grace Hopper", "José Ruiz"))
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    month.set_month(FRIDAY.year, FRIDAY.month)
+    friday = 1 + month.register.days.index(FRIDAY)
+    month.table.setCurrentCell(0, friday)
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    month.table.setFocus()
+    QTest.keyClick(month.table, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert view.tabs.currentWidget() is month  # stays on the Month tab
+    assert month.search.hasFocus()
+    QTest.keyClicks(month.search, "jose")
+    assert month.register.rows[month.table.currentRow()].student.full_name == "José Ruiz"
+    assert month.table.currentColumn() == friday  # still the day picked
+    assert all(not month.table.isRowHidden(r) for r in range(month.table.rowCount()))
+    QTest.keyClick(month.search, Qt.Key.Key_Return)
+    assert month.table.hasFocus()
+
+    view.tabs.setCurrentIndex(0)
+    QTest.keyClick(view.table, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert view.find_edit.hasFocus()
+
+
+def test_the_month_is_exported_as_an_excel_workbook_if_chosen(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    view = _page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()  # Grace Hopper, Friday
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "nov"), "Excel workbooks (*.xlsx)"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    month.export_button.click()
+    sheet = load_workbook(tmp_path / "nov.xlsx").active
+    assert sheet.title == "November 2026" and sheet.freeze_panes == "D2"
+    rows = list(sheet.values)
+    friday = rows[0].index(FRIDAY.isoformat())
+    assert rows[1][1:3] == ("Hopper", "Grace") and rows[1][friday] == "A"

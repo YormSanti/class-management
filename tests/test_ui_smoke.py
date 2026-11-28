@@ -15,16 +15,22 @@ from app.config import AppConfig  # noqa: E402
 from app.models import SchoolClass, Student, Subject  # noqa: E402
 from app.repositories.attendance_repo import AttendanceRepository  # noqa: E402
 from app.repositories.dashboard_repo import DashboardRepository  # noqa: E402
+from app.repositories.gradebook_repo import GradebookRepository  # noqa: E402
 from app.repositories.student_repo import StudentRepository  # noqa: E402
 from app.repositories.subject_repo import SubjectRepository  # noqa: E402
 from app.services.attendance import AttendanceService  # noqa: E402
 from app.services.dashboard import DashboardService  # noqa: E402
+from app.services.gradebook import GradebookService  # noqa: E402
 from app.services.roster import RosterService  # noqa: E402
 from app.ui.main_window import MainWindow  # noqa: E402
 
 
 def _attendance(conn: sqlite3.Connection) -> AttendanceService:
     return AttendanceService(AttendanceRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+
+
+def _grades(conn: sqlite3.Connection) -> GradebookService:
+    return GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +43,7 @@ def window(
     qapp: QApplication, conn: sqlite3.Connection, roster: RosterService, tmp_path: Path
 ) -> Iterator[MainWindow]:
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path))
     window.show()
     yield window
     window.close()
@@ -265,6 +271,26 @@ def test_roster_export_writes_csv(
     assert "Lovelace" in (tmp_path / "out.csv").read_text(encoding="utf-8-sig")
 
 
+def test_roster_export_writes_an_excel_workbook_if_chosen(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    class_id = roster.save_class(SchoolClass(name="7/B", term="2026")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace", notes="Glasses\x07"))
+    window.select_class(class_id)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "out"), "Excel workbooks (*.xlsx)"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    window.classes_view.roster_view.export_csv()
+    sheet = load_workbook(tmp_path / "out.xlsx").active
+    assert sheet.title == "7-B"
+    assert list(sheet.values) == [
+        ("Student #", "Last name", "First name", "Status", "Notes"),
+        (None, "Lovelace", "Ada", "Active", "Glasses"),  # a character Excel can't keep is left out
+    ]
+
+
 def test_roster_export_follows_the_table_order(
     window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -441,7 +467,7 @@ def test_window_size_and_splitter_are_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show()
     # Restoring keeps the window on screen, and the offscreen screen is only 800x600.
     first.resize(first.minimumSizeHint().width(), 520)
@@ -450,7 +476,7 @@ def test_window_size_and_splitter_are_remembered(
     size, sizes = first.size(), first.splitter.sizes()
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     second.show()
     qapp.processEvents()
     assert second.size() == size and size.height() == 520
@@ -465,17 +491,17 @@ def test_last_page_is_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show_page("Settings")
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.stack.currentWidget() is second.settings_view
     assert second.nav_bottom.selectedItems()
     second.close()
 
     settings.setValue("session/page", "No such page")  # e.g. a page renamed in a later version
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert third.stack.currentWidget() is third.dashboard_view
     third.close()
 
@@ -486,17 +512,17 @@ def test_attendance_tab_is_remembered(qapp: QApplication, conn: sqlite3.Connecti
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
     roster.save_class(SchoolClass(name="7B"))
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show_page("Attendance")
     first.attendance_view.tabs.setCurrentWidget(first.attendance_view.month_view)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.attendance_view.tabs.currentWidget() is second.attendance_view.month_view
     second.close()
 
     settings.setValue("session/attendance_tab", 9)
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert third.attendance_view.tabs.currentIndex() == 0
     third.close()
 
@@ -506,12 +532,12 @@ def test_show_inactive_is_remembered(qapp: QApplication, conn: sqlite3.Connectio
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert not first.classes_view.roster_view.show_inactive.isChecked()
     first.classes_view.roster_view.show_inactive.setChecked(True)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.classes_view.roster_view.show_inactive.isChecked()
     second.close()
 
@@ -523,11 +549,11 @@ def test_manage_classes_tab_is_remembered(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.show_subjects()
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.classes_view.tabs.currentWidget() is second.classes_view.subject_box
     second.close()
 
@@ -537,17 +563,17 @@ def test_class_list_sort_is_remembered(qapp: QApplication, conn: sqlite3.Connect
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.classes_view.roster_view.table.sortByColumn(0, Qt.SortOrder.DescendingOrder)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     proxy = second.classes_view.roster_view.proxy
     assert (proxy.sortColumn(), proxy.sortOrder()) == (0, Qt.SortOrder.DescendingOrder)
     second.close()
 
     settings.setValue("session/roster_sort", "99 asc")
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert third.classes_view.roster_view.proxy.sortColumn() == 1  # last name, as usual
     third.close()
 
@@ -563,17 +589,17 @@ def test_class_and_subject_are_remembered(
     class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027"), "Art").id
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
 
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.select_class(class_id)
     first.select_subject(science)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert (second.class_id, second.subject_id) == (class_id, science)
     second.close()
 
     roster.delete_class(class_id)  # a deleted class falls back to the first one
-    third = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    third = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert roster.get_class(third.class_id).name == "7A"
     third.close()
 
@@ -590,7 +616,7 @@ def test_back_up_now_copies_the_database(
 
     roster.save_class(SchoolClass(name="7B"))
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=db_path.parent))
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=db_path.parent))
     usb = tmp_path / "usb"
     usb.mkdir()
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(usb / "before trip"), ""))
@@ -904,7 +930,7 @@ def test_settings_page_saves_ranking_method(
     path = tmp_path / "config.json"
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     window = MainWindow(
-        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+        roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
     )
     try:
         view = window.settings_view
@@ -928,7 +954,7 @@ def test_settings_page_keeps_old_choice_when_saving_fails(
     warnings = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=fail)
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), save_config=fail)
     try:
         view = window.settings_view
         view.ranking_buttons["dense"].click()
@@ -974,6 +1000,27 @@ def test_attendance_export_period(window: MainWindow, roster: RosterService, tmp
     assert rows[2][1:] == ["Lovelace", "Ada", "1", "0", "0", "0", "0", "100"]
 
 
+def test_attendance_export_period_as_an_excel_workbook(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.mark_rest_button.click()
+    monkeypatch.setattr(PeriodDialog, "exec", lambda dialog: True)  # the month shown
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(tmp_path / "term.xlsx"), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    view.month_view.export_period()
+    sheet = load_workbook(tmp_path / "term.xlsx").active
+    assert sheet.title == "1 Nov 2026 to 30 Nov 2026"
+    rows = list(sheet.values)
+    assert rows[1][1:] == ("Hopper", "Grace", 0, 0, 1, 0, 0, 0)
+    assert rows[3][1] == "Whole class"
+
+
 def test_attendance_month_saves_pdf(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
 
@@ -1005,7 +1052,7 @@ def test_settings_page_restores_a_backup(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     window = MainWindow(
-        roster, dashboard, _attendance(conn), config,
+        roster, dashboard, _attendance(conn), _grades(conn), config,
         restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
     )  # fmt: skip
     questions, infos = [], []
@@ -1036,7 +1083,7 @@ def _window_saving_config(conn, roster, tmp_path, path):
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     return MainWindow(
-        roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
+        roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), save_config=lambda c: save_config(c, path)
     )
 
 
@@ -1077,9 +1124,14 @@ def test_settings_page_switches_to_existing_data_without_overwriting(
 
     from app.config import load_config
 
+    from app.services.backup import copy_database
+
     other = tmp_path / "other"
     other.mkdir()
-    (other / "classroom.db").write_bytes(b"theirs")
+    copy_database(tmp_path / "classroom.db", other / "classroom.db")  # Classroom Manager data
+    with sqlite3.connect(other / "classroom.db") as theirs:
+        theirs.execute("INSERT INTO classes (name) VALUES ('Theirs')")
+    theirs.close()
     questions = []
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(other))
     monkeypatch.setattr(QMessageBox, "question", lambda *a: questions.append(a[2]) or QMessageBox.StandardButton.Yes)
@@ -1088,7 +1140,9 @@ def test_settings_page_switches_to_existing_data_without_overwriting(
     try:
         window.settings_view.move_data()
         assert "already has Classroom Manager data" in questions[0]
-        assert (other / "classroom.db").read_bytes() == b"theirs"
+        theirs = sqlite3.connect(other / "classroom.db")
+        assert [r[0] for r in theirs.execute("SELECT name FROM classes")] == ["Theirs"]
+        theirs.close()
         assert load_config(tmp_path / "config.json").data_dir == other
     finally:
         window.close()
@@ -1579,6 +1633,39 @@ def test_manage_classes_exports_the_school_year(
     assert told[0].startswith("Saved 2 students of 2 classes to")
 
 
+def test_manage_classes_exports_the_school_year_as_a_sheet_per_class(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    b = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    c = roster.save_class(SchoolClass(name="7C", term="2026-2027")).id
+    roster.save_class(SchoolClass(name="6A", term="2025-2026"))
+    roster.save_student(Student(class_id=b, first_name="Ada", last_name="Lovelace"))
+    roster.save_student(Student(class_id=c, first_name="Alan", last_name="Turing"))
+    window.select_class(b)
+    saved = tmp_path / "year.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    window.classes_view.year = "2026-2027"
+    window.classes_view.export_year()
+    workbook = load_workbook(saved)
+    assert workbook.sheetnames == ["7B", "7C"]
+    assert list(workbook["7C"].values)[1] == (None, "Turing", "Alan", "Active", None)
+
+
+def test_workbook_sheets_get_names_excel_accepts_once_each(tmp_path: Path):
+    from openpyxl import load_workbook
+
+    from app.services.export import write_year_roster_xlsx
+
+    long = "A class with a name far longer than Excel allows"
+    write_year_roster_xlsx(tmp_path / "y.xlsx", [("7/B", []), ("7:B", []), (long, []), (long, [])])
+    names = load_workbook(tmp_path / "y.xlsx").sheetnames
+    assert names == ["7-B", "7-B (2)", long[:31], long[:27] + " (2)"]
+
+
 def test_class_dialog_asks_before_a_mistyped_school_year(
     qapp: QApplication, roster: RosterService, monkeypatch: pytest.MonkeyPatch
 ):
@@ -1711,14 +1798,14 @@ def test_back_up_now_remembers_the_folder(
         return str(usb / "copy"), ""
 
     monkeypatch.setattr(QFileDialog, "getSaveFileName", pick)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     first.back_up_now()
     first.close()
     assert (usb / "copy.db").exists()
     assert Path(asked[0]).parent == Path.home()
     assert re.fullmatch(r"Classroom backup \d{4}-\d\d-\d\d \d\d-\d\d\.db", Path(asked[0]).name)
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     second.back_up_now()
     second.close()
     assert Path(asked[1]).parent == usb
@@ -1887,7 +1974,7 @@ def test_window_lengths_in_labels_follow_the_settings(
     monkeypatch.setattr(attendance_view, "RECENT_DAYS", 14)
     monkeypatch.setattr(dashboard_view, "CHART_DAYS", 5)
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
-    window = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path))
+    window = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path))
     try:
         assert window.attendance_view.table.horizontalHeaderItem(4).text() == "Last 14 days"
         labels = [w.text() for w in window.dashboard_view.findChildren(QLabel)]
@@ -1988,7 +2075,7 @@ def test_settings_page_restores_a_backup_from_any_file(
     config = AppConfig(data_dir=tmp_path)
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     window = MainWindow(
-        roster, dashboard, _attendance(conn), config,
+        roster, dashboard, _attendance(conn), _grades(conn), config,
         restore_backup=lambda backup: restore_backup(backup, conn, config.db_path, config.backup_dir),
     )  # fmt: skip
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
@@ -2271,7 +2358,7 @@ def test_status_bar_reminds_to_back_up_elsewhere(
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
 
     def open_window() -> MainWindow:
-        return MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+        return MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
 
     empty = open_window()  # nothing to back up yet
     assert empty.statusBar().currentMessage().startswith("Data file:")
@@ -2503,7 +2590,7 @@ def test_attendance_sorts_by_number_and_remembers_it(
 
     dashboard = DashboardService(DashboardRepository(conn), StudentRepository(conn), SubjectRepository(conn))
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
-    first = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    first = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     view = _attendance_page(first, roster)
     for row, no in zip(view.register.rows, ("10", "2")):  # Hopper 10, Lovelace 2
         row.student.student_no = no
@@ -2516,7 +2603,7 @@ def test_attendance_sorts_by_number_and_remembers_it(
     view.table.horizontalHeader().sectionClicked.emit(0)
     first.close()
 
-    second = MainWindow(roster, dashboard, _attendance(conn), AppConfig(data_dir=tmp_path), settings)
+    second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.attendance_view.by_number
     second.close()
 
@@ -2941,3 +3028,109 @@ def test_mark_days_dialog_says_when_days_are_still_ahead(qapp: QApplication):
     assert dialog.days_label.text() == "3 school days"
     dialog.set_period(date(1990, 1, 1), friday)
     assert dialog.start == date(2000, 1, 1)  # no earlier than the service allows
+
+
+def test_clicking_a_subject_on_the_dashboard_opens_its_gradebook(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.ui.views.dashboard_view import ClickableLabel
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    names = {label.text(): label for label in window.dashboard_view.findChildren(ClickableLabel)}
+    assert names["Science"].toolTip() == "Click to open the Science gradebook"
+    QTest.mouseClick(names["Science"], Qt.MouseButton.LeftButton)
+    assert window.stack.currentWidget() is window.gradebook_view
+    assert window.subject_id == science
+
+
+def test_clicking_a_recent_assignment_on_the_dashboard_opens_it_in_the_gradebook(
+    window: MainWindow, roster: RosterService, conn
+):
+    from datetime import date
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from app.models import Assignment
+    from app.ui.views.dashboard_view import ClickableLabel
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    science = roster.save_subject(Subject(class_id=class_id, name="Science")).id
+    roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace"))
+    grades = _grades(conn)
+    category = grades.add_categories(science, (("Quizzes", 20),))[0]
+    for title in ("Quiz 1", "Quiz 2"):
+        grades.save_assignment(Assignment(subject_id=science, category_id=category.id, title=title, max_score=10, date=date.today()))
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    titles = {label.text(): label for label in window.dashboard_view.findChildren(ClickableLabel)}
+    assert titles["Quiz 1"].toolTip() == "Click to open Quiz 1 in the Science gradebook"
+    QTest.mouseClick(titles["Quiz 1"], Qt.MouseButton.LeftButton)
+    view = window.gradebook_view
+    assert window.stack.currentWidget() is view
+    assert window.subject_id == science
+    assert view.table.horizontalHeaderItem(view.table.currentColumn()).text().startswith("Quiz 1")
+
+
+def test_dashboard_names_who_is_under_the_pass_mark_in_a_subject(window: MainWindow, roster: RosterService, conn):
+    from datetime import date
+
+    from app.models import Assignment
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    maths = roster.list_subjects(class_id)[0].id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    grades = _grades(conn)
+    category = grades.add_categories(maths, (("Tests", 50),))[0]
+    test = grades.save_assignment(Assignment(subject_id=maths, category_id=category.id, title="Test", max_score=10, date=date.today()))
+    grades.enter_score(test.id, ada, "4")
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    below = window.dashboard_view.subjects_grid.itemAtPosition(1, 3).widget()
+    assert below.text() == "1"
+    assert below.toolTip() == "Under 60%:\nAda Lovelace 40%"
+
+
+def test_ctrl_shift_page_down_and_up_go_through_the_classes_of_the_school_year(
+    window: MainWindow, roster: RosterService, qapp
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    b = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    c = roster.save_class(SchoolClass(name="10A", term="2026-2027")).id
+    roster.save_class(SchoolClass(name="8A", term="2025-2026"))  # another year: never reached
+    window.select_class(b)
+    window.show_page("Gradebook")
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    keys = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+    QTest.keyClick(window, Qt.Key.Key_PageDown, keys)
+    assert window.class_id == c  # 7B, then 10A, as people read them
+    assert window.stack.currentWidget() is window.gradebook_view  # the page stays
+    assert window.statusBar().currentMessage() == "Class: 10A (2026-2027)"
+    QTest.keyClick(window, Qt.Key.Key_PageDown, keys)
+    assert window.class_id == b  # round to the first
+    QTest.keyClick(window, Qt.Key.Key_PageUp, keys)
+    assert window.class_id == c
+
+
+def test_dashboard_grade_rows_name_who_has_each_letter(window: MainWindow, roster: RosterService, conn):
+    from app.models import Assignment
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    maths = roster.list_subjects(class_id)[0].id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    grades = _grades(conn)
+    category = grades.add_categories(maths, (("Tests", 50),))[0]
+    test = grades.save_assignment(Assignment(subject_id=maths, category_id=category.id, title="Test", max_score=10))
+    grades.enter_score(test.id, ada, "9")
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    meter, count = window.dashboard_view.grade_rows["A"]
+    assert count.text() == "1" and count.toolTip() == meter.toolTip() == "A:\nAda Lovelace 90%"
+    assert window.dashboard_view.grade_rows["B"][1].toolTip() == ""

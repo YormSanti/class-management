@@ -501,3 +501,18 @@ def test_week_progress_counts_marks_from_monday_to_friday(attendance, roster, kl
     assert attendance.week_progress(klass, date(2026, 11, 5)) == [
         (date(2026, 11, 2), 2), (date(2026, 11, 3), 0), (date(2026, 11, 4), 1), (date(2026, 11, 5), 0), (DAY, 0)
     ]
+
+
+def test_days_before_the_register_was_first_taken_are_not_missing(attendance, roster, klass):
+    ada = _student(roster, klass, "Ada", "Lovelace")
+    maths = roster.list_subjects(klass)[0].id
+    # never taken: no day of the month is pointed out
+    assert attendance.month_register(klass, 2026, 9).not_taken(date(2026, 9, 30)) == []
+
+    attendance.mark(ada, date(2026, 9, 7), P)  # the school year started on Monday the 7th
+    attendance.mark(ada, date(2026, 9, 9), P)
+    september = attendance.month_register(klass, 2026, 9)
+    assert september.first_taken == date(2026, 9, 7)
+    assert september.not_taken(date(2026, 9, 10)) == [date(2026, 9, 8), date(2026, 9, 10)]
+    assert attendance.month_register(klass, 2026, 8).not_taken(date(2026, 9, 10)) == []  # the summer
+    assert attendance.month_register(klass, 2026, 9, maths).not_taken(date(2026, 9, 10)) == []  # never taken

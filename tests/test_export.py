@@ -273,3 +273,160 @@ def test_year_roster_csv_has_a_class_column(tmp_path):
         "7B,1,Lovelace,Ada,Active,",
         "7C,,Turing,Alan,Active,",
     ]
+
+
+def test_gradebook_csv_has_scores_category_percents_and_averages(conn, roster, tmp_path):
+    from app.models import Assignment, Category, SchoolClass, Student, Subject
+    from app.repositories.gradebook_repo import GradebookRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.export import write_gradebook_csv
+    from app.services.gradebook import GradebookService
+
+    grades = GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace", student_no="S1")).id
+    roster.save_student(Student(class_id, "Bob", "Smith"))
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths")).id
+    tests = grades.save_category(Category(maths, "Tests", 100)).id
+    t1 = grades.save_assignment(Assignment(maths, tests, "Test 1", 10)).id
+    t2 = grades.save_assignment(Assignment(maths, tests, "Test 2", 20)).id
+    grades.enter_score(t1, ada, "7.5")
+    grades.enter_score(t2, ada, "ex")
+    path = tmp_path / "maths.csv"
+    write_gradebook_csv(path, grades.sheet(maths))
+    assert path.read_text(encoding="utf-8-sig").splitlines() == [
+        "Student #,Last name,First name,Test 1 (/10),Test 2 (/20),Tests %,Average %,Grade",
+        "S1,Lovelace,Ada,7.5,ex,75.0,75.0,C",
+        ",Smith,Bob,,,,,",
+    ]
+
+
+def test_gradebook_xlsx_has_the_columns_of_the_csv_with_names_kept_in_view(conn, roster, tmp_path):
+    from openpyxl import load_workbook
+
+    from app.models import Assignment, Category, SchoolClass, Student, Subject
+    from app.repositories.gradebook_repo import GradebookRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.export import write_gradebook_xlsx
+    from app.services.gradebook import GradebookService
+
+    grades = GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id, "Ada", "=Lovelace", student_no="S1")).id
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths: algebra")).id
+    tests = grades.save_category(Category(maths, "Tests", 100)).id
+    t1 = grades.save_assignment(Assignment(maths, tests, "Test 1", 10)).id
+    grades.enter_score(t1, ada, "7.5")
+    path = tmp_path / "maths.xlsx"
+    write_gradebook_xlsx(path, grades.sheet(maths))
+    sheet = load_workbook(path).active
+    assert sheet.title == "Maths- algebra"
+    assert [c.value for c in sheet[1]] == ["Student #", "Last name", "First name", "Test 1 (/10)", "Tests %", "Average %", "Grade"]
+    assert [c.value for c in sheet[2]] == ["S1", "=Lovelace", "Ada", 7.5, 75, 75, "C"]
+    assert sheet["B2"].data_type == "s"  # a name like a formula stays text
+    assert sheet["A1"].font.bold and sheet.freeze_panes == "D2"
+    assert not list(tmp_path.glob(".export-*"))  # no temporary file left
+
+
+def test_ranking_csv_lists_places_best_first_then_those_unscored(tmp_path):
+    from app.models import Student
+    from app.services.export import write_ranking_csv
+    from app.services.rankings import make_ranking
+
+    ada = Student(1, "Ada", "Lovelace", student_no="S1", id=1)
+    bob = Student(1, "Bob", "Smith", id=2)
+    cy = Student(1, "Cy", "Young", id=3)
+    ranking = make_ranking([ada, bob, cy], {1: 72.25, 2: 91.0})
+    path = tmp_path / "ranking.csv"
+    write_ranking_csv(path, ranking)
+    assert path.read_text(encoding="utf-8-sig").splitlines() == [
+        "Place,Student #,Last name,First name,Average %,Grade",
+        "1,,Smith,Bob,91.0,A",
+        "2,S1,Lovelace,Ada,72.2,C",
+        ",,Young,Cy,,",
+    ]
+    ranking.subjects_counted = {1: 2, 2: 1}
+    write_ranking_csv(path, ranking, overall=True)
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    assert lines[0].endswith(",Subjects")
+    assert lines[1:] == ["1,,Smith,Bob,91.0,A,1", "2,S1,Lovelace,Ada,72.2,C,2", ",,Young,Cy,,,0"]
+
+
+def test_seating_plan_html_shows_the_room_front_at_the_bottom():
+    from datetime import date
+
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_plan_html
+    from app.services.seating import SeatingPlan
+
+    ada = Student(1, "Ada", "Lovelace", id=1)
+    bob = Student(1, "Bob", "<Smith>", id=2)
+    cy = Student(1, "Cy", "Young", id=3)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 2, 2, id=1), [ada, bob, cy], {(0, 0): 1, (1, 1): 2})
+    page = seating_plan_html(plan, "7B · Tests", printed=date(2026, 11, 24))
+    assert "<h2" in page and "7B · Tests" in page
+    assert "2 of 3 students seated · printed 24 November 2026" in page
+    assert page.index("&lt;Smith&gt;") < page.index("Lovelace") < page.index("Front of the room")
+    assert "<b>Not seated:</b> Cy Young" in page
+
+
+def test_seating_plan_html_leaves_spots_without_a_desk_blank():
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_plan_html
+    from app.services.seating import SeatingPlan
+
+    ada = Student(1, "Ada", "Lovelace", id=1)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 1, 3, id=1), [ada], {(0, 0): 1}, gaps={(0, 1)})
+    page = seating_plan_html(plan, "7B · Tests")
+    assert page.count("border: 1px solid") == 2  # Ada's desk and the free one
+    assert page.count('<td style="width: 33.3%;">&nbsp;</td>') == 1
+
+
+def test_ranking_html_lists_places_best_first_and_marks_averages_under_the_pass_mark():
+    from datetime import date
+
+    from app.models import Student
+    from app.services.export import ranking_html
+    from app.services.rankings import RankedStudent, Ranking
+
+    ada, bob, cy, dee = (Student(1, first, last, id=n) for n, (first, last) in
+                         enumerate((("Ada", "Lovelace"), ("Bob", "<Smith>"), ("Cy", "Young"), ("Dee", "Ward")), 1))  # fmt: skip
+    ranking = Ranking(
+        [RankedStudent(1, ada, 91.25), RankedStudent(2, bob, 55, True), RankedStudent(2, cy, 55, True)], [dee]
+    )
+    page = ranking_html(ranking, "Ranking · Maths", 60, printed=date(2026, 11, 28))
+    assert "<h2" in page and "Ranking · Maths" in page
+    assert "3 students ranked · 2 under the pass mark of 60%, in red · 1 with nothing scored yet" in page
+    assert "printed 28 November 2026" in page
+    assert page.index("Ada Lovelace") < page.index("&lt;Smith&gt;") < page.index("Cy Young") < page.index("Dee Ward")
+    assert ">91.2%<" in page and ">2=<" in page and "Subjects" not in page
+    assert page.count("#b00020") == 4  # Bob's and Cy's average and grade
+
+    ranking.subjects_counted, ranking.subjects = {1: 2, 2: 1, 3: 2}, 2
+    assert "<th" in page and "Subjects</th>" in ranking_html(ranking, "Ranking · All", 60, overall=True)
+
+
+def test_seating_plan_html_in_the_students_view_puts_the_front_at_the_top_left_and_right_swapped():
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_plan_html
+    from app.services.seating import SeatingPlan
+
+    ada, bob = Student(1, "Ada", "Lovelace", id=1), Student(1, "Bob", "Smith", id=2)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 2, 2, id=1), [ada, bob], {(0, 0): 1, (0, 1): 2})
+    teacher = seating_plan_html(plan, "7B")
+    assert teacher.index("Lovelace") < teacher.index("Smith") < teacher.index("Front of the room")
+    students = seating_plan_html(plan, "7B", students_view=True)
+    assert students.index("Front of the room") < students.index("Smith") < students.index("Lovelace")
+
+
+def test_seating_tsv_lays_the_names_out_as_the_room_is_shown():
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_tsv
+    from app.services.seating import SeatingPlan
+
+    ada, bob = Student(1, "Ada", "Lovelace", id=1), Student(1, "=Bob", "Smith", id=2)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 2, 3, id=1), [ada, bob], {(0, 0): 1, (1, 2): 2})
+    assert seating_tsv(plan) == "\t\t'=Bob Smith\nAda Lovelace\t\t\nFront of the room\n"
+    assert seating_tsv(plan, students_view=True) == "Front of the room\n\t\tAda Lovelace\n'=Bob Smith\t\t\n"

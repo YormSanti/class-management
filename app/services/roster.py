@@ -194,38 +194,102 @@ def _parse_name(text: str) -> tuple[str, str] | None:
     return " ".join(words[:-1]), words[-1]
 
 
+_HEADING_WORDS = (  # how a spreadsheet's heading names each column, without accents or case
+    ("first", r"\b(first|given|fore)"),
+    ("last", r"\b(last|sur|family)"),
+    ("notes", r"\b(note|comment|remark)"),
+    ("number", r"#|\b(no|nr|num|number|id)\b"),
+)
+_USUAL_COLUMNS = {  # the column orders read without a heading, by how many columns there are
+    2: {"first": 0, "last": 1},
+    3: {"number": 0, "first": 1, "last": 2},
+    4: {"number": 0, "first": 1, "last": 2, "notes": 3},
+}
+
+
+def _named_columns(cells: list[str]) -> dict[str, int] | None:
+    """{"first", "last", "number", "notes": column} as a heading row names them, e.g.
+    "Surname;First name;Class"; None if it doesn't name both name columns."""
+    columns: dict[str, int] = {}
+    for i, cell in enumerate(cells):
+        text = fold(cell)
+        role = next((role for role, pattern in _HEADING_WORDS if re.search(pattern, text)), None)
+        if role is not None:
+            columns.setdefault(role, i)
+    return columns if "first" in columns and "last" in columns else None
+
+
+def _heading_columns(cells: list[str]) -> dict[str, int] | None:
+    """_named_columns(), or None when they are in a usual order, which is read without a
+    heading anyway."""
+    columns = _named_columns(cells)
+    return None if columns == _USUAL_COLUMNS.get(len([c for c in cells if c])) else columns
+
+
+def _from_columns(line_no: int, cells: list[str], heading: dict[str, int] | None) -> PastedStudent | None:
+    """The student in a row of cells, in the columns `heading` names or else in a usual
+    order. Its names may be empty; None if the row fits no usual order."""
+    if heading is not None and any(cells):
+
+        def cell(role: str) -> str:
+            i = heading.get(role)
+            return cells[i] if i is not None and i < len(cells) else ""
+
+        return PastedStudent(line_no, cell("first"), cell("last"), cell("number") or None, cell("notes"))
+    # Empty cells keep their column, so a missing first name doesn't turn the number
+    # into one. Only empty columns at the end, or more than any order has at the
+    # start, are dropped.
+    cells = cells.copy()
+    while cells and not cells[-1]:
+        cells.pop()
+    while len(cells) > 4 and not cells[0]:
+        cells.pop(0)
+    if len(cells) == 2:
+        return PastedStudent(line_no, cells[0], cells[1])
+    if len(cells) == 3:
+        return PastedStudent(line_no, cells[1], cells[2], cells[0] or None)
+    if len(cells) == 4:
+        return PastedStudent(line_no, cells[1], cells[2], cells[0] or None, cells[3])
+    return None
+
+
 def parse_student_list(text: str) -> tuple[list[PastedStudent], list[str]]:
     """Read students from pasted text, one per line. Returns (students, problems).
 
     A line can be "First Last", "Last, First", either one after a student number
     ("007 Ada Lovelace"), or columns copied from a spreadsheet or a CSV file
     separated by tabs, semicolons or (two or more) commas: first and last name;
-    number, first and last name; or number, first and last name and notes. Blank lines and a heading row (containing "name") are skipped.
+    number, first and last name; or number, first and last name and notes. Blank lines
+    are skipped, and so is a heading row (containing "name"); one that names the columns
+    in another order ("Surname", "First name", "Class") says where each one is.
     """
     students: list[PastedStudent] = []
     problems: list[str] = []
+    columns: dict[str, int] | None = None  # from a heading row in another order than usual
+    commas = 2  # in a line of CSV columns; one comma is "Last, First"
     for line_no, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line:
             continue
-        # Two commas or more are CSV columns; one is "Last, First".
-        separator = "\t" if "\t" in line else ";" if ";" in line else "," if line.count(",") >= 2 else None
+        heading = "name" in line.casefold() and not students and not problems
+        if heading and line.count(",") == 1 and _named_columns(line.split(",")):
+            commas = 1  # "First name,Last name": a CSV file of two columns follows
+        separator = "\t" if "\t" in line else ";" if ";" in line else "," if line.count(",") >= commas else None
         if separator:
             if separator == ",":  # a quoted cell may hold a comma: "Lovelace, Ada" in a CSV line
-                cells = [c.strip() for c in next(csv.reader([line], skipinitialspace=True))]
+                cells = [c.strip() for c in next(csv.reader([raw], skipinitialspace=True))]
             else:
-                cells = [_unquote(c) for c in line.split(separator)]
-            cells = [c for c in cells if c]
-            if "name" in line.casefold() and not students and not problems:
+                cells = [_unquote(c) for c in raw.split(separator)]
+            if heading:
+                columns = _heading_columns(cells)
                 continue  # header row
-            if len(cells) == 2:
-                students.append(PastedStudent(line_no, cells[0], cells[1]))
-            elif len(cells) == 3:
-                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0]))
-            elif len(cells) == 4:
-                students.append(PastedStudent(line_no, cells[1], cells[2], cells[0], cells[3]))
-            else:
+            student = _from_columns(line_no, cells, columns)
+            if student is None:
                 problems.append(f"Line {line_no}: expected first and last name columns: {line}")
+            elif student.first_name and student.last_name:
+                students.append(student)
+            else:
+                problems.append(f"Line {line_no}: needs a first and a last name: {line}")
             continue
 
         student_no = None
@@ -257,6 +321,22 @@ def repeated_names(students: list[PastedStudent]) -> list[str]:
     return list(repeated.values())
 
 
+def too_long(students: list[PastedStudent]) -> list[str]:
+    """Why save_student() would refuse a pasted name, number or note as too long, one
+    line each, e.g. when a whole paragraph landed in the notes column."""
+    problems = []
+    for s in students:
+        for text, limit, what in ((_clean(s.student_no), STUDENT_NO_MAX, "A student number"),
+                                  (_clean(s.first_name), NAME_MAX, "A first name"),
+                                  (_clean(s.last_name), NAME_MAX, "A last name"),
+                                  (s.notes.strip(), STUDENT_NOTES_MAX, "The notes")):  # as save_student() cleans them  # fmt: skip
+            try:
+                _check_length(text, limit, what)
+            except RosterError as exc:
+                problems.append(f"Line {s.line}: {exc}")
+    return problems
+
+
 def fix_name_case(name: str) -> str:
     """A name typed all in capitals or all in lowercase, written the usual way:
     "LOVELACE" -> "Lovelace", "anne-marie o'brien" -> "Anne-Marie O'Brien".
@@ -280,7 +360,6 @@ _RECORD_WORDS = {  # what recorded() counts, in words: (one, many)
     "attendance": ("attendance mark", "attendance marks"),
     "scores": ("score", "scores"),
     "assignments": ("assignment", "assignments"),
-    "categories": ("grade category", "grade categories"),
     "seating": ("seating plan", "seating plans"),
 }
 
@@ -315,7 +394,12 @@ class RosterService:
         return classes if term is None else [c for c in classes if c.term == term]
 
     def list_terms(self) -> list[str]:
-        return self.classes.list_terms()
+        """The school years in use, newest first by the years written in them: "Fall
+        2026" before "Spring 2025", which sorted as text would come first."""
+        def years_first(term: str) -> tuple:
+            return tuple(int(y) for y in re.findall(r"\d{4}", term)), natural_key(term)
+
+        return sorted(self.classes.list_terms(), key=years_first, reverse=True)
 
     def class_counts(self) -> dict[int, tuple[int, int]]:
         """{class id: (active students, subjects)}."""
@@ -326,12 +410,14 @@ class RosterService:
         return self.classes.inactive_counts()
 
     def describe_data(self) -> str:
-        """What the data file holds, e.g. "4 classes · 98 students · 1,203 attendance marks"."""
+        """What the data file holds, e.g. "4 classes · 98 students · 1,203 attendance marks · 310 scores".
+        Scores are named once there are any."""
         t = self.classes.totals()
         return " · ".join(
             f"{t[key]:,} {one if t[key] == 1 else many}"
             for key, one, many in (("classes", "class", "classes"), ("students", "student", "students"),
-                                   ("attendance", "attendance mark", "attendance marks"))
+                                   ("attendance", "attendance mark", "attendance marks"), ("scores", "score", "scores"))
+            if key != "scores" or t[key]
         )  # fmt: skip
 
     def get_class(self, class_id: int) -> SchoolClass | None:
@@ -365,7 +451,7 @@ class RosterService:
         """Create next year's classes from existing ones, all at once or not at all.
 
         `plan` lists (existing class id, name for the new class), e.g. (7B's id, "8B").
-        Each new class gets the old class's subjects and teachers and, if
+        Each new class gets the old class's subjects, teachers and grade categories and, if
         `copy_students`, its active students (as new records, so last year's
         attendance and grades stay with last year's class). Nothing else is copied.
         """
@@ -397,9 +483,10 @@ class RosterService:
                     )
                 new_class = self.save_class(SchoolClass(name=name, term=new_term))
                 for subject in self.subjects.list_for_class(source_id):
-                    self.subjects.add(
+                    added = self.subjects.add(
                         Subject(class_id=new_class.id, name=subject.name, teacher=subject.teacher)
                     )
+                    self.subjects.copy_categories(subject.id, added.id)
                 if copy_students:
                     for student in self.students.list_for_class(source_id):
                         self.students.add(replace(student, id=None, class_id=new_class.id))
@@ -444,7 +531,8 @@ class RosterService:
 
     def delete_class(self, class_id: int) -> None:
         """Delete a class with its students and subjects, but only while nothing is
-        recorded for them: no attendance, grades, grade categories or seating.
+        recorded for them: no attendance, assignments, grades or students seated. Grade
+        categories and seating plans nobody sits in are setup and go with the class.
 
         This is for undoing a mistake, e.g. a class created in the wrong school year.
         """
@@ -488,7 +576,7 @@ class RosterService:
 
     def copy_subjects(self, from_class_id: int, to_class_id: int) -> list[Subject]:
         """Give `to_class_id` each subject of `from_class_id` it doesn't have yet (by name,
-        ignoring case), with its teacher. Grades and attendance aren't copied.
+        ignoring case), with its teacher and grade categories. Grades and attendance aren't copied.
         Returns the subjects added, which may be none."""
         if self.classes.get(to_class_id) is None or self.classes.get(from_class_id) is None:
             raise RosterError("The selected class no longer exists.")
@@ -497,6 +585,7 @@ class RosterService:
             for subject in self.subjects.list_for_class(from_class_id):
                 if self.subjects.find_by_name(to_class_id, subject.name) is None:
                     added.append(self.subjects.add(Subject(to_class_id, subject.name, subject.teacher)))
+                    self.subjects.copy_categories(subject.id, added[-1].id)
         return added
 
     def subject_names(self) -> list[str]:
@@ -623,9 +712,9 @@ class RosterService:
             student_no = self.suggest_student_no(class_id) or None  # taken: the next free one
         with transaction(self.students.conn):
             if not self.students.has_records(student.id):
+                self.students.set_class(student.id, class_id, student_no)
                 moved = replace(student, class_id=class_id, student_no=student_no, active=True)
                 self.students.update(moved)
-                self.students.set_class(student.id, class_id)
                 return moved
             self.students.set_active(student.id, False)
             return self.students.add(

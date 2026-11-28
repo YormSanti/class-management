@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_assignments_subject ON assignments(subject_id);
 
--- score NULL = not submitted / exempt (ignored in grading), which differs from 0.
+-- score NULL = exempt: left out of averages and of missing work, unlike 0.
+-- No row at all = nothing entered yet (missing once the assignment's date has passed).
 CREATE TABLE IF NOT EXISTS scores (
     id            INTEGER PRIMARY KEY,
     assignment_id INTEGER NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,

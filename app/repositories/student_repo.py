@@ -63,9 +63,13 @@ class StudentRepository:
                 "UPDATE students SET active = ? WHERE id = ?", (int(active), student_id)
             )
 
-    def set_class(self, student_id: int, class_id: int) -> None:
+    def set_class(self, student_id: int, class_id: int, student_no: str | None) -> None:
+        """Move the student to `class_id` with `student_no`, in one step: their number may
+        be taken in either class on its own."""
         with transaction(self.conn):
-            self.conn.execute("UPDATE students SET class_id = ? WHERE id = ?", (class_id, student_id))
+            self.conn.execute(
+                "UPDATE students SET class_id = ?, student_no = ? WHERE id = ?", (class_id, student_no, student_id)
+            )
 
     def delete(self, student_id: int) -> None:
         """Delete a student. Raises sqlite3.IntegrityError if anything refers to them."""
@@ -110,16 +114,11 @@ class StudentRepository:
         return _from_row(row) if row else None
 
     def find_by_name(self, class_id: int, first_name: str, last_name: str) -> list[Student]:
-        """Students in the class with this name, ignoring case; inactive ones included."""
-        rows = self.conn.execute(
-            """
-            SELECT * FROM students
-            WHERE class_id = ? AND first_name = ? COLLATE NOCASE AND last_name = ? COLLATE NOCASE
-            ORDER BY id
-            """,
-            (class_id, first_name, last_name),
-        )
-        return [_from_row(r) for r in rows]
+        """Students in the class with this name, ignoring case, also of letters such as
+        "É" that SQLite's NOCASE leaves alone; inactive ones included."""
+        wanted = (first_name.casefold(), last_name.casefold())
+        rows = self.conn.execute("SELECT * FROM students WHERE class_id = ? ORDER BY id", (class_id,))
+        return [_from_row(r) for r in rows if (r["first_name"].casefold(), r["last_name"].casefold()) == wanted]
 
     def list_for_class(self, class_id: int, include_inactive: bool = False) -> list[Student]:
         """Students in a class sorted by name (the roster service does the searching)."""
