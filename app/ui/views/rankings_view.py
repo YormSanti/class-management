@@ -57,6 +57,7 @@ class RankingsView(QWidget):
     manage_subjects_requested = Signal()  # the class has no subject to rank by yet
     navigate_requested = Signal(str)  # a page name, e.g. "Gradebook"
     subject_selected = Signal(int)  # picked under Rank by: make it the current subject
+    student_requested = Signal(int)  # a student to show in the current subject's gradebook
 
     def __init__(self, rankings: RankingService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -137,6 +138,7 @@ class RankingsView(QWidget):
         layout.addLayout(header)
         layout.addWidget(self.pages, stretch=1)
         self.setStyleSheet(style.card_stylesheet(self))
+        self.table.cellActivated.connect(self._open_student)
         copy = QShortcut(QKeySequence.StandardKey.Copy, self)
         copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         copy.activated.connect(self.copy_ranking)
@@ -154,6 +156,14 @@ class RankingsView(QWidget):
         if row is not None:
             self.table.selectRow(row)
             self.table.scrollToItem(self.table.item(row, 0))
+
+    def _open_student(self, row: int, _col: int = 0) -> None:
+        """Show the student of `row` in the gradebook of the subject ranked, or of the current one."""
+        if self.ranking is None:
+            return
+        students = [r.student for r in self.ranking.ranked] + self.ranking.unranked
+        if 0 <= row < len(students):
+            self.student_requested.emit(students[row].id)
 
     def copy_ranking(self) -> None:
         """Copy the whole ranking, to paste into a spreadsheet."""
@@ -301,7 +311,9 @@ class RankingsView(QWidget):
             for col in range(len(COLUMNS)):
                 table.item(row, col).setForeground(muted)
                 table.item(row, col).setToolTip("Nothing scored yet")
-        self.summary.setText(self._summary_text() + " · Ctrl+C copies the ranking for a spreadsheet")
+        self.summary.setText(
+            self._summary_text() + " · Double-click a student to see their scores · Ctrl+C copies the ranking"
+        )
 
     def _set_row(self, row: int, *texts: str) -> None:
         for col, text in enumerate(texts):

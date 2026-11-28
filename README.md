@@ -53,7 +53,8 @@ undoes, Ctrl+F finds a student and Ctrl+N adds an assignment. Double-click a col
 to edit the assignment; right-click it to fill its empty cells or delete it.
 
 On the Rankings page, Alt+R chooses what to rank by: all subjects or one of them,
-Ctrl+F finds a student's place and Ctrl+C copies the ranking for a spreadsheet.
+Ctrl+F finds a student's place and Ctrl+C copies the ranking for a spreadsheet. Enter or a
+double-click shows the selected student's scores in the gradebook.
 
 On the Seating page, click a student, then a seat (or select them and press Enter or
 Space). Esc puts the student down again, Delete takes a student out of their seat, Ctrl+F

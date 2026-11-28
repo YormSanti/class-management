@@ -393,6 +393,20 @@ class GradebookView(QWidget):
                 self.table.setFocus()
                 return
 
+    def go_to_student(self, student_id: int) -> None:
+        """Select the student's row, in the column of the assignment selected or else the first shown."""
+        rows = [r for r in range(self.table.rowCount()) if self.student_at(r) == student_id]
+        if not rows:
+            return
+        if self.table.isRowHidden(rows[0]):  # Find hides them
+            self.search.clear()
+        shown = [c for c in range(1, self.average_column()) if not self.table.isColumnHidden(c)]
+        current = self.table.currentColumn()
+        col = current if current in shown else (shown[0] if shown else 0)
+        self.table.setCurrentCell(rows[0], col)
+        self.table.scrollToItem(self.table.item(rows[0], col))
+        self.table.setFocus()
+
     def _show_state(self) -> None:
         if self.class_id is None:
             self._empty("<h2>No class selected</h2><p>Create a class to keep its grades.</p>")

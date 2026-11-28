@@ -48,6 +48,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Rankings", "Alt+R", "Choose what to rank by: all subjects or one of them"),
     ("Rankings", "Ctrl+F", "Find a student's place by name or number; Enter goes to it"),
     ("Rankings", "Ctrl+C", "Copy the ranking, to paste into a spreadsheet"),
+    ("Rankings", "Enter", "Show the selected student's scores in the gradebook (or double-click them)"),
     ("Seating", "Enter or Space", "Pick up the selected student, or put the student picked up in the selected seat"),
     ("Seating", "Esc", "Put the student picked up down again"),
     ("Seating", "Delete", "Take the selected student out of their seat"),

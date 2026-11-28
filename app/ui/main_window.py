@@ -101,6 +101,7 @@ class MainWindow(QMainWindow):
         self.rankings_view.manage_subjects_requested.connect(self.show_subjects)
         self.rankings_view.navigate_requested.connect(self.show_page)
         self.rankings_view.subject_selected.connect(self.select_subject)
+        self.rankings_view.student_requested.connect(self.show_student_scores)
         if seating is None:
             conn = roster.classes.conn
             seating = SeatingService(SeatingRepository(conn), StudentRepository(conn), ClassRepository(conn))
@@ -392,6 +393,11 @@ class MainWindow(QMainWindow):
         self.show_page("Gradebook")
         if assignment_id:
             self.gradebook_view.go_to_assignment(assignment_id)
+
+    def show_student_scores(self, student_id: int) -> None:
+        """Open the current subject's gradebook at `student_id`'s row."""
+        self.show_page("Gradebook")
+        self.gradebook_view.go_to_student(student_id)
 
     def show_subjects(self) -> None:
         """Open Manage classes on the Subjects tab of the current class."""

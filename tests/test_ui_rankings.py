@@ -244,3 +244,28 @@ def test_find_selects_a_students_place(window: MainWindow, roster: RosterService
     assert view.table.item(view.table.currentRow(), 1).text() == "Dee Ward"
     view.search.setText("nobody")
     assert view.table.item(view.table.currentRow(), 1).text() == "Dee Ward"
+
+
+def test_double_clicking_a_ranked_student_shows_their_scores_in_the_gradebook(window: MainWindow, roster: RosterService):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    _class_id, test, ids = _ranked_class(window, roster)
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7"), (test, ids["Bob"], "9")])
+    gradebook = window.gradebook_view
+    window.show_page("Gradebook")
+    gradebook.search.setText("Ada")  # Find hides Bob
+    window.show_page("Rankings")
+    view = window.rankings_view
+    assert _rows(window)[0][1] == "Bob Smith"
+    view.table.cellActivated.emit(0, 1)
+    assert window.stack.currentWidget() is gradebook
+    assert gradebook.search.text() == ""
+    assert gradebook.student_at(gradebook.table.currentRow()) == ids["Bob"]
+    assert gradebook.table.currentColumn() == 1  # Test 1, ready to type
+
+    window.show_page("Rankings")
+    assert _rows(window)[3][1] == "Cy Young"  # nothing scored, listed last
+    view.table.setCurrentCell(3, 1)
+    QTest.keyClick(view.table, Qt.Key.Key_Return)
+    assert gradebook.student_at(gradebook.table.currentRow()) == ids["Cy"]
