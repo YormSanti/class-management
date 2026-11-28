@@ -278,6 +278,17 @@ def test_subject_summaries_name_the_students_under_the_pass_mark_lowest_first(se
     assert summary.below_pass_names == ["Bea Test 30%", "Alan Test 50%"]
 
 
+def test_grade_distribution_names_the_students_with_each_letter_best_first(service, roster, conn, class_id, maths):
+    ada, alan, bea = (_student(roster, class_id, name) for name in ("Ada", "Alan", "Bea"))
+    test = _assignment(conn, maths, _category(conn, maths, "Tests", 1), "Test", 100, TODAY)
+    for student, points in ((ada, 91), (alan, 95), (bea, 30)):
+        _score(conn, test, student, points)
+
+    s = service.summary(class_id, TODAY)
+    assert s.grade_names["A"] == ["Alan Test 95%", "Ada Test 91%"]
+    assert s.grade_names["F"] == ["Bea Test 30%"] and s.grade_names["B"] == []
+
+
 def test_low_grades_name_the_subject(service, roster, conn, class_id, maths):
     ada, alan = _student(roster, class_id, "Ada"), _student(roster, class_id, "Alan")
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id

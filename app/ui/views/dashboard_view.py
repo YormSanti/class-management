@@ -433,7 +433,7 @@ class DashboardView(QWidget):
         self.chart.set_days(summary.attendance_days, today)
         self._show_attention(summary.attention)
         self._show_assignments(summary.recent_assignments, summary.active_students)
-        self._show_grades(summary.grade_distribution)
+        self._show_grades(summary.grade_distribution, summary.grade_names)
         self._show_subjects(summary.subjects)
 
     # --- Qt events -------------------------------------------------------------
@@ -594,12 +594,16 @@ class DashboardView(QWidget):
             grid.addWidget(average, row, 4)
         grid.setColumnStretch(0, 1)
 
-    def _show_grades(self, distribution: dict[str, int]) -> None:
+    def _show_grades(self, distribution: dict[str, int], names: dict[str, list[str]]) -> None:
+        """How many students have each letter grade; pointing at a row names them, best first."""
         biggest = max(distribution.values(), default=0) or 1
         for letter, (meter, count) in self.grade_rows.items():
             n = distribution.get(letter, 0)
             meter.set_value(n, biggest, "warn" if letter in ("D", "F") else "accent")
             count.setText(str(n))
+            tip = f"{letter}:\n" + "\n".join(names[letter]) if names.get(letter) else ""
+            meter.setToolTip(tip)
+            count.setToolTip(tip)
 
     def _show_subjects(self, subjects: list[SubjectSummary]) -> None:
         grid = self.subjects_grid

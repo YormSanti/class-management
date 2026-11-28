@@ -3117,3 +3117,20 @@ def test_ctrl_shift_page_down_and_up_go_through_the_classes_of_the_school_year(
     assert window.class_id == b  # round to the first
     QTest.keyClick(window, Qt.Key.Key_PageUp, keys)
     assert window.class_id == c
+
+
+def test_dashboard_grade_rows_name_who_has_each_letter(window: MainWindow, roster: RosterService, conn):
+    from app.models import Assignment
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    maths = roster.list_subjects(class_id)[0].id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    grades = _grades(conn)
+    category = grades.add_categories(maths, (("Tests", 50),))[0]
+    test = grades.save_assignment(Assignment(subject_id=maths, category_id=category.id, title="Test", max_score=10))
+    grades.enter_score(test.id, ada, "9")
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    meter, count = window.dashboard_view.grade_rows["A"]
+    assert count.text() == "1" and count.toolTip() == meter.toolTip() == "A:\nAda Lovelace 90%"
+    assert window.dashboard_view.grade_rows["B"][1].toolTip() == ""

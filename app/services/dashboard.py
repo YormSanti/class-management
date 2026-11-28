@@ -63,6 +63,7 @@ class DashboardSummary:
     attention: list[AttentionItem] = field(default_factory=list)
     recent_assignments: list[AssignmentStats] = field(default_factory=list)
     grade_distribution: dict[str, int] = field(default_factory=dict)
+    grade_names: dict[str, list[str]] = field(default_factory=dict)  # letter -> "Ada Lovelace 85%", best first
     subjects: list[SubjectSummary] = field(default_factory=list)
     today_counts: dict[str, int] = field(default_factory=dict)  # today's daily register, status -> students
     absent_today: list[str] = field(default_factory=list)  # names, in the daily register
@@ -212,8 +213,11 @@ class DashboardService:
             )
 
         distribution = {letter: 0 for letter, _ in GRADE_SCALE}
-        for percent in averages.values():
+        grade_names: dict[str, list[str]] = {letter: [] for letter, _ in GRADE_SCALE}
+        for sid, percent in sorted(averages.items(), key=lambda item: -item[1]):
             distribution[letter_grade(percent)] += 1
+            if sid in names:
+                grade_names[letter_grade(percent)].append(f"{names[sid]} {percent:.0f}%")
 
         return DashboardSummary(
             active_students=active,
@@ -226,6 +230,7 @@ class DashboardService:
             attention=self._needs_attention(class_id, today, low_subjects, missing),
             recent_assignments=self.dashboard.recent_assignments(class_id, RECENT_ASSIGNMENTS, today),
             grade_distribution=distribution,
+            grade_names=grade_names,
             subjects=subject_summaries,
             today_counts=by_date.get(today, {}),
             absent_today=self._absent_on(class_id, today),
