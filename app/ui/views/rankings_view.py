@@ -318,6 +318,8 @@ class RankingsView(QWidget):
             if self.overall:
                 counted = ranking.subjects_counted.get(ranked.student.id, 0)
                 tips.append(overall_tip(counted, ranking.subjects))
+                parts = ranking.subject_averages.get(ranked.student.id, [])
+                tips += [f"{name}: {average_text(value)}" for name, value in parts]
             if ranked.average < self.pass_mark:
                 tips.insert(0, f"Under the pass mark of {format_number(self.pass_mark)}%")
                 for col in (2, 3):

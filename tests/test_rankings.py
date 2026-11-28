@@ -116,6 +116,7 @@ def test_overall_ranking_is_the_mean_of_subject_averages(
     assert [s.first_name for s in ranking.unranked] == ["Cy"]
     assert ranking.subjects_counted == {ada.id: 2, ben.id: 1}
     assert ranking.subjects == 2
+    assert ranking.subject_averages == {ada.id: [("Art", 100), ("Maths", 60)], ben.id: [("Maths", 90)]}
 
 
 def test_overall_ranking_leaves_out_inactive_students(

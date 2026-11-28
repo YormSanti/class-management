@@ -117,7 +117,7 @@ New school year, **Copy…** and Copy subjects bring each subject's categories a
 The Rankings page lists the students of the current class best average first, in one
 subject or, under **Rank by**, in all subjects: then each student's average is the mean
 of their subject averages, leaving out subjects they have nothing scored in yet, as on
-the dashboard. Students with nothing scored are listed last, without a place.
+the dashboard; pointing at it lists those subject averages. Students with nothing scored are listed last, without a place.
 
 Averages are shown to one decimal, and students whose averages look the same share a
 place, marked `2=`. Whether the next place is then 4th or 3rd is set under

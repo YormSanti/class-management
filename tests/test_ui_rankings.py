@@ -100,6 +100,7 @@ def test_rank_by_all_subjects_or_one(window: MainWindow, roster: RosterService):
     assert _rows(window)[:2] == [["1", "Bob Smith", "90.0%", "A"], ["2", "Ada Lovelace", "80.0%", "B"]]
     assert "all 2 subjects" in view.table.item(1, 2).toolTip()
     assert "1 of the 2 subjects" in view.table.item(0, 2).toolTip()
+    assert view.table.item(1, 2).toolTip().splitlines()[1:] == ["Art: 100.0%", "Maths: 60.0%"]  # Ada's
 
     view.scope.setCurrentIndex(view.scope.findText("Art"))
     assert not view.overall
