@@ -502,17 +502,21 @@ def ranking_html(
     )
 
 
-def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None) -> str:
+def seating_plan_html(
+    plan: SeatingPlan, title: str, printed: date | None = None, students_view: bool = False
+) -> str:
     """A printable seating plan: the desks as the teacher sees them, the front of the
-    room at the bottom, then the students without a seat. A spot with no desk is blank."""
+    room at the bottom, then the students without a seat. A spot with no desk is blank.
+    In the `students_view` the front is at the top and left and right are swapped."""
     printed = printed or date.today()
     layout = plan.layout
     width = f"{100 / layout.cols:.1f}%"
     seat = f'style="border: 1px solid #777; padding: 14px 4px; text-align: center; width: {width};"'
     lines = []
-    for row in reversed(range(layout.rows)):
+    rows = range(layout.rows) if students_view else reversed(range(layout.rows))
+    for row in rows:
         cells = []
-        for col in range(layout.cols):
+        for col in reversed(range(layout.cols)) if students_view else range(layout.cols):
             if (row, col) in plan.gaps:  # no desk: no box
                 cells.append(f'<td style="width: {width};">&nbsp;</td>')
                 continue
@@ -535,5 +539,6 @@ def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None
         f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
         f'<p style="color: #555;">{summary}</p>'
         '<table width="100%" style="border-collapse: collapse;" cellspacing="6">'
-        + "".join(lines) + front + "</table>" + unseated + "</body></html>"
+        + (front + "".join(lines) if students_view else "".join(lines) + front)
+        + "</table>" + unseated + "</body></html>"
     )

@@ -125,7 +125,8 @@ saves the ranking as CSV or an Excel workbook and **Save PDF…** saves it to pr
 A class can keep several seating plans, e.g. one for tests and one for group work. Each
 plan is a room of up to 12 rows of up to 12 seats, shown as the teacher sees it from the
 front: row 1, the front row, is at the bottom. Tick **Students' view** to show it as the
-students see it instead, front at the top, e.g. to put it on the board as they come in.
+students see it instead, front at the top, e.g. to put it on the board as they come in;
+**Save PDF…** then saves it that way round too.
 
 Click a student under **Not seated**, then a seat. Click a seated student, then another
 seat to move them; if that seat is taken, the two swap. **Seat the rest** puts everyone

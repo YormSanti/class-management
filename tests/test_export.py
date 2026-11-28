@@ -406,3 +406,16 @@ def test_ranking_html_lists_places_best_first_and_marks_averages_under_the_pass_
 
     ranking.subjects_counted, ranking.subjects = {1: 2, 2: 1, 3: 2}, 2
     assert "<th" in page and "Subjects</th>" in ranking_html(ranking, "Ranking · All", 60, overall=True)
+
+
+def test_seating_plan_html_in_the_students_view_puts_the_front_at_the_top_left_and_right_swapped():
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_plan_html
+    from app.services.seating import SeatingPlan
+
+    ada, bob = Student(1, "Ada", "Lovelace", id=1), Student(1, "Bob", "Smith", id=2)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 2, 2, id=1), [ada, bob], {(0, 0): 1, (0, 1): 2})
+    teacher = seating_plan_html(plan, "7B")
+    assert teacher.index("Lovelace") < teacher.index("Smith") < teacher.index("Front of the room")
+    students = seating_plan_html(plan, "7B", students_view=True)
+    assert students.index("Front of the room") < students.index("Smith") < students.index("Lovelace")

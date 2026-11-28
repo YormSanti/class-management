@@ -331,13 +331,14 @@ class SeatingView(QWidget):
         self.refresh()
 
     def save_pdf(self) -> None:
-        """Save the plan shown as a landscape A4 PDF, ready to print."""
+        """Save the plan shown as a landscape A4 PDF, ready to print, the way the room is shown."""
         if self.plan is None:
             return
         title = f"{self.subtitle.text()} · {self.plan.layout.name}"
         name = f"{self.subtitle.text()} {self.plan.layout.name} seating"
         path = ask_save_path(self, "Save PDF", name, "PDF files", ".pdf")
-        if path is not None and write_pdf(self, path, title, seating_plan_html(self.plan, title), True):
+        page = seating_plan_html(self.plan, title, students_view=self.students_view)  # as shown
+        if path is not None and write_pdf(self, path, title, page, True):
             QMessageBox.information(self, "Save PDF", f"Saved the seating plan to\n{path}")
 
     def delete_layout(self) -> None:
