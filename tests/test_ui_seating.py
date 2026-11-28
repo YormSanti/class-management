@@ -492,3 +492,20 @@ def test_the_students_view_shows_the_front_at_the_top_and_left_and_right_swapped
     view.view_box.setChecked(False)
     assert view.room.indexOf(view.front) == 1
     assert _grid(window) == [["", "Ada Lovelace", ""], ["Bob Smith", "", ""]]
+
+
+def test_ctrl_c_copies_the_plan_as_a_table_of_names(window: MainWindow, roster: RosterService, qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)
+    view.refresh()
+    window.show_page("Seating")
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    view.grid.setFocus()
+    QTest.keyClick(view.grid, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert qapp.clipboard().text() == "\t\t\nAda Lovelace\t\t\nFront of the room\n"
+    assert view.summary.text().startswith("Copied the plan")

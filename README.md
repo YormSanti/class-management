@@ -58,7 +58,8 @@ double-click shows the selected student's scores in the gradebook.
 
 On the Seating page, click a student, then a seat (or select them and press Enter or
 Space). Esc puts the student down again, Delete takes a student out of their seat, Ctrl+F
-finds a student's seat, and Ctrl+Z / Ctrl+Y undo and redo any change to the plan.
+finds a student's seat, Ctrl+C copies the plan as a table of names for a spreadsheet,
+and Ctrl+Z / Ctrl+Y undo and redo any change to the plan.
 Shift+F10 (or the menu key), like right-clicking, lists what can be done with the selected seat.
 
 On the Manage classes page:

@@ -419,3 +419,14 @@ def test_seating_plan_html_in_the_students_view_puts_the_front_at_the_top_left_a
     assert teacher.index("Lovelace") < teacher.index("Smith") < teacher.index("Front of the room")
     students = seating_plan_html(plan, "7B", students_view=True)
     assert students.index("Front of the room") < students.index("Smith") < students.index("Lovelace")
+
+
+def test_seating_tsv_lays_the_names_out_as_the_room_is_shown():
+    from app.models import SeatLayout, Student
+    from app.services.export import seating_tsv
+    from app.services.seating import SeatingPlan
+
+    ada, bob = Student(1, "Ada", "Lovelace", id=1), Student(1, "=Bob", "Smith", id=2)
+    plan = SeatingPlan(SeatLayout(1, "Tests", 2, 3, id=1), [ada, bob], {(0, 0): 1, (1, 2): 2})
+    assert seating_tsv(plan) == "\t\t'=Bob Smith\nAda Lovelace\t\t\nFront of the room\n"
+    assert seating_tsv(plan, students_view=True) == "Front of the room\n\t\tAda Lovelace\n'=Bob Smith\t\t\n"

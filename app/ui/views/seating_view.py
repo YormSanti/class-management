@@ -4,6 +4,7 @@ from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QHBoxLayout,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.services.roster import RosterService, matches
 from app.models import SeatLayout
-from app.services.export import seating_plan_html
+from app.services.export import seating_plan_html, seating_tsv
 from app.services.seating import SeatingError, SeatingPlan, SeatingService
 from app.ui import style
 from app.ui.dialogs.layout_dialog import LayoutDialog
@@ -182,6 +183,9 @@ class SeatingView(QWidget):
         find = QShortcut(QKeySequence.StandardKey.Find, self)
         find.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         find.activated.connect(lambda: (self.search.setFocus(), self.search.selectAll()))
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self)
+        copy.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy.activated.connect(self.copy_plan)
         undo = QShortcut(QKeySequence.StandardKey.Undo, self)
         undo.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         undo.activated.connect(self.undo)
@@ -340,6 +344,13 @@ class SeatingView(QWidget):
         page = seating_plan_html(self.plan, title, students_view=self.students_view)  # as shown
         if path is not None and write_pdf(self, path, title, page, True):
             QMessageBox.information(self, "Save PDF", f"Saved the seating plan to\n{path}")
+
+    def copy_plan(self) -> None:
+        """Copy the desks as a table of names, the way the room is shown, to paste into a spreadsheet."""
+        if self.plan is None:
+            return
+        QApplication.clipboard().setText(seating_tsv(self.plan, self.students_view))
+        self.summary.setText("Copied the plan · paste it into a spreadsheet or a document")
 
     def delete_layout(self) -> None:
         if self.plan is None:

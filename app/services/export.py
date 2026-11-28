@@ -502,6 +502,19 @@ def ranking_html(
     )
 
 
+def seating_tsv(plan: SeatingPlan, students_view: bool = False) -> str:
+    """The desks as tab-separated names, laid out as seating_plan_html() lays them out,
+    with the front of the room on its own line; a free seat or a spot without a desk is empty."""
+    layout = plan.layout
+    rows = range(layout.rows) if students_view else reversed(range(layout.rows))
+    lines = []
+    for row in rows:
+        cols = reversed(range(layout.cols)) if students_view else range(layout.cols)
+        names = [(s.full_name if (s := plan.student_at(row, col)) else "") for col in cols]
+        lines.append("\t".join(str(_safe_cell(name)) for name in names))
+    return "\n".join(["Front of the room", *lines] if students_view else [*lines, "Front of the room"]) + "\n"
+
+
 def seating_plan_html(
     plan: SeatingPlan, title: str, printed: date | None = None, students_view: bool = False
 ) -> str:

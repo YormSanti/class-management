@@ -55,6 +55,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Seating", "Delete", "Take the selected student out of their seat"),
     ("Seating", "Shift+F10", "List what can be done with the selected seat, e.g. say there's no desk"),
     ("Seating", "Ctrl+F", "Find a student's seat by name or number; Enter goes to it"),
+    ("Seating", "Ctrl+C", "Copy the plan as a table of names, to paste into a spreadsheet"),
     ("Seating", "Ctrl+Z", "Undo the last change to the plan"),
     ("Seating", "Ctrl+Y", "Redo what was undone"),
     ("Manage classes", "F2", "Edit the selected class"),
