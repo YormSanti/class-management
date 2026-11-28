@@ -355,9 +355,11 @@ def test_the_plan_shown_is_remembered(qapp, conn, roster: RosterService, tmp_pat
     seating.save_layout(SeatLayout(class_id, "A plan", 2, 2))
     tests = seating.save_layout(SeatLayout(class_id, "Tests", 2, 2)).id
     first.seating_view.show_layout(tests)
+    first.seating_view.view_box.setChecked(True)
     first.close()
     second = MainWindow(roster, dashboard, _attendance(conn), _grades(conn), AppConfig(data_dir=tmp_path), settings)
     assert second.seating_view.layout_id == tests
+    assert second.seating_view.students_view and second.seating_view.view_box.isChecked()  # so is the view
     second.close()
 
 
@@ -462,3 +464,31 @@ def test_taking_a_desk_away_can_be_undone(window: MainWindow, roster: RosterServ
     assert view.plan.gaps == set() and view.plan.seats == {(0, 0): ids["Ada"]}
     view.redo()
     assert view.plan.gaps == {(0, 1)} and view.plan.seats == {(0, 0): ids["Ada"]}
+
+
+def test_the_students_view_shows_the_front_at_the_top_and_left_and_right_swapped(
+    window: MainWindow, roster: RosterService
+):
+    _class_id, layout, ids = _seated_class(window, roster)
+    view = window.seating_view
+    view.seating.place(layout, ids["Ada"], 0, 0)  # front row, the teacher's left
+    view.seating.place(layout, ids["Bob"], 1, 1)
+    view.refresh()
+    window.show_page("Seating")
+    assert _grid(window) == [["", "Bob Smith", ""], ["Ada Lovelace", "", ""]]
+    view.grid.setCurrentCell(1, 0)  # Ada
+
+    view.view_box.setChecked(True)
+    assert _grid(window) == [["", "", "Ada Lovelace"], ["", "Bob Smith", ""]]
+    assert view.room.indexOf(view.front) == 0  # above the desks
+    labels = view.grid.verticalHeaderItem(0).text(), view.grid.horizontalHeaderItem(0).text()
+    assert labels == ("1", "3")  # the front row; the teacher's right-hand seat
+    assert view.seat_at(view.grid.currentRow(), view.grid.currentColumn()) == (0, 0)  # still Ada
+
+    view.grid.cellClicked.emit(0, 2)  # pick Ada up, then the back row's middle seat to swap with Bob
+    view.grid.cellClicked.emit(1, 1)
+    assert view.plan.seat_of(ids["Ada"]) == (1, 1) and view.plan.seat_of(ids["Bob"]) == (0, 0)
+
+    view.view_box.setChecked(False)
+    assert view.room.indexOf(view.front) == 1
+    assert _grid(window) == [["", "Ada Lovelace", ""], ["Bob Smith", "", ""]]

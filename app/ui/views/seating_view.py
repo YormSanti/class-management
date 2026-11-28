@@ -4,6 +4,7 @@ from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -52,6 +53,7 @@ class SeatingView(QWidget):
         self.layout_id: int | None = None
         self.plan: SeatingPlan | None = None
         self.picked: int | None = None  # the student clicked, waiting for a seat
+        self.students_view = False  # the room as the students see it: front at the top, left and right swapped
         self._last_layout: dict[int, int] = {}  # class id -> plan shown in it this session
         # The plan before each change, see _snapshot().
         self._undo: list[Snapshot] = []
@@ -112,6 +114,10 @@ class SeatingView(QWidget):
         self.search.returnPressed.connect(self._leave_search)
         summary_row = QHBoxLayout()
         summary_row.addWidget(self.summary, stretch=1)
+        self.view_box = QCheckBox("Students' &view")
+        self.view_box.setToolTip("Show the room as the students see it, the front at the top, e.g. to put on the board")
+        self.view_box.toggled.connect(self.set_students_view)
+        summary_row.addWidget(self.view_box)
         summary_row.addWidget(self.search)
         for button in (self.fill_button, self.shuffle_button, self.clear_button):
             summary_row.addWidget(button)
@@ -125,9 +131,9 @@ class SeatingView(QWidget):
         self.grid.verticalHeader().setDefaultSectionSize(SEAT_HEIGHT)
         self.front = style.label("Front of the room", 0.9, muted=True)
         self.front.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        room = QVBoxLayout()
-        room.addWidget(self.grid, stretch=1)
-        room.addWidget(self.front)
+        self.room = QVBoxLayout()
+        self.room.addWidget(self.grid, stretch=1)
+        self.room.addWidget(self.front)
         self.unseated = QListWidget()
         self.unseated.setMaximumWidth(240)
         side = QVBoxLayout()
@@ -135,7 +141,7 @@ class SeatingView(QWidget):
         side.addWidget(self.unseated_label)
         side.addWidget(self.unseated, stretch=1)
         body = QHBoxLayout()
-        body.addLayout(room, stretch=1)
+        body.addLayout(self.room, stretch=1)
         body.addLayout(side)
         self.plan_page = QWidget()
         plan_layout = QVBoxLayout(self.plan_page)
@@ -511,9 +517,9 @@ class SeatingView(QWidget):
         grid.clear()
         grid.setRowCount(plan.layout.rows)
         grid.setColumnCount(plan.layout.cols)
-        # Rows are numbered from the front, which is at the bottom, as the teacher sees the room.
-        grid.setVerticalHeaderLabels([str(plan.layout.rows - r) for r in range(plan.layout.rows)])
-        grid.setHorizontalHeaderLabels([str(c + 1) for c in range(plan.layout.cols)])
+        # Rows are numbered from the front and seats from the teacher's left, whichever way the room is shown.
+        grid.setVerticalHeaderLabels([str(self.seat_at(r, 0)[0] + 1) for r in range(plan.layout.rows)])
+        grid.setHorizontalHeaderLabels([str(self.seat_at(0, c)[1] + 1) for c in range(plan.layout.cols)])
         for row in range(plan.layout.rows):
             for col in range(plan.layout.cols):
                 grid.setItem(*self.cell_of(row, col), self._seat_item(row, col))
@@ -533,12 +539,28 @@ class SeatingView(QWidget):
         self.clear_button.setEnabled(bool(plan.seats))
 
     def cell_of(self, row: int, col: int) -> tuple[int, int]:
-        """The grid cell of seat (row, col); row 0 is the front, shown at the bottom."""
+        """The grid cell of seat (row, col); row 0 is the front, shown at the bottom as the
+        teacher sees the room, or at the top with left and right swapped in the students' view."""
+        if self.students_view:
+            return row, self.plan.layout.cols - 1 - col
         return self.plan.layout.rows - 1 - row, col
 
     def seat_at(self, grid_row: int, grid_col: int) -> tuple[int, int]:
-        """The seat (row, col) shown in a grid cell."""
-        return self.plan.layout.rows - 1 - grid_row, grid_col
+        """The seat (row, col) shown in a grid cell; cell_of() the other way round."""
+        return self.cell_of(grid_row, grid_col)  # each view's mapping is its own inverse
+
+    def set_students_view(self, on: bool) -> None:
+        """Show the room as the students see it, or as the teacher does, keeping the seat selected."""
+        current = self.grid.currentRow(), self.grid.currentColumn()
+        seat = self.seat_at(*current) if self.plan is not None and min(current) >= 0 else None
+        self.students_view = on
+        with QSignalBlocker(self.view_box):
+            self.view_box.setChecked(on)
+        self.room.removeWidget(self.front)
+        self.room.insertWidget(0 if on else 1, self.front)
+        self.refresh()
+        if seat is not None and self.plan is not None:
+            self.grid.setCurrentCell(*self.cell_of(*seat))
 
     def _seat_item(self, row: int, col: int) -> QTableWidgetItem:
         student = self.plan.student_at(row, col)
