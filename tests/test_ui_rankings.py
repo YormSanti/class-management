@@ -269,3 +269,22 @@ def test_double_clicking_a_ranked_student_shows_their_scores_in_the_gradebook(wi
     view.table.setCurrentCell(3, 1)
     QTest.keyClick(view.table, Qt.Key.Key_Return)
     assert gradebook.student_at(gradebook.table.currentRow()) == ids["Cy"]
+
+
+def test_save_pdf_saves_the_ranking_to_print(window: MainWindow, roster: RosterService, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    _class_id, test, ids = _ranked_class(window, roster)
+    view = window.rankings_view
+    assert not view.pdf_button.isEnabled()  # nothing ranked yet
+    window.gradebook_view.grades.enter_scores([(test, ids["Ada"], "7")])
+    view.refresh()
+    assert view.pdf_button.isEnabled()
+    target = tmp_path / "ranking.pdf"
+    asked, infos = [], []
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: asked.append(a[2]) or (str(target), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[2]))
+    view.pdf_button.click()
+    assert asked[0].endswith("Maths 7B (2026-2027) ranking.pdf")
+    assert target.read_bytes().startswith(b"%PDF")
+    assert infos[0].startswith("Saved the ranking to")

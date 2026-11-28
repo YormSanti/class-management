@@ -381,6 +381,46 @@ def ranking_tsv(ranking: Ranking, overall: bool = False) -> str:
     return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _ranking_rows(ranking, overall))
 
 
+def ranking_html(
+    ranking: Ranking, title: str, pass_mark: float, overall: bool = False, printed: date | None = None
+) -> str:
+    """A ranking as a printable page, best first, averages under `pass_mark` in red;
+    students with nothing scored come last without a place."""
+    printed = printed or date.today()
+    cell = 'style="border: 1px solid #999; padding: 3px 6px; text-align: center;"'
+    name_cell = 'style="border: 1px solid #999; padding: 3px 6px; text-align: left;"'
+    labels = ["Place", "Student", "Average", "Grade"] + (["Subjects"] if overall else [])
+    lines = ["<tr>" + "".join(f"<th {name_cell if x == 'Student' else cell}>{x}</th>" for x in labels) + "</tr>"]
+    for r in ranking.ranked:
+        place = f"{r.place}{'=' if r.shared else ''}"
+        low = ' color: #b00020; font-weight: bold;' if r.average < pass_mark else ""
+        mark = f'style="border: 1px solid #999; padding: 3px 6px; text-align: center;{low}"'
+        cells = [f"<td {cell}>{place}</td>", f"<td {name_cell}>{html.escape(r.student.full_name)}</td>",
+                 f"<td {mark}>{r.average:.1f}%</td>", f"<td {mark}>{letter_grade(r.average)}</td>"]  # fmt: skip
+        if overall:
+            cells.append(f"<td {cell}>{ranking.subjects_counted.get(r.student.id, 0)}</td>")
+        lines.append("<tr>" + "".join(cells) + "</tr>")
+    for s in ranking.unranked:
+        cells = [f"<td {cell}>—</td>", f'<td {name_cell}>{html.escape(s.full_name)}</td>']
+        cells += [f"<td {cell}>—</td>", f"<td {cell}></td>"] + ([f"<td {cell}>0</td>"] if overall else [])
+        lines.append('<tr style="color: #777;">' + "".join(cells) + "</tr>")
+    n = len(ranking.ranked)
+    about = f"{n} student{'' if n == 1 else 's'} ranked"
+    failing = sum(r.average < pass_mark for r in ranking.ranked)
+    if failing:
+        about += f" · {failing} under the pass mark of {format_number(pass_mark)}%, in red"
+    if ranking.unranked:
+        about += f" · {len(ranking.unranked)} with nothing scored yet, listed last"
+    about += f" · printed {printed.day} {printed:%B} {printed.year}"
+    return (
+        '<html><body style="font-family: sans-serif; font-size: 10pt;">'
+        f'<h2 style="margin-bottom: 2px;">{html.escape(title)}</h2>'
+        f'<p style="color: #555;">{about}</p>'
+        '<table width="100%" style="border-collapse: collapse;" cellspacing="0">' + "".join(lines) + "</table>"
+        "</body></html>"
+    )
+
+
 def seating_plan_html(plan: SeatingPlan, title: str, printed: date | None = None) -> str:
     """A printable seating plan: the desks as the teacher sees them, the front of the
     room at the bottom, then the students without a seat. A spot with no desk is blank."""

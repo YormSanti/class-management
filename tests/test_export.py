@@ -354,3 +354,27 @@ def test_seating_plan_html_leaves_spots_without_a_desk_blank():
     page = seating_plan_html(plan, "7B · Tests")
     assert page.count("border: 1px solid") == 2  # Ada's desk and the free one
     assert page.count('<td style="width: 33.3%;">&nbsp;</td>') == 1
+
+
+def test_ranking_html_lists_places_best_first_and_marks_averages_under_the_pass_mark():
+    from datetime import date
+
+    from app.models import Student
+    from app.services.export import ranking_html
+    from app.services.rankings import RankedStudent, Ranking
+
+    ada, bob, cy, dee = (Student(1, first, last, id=n) for n, (first, last) in
+                         enumerate((("Ada", "Lovelace"), ("Bob", "<Smith>"), ("Cy", "Young"), ("Dee", "Ward")), 1))  # fmt: skip
+    ranking = Ranking(
+        [RankedStudent(1, ada, 91.25), RankedStudent(2, bob, 55, True), RankedStudent(2, cy, 55, True)], [dee]
+    )
+    page = ranking_html(ranking, "Ranking · Maths", 60, printed=date(2026, 11, 28))
+    assert "<h2" in page and "Ranking · Maths" in page
+    assert "3 students ranked · 2 under the pass mark of 60%, in red · 1 with nothing scored yet" in page
+    assert "printed 28 November 2026" in page
+    assert page.index("Ada Lovelace") < page.index("&lt;Smith&gt;") < page.index("Cy Young") < page.index("Dee Ward")
+    assert ">91.2%<" in page and ">2=<" in page and "Subjects" not in page
+    assert page.count("#b00020") == 4  # Bob's and Cy's average and grade
+
+    ranking.subjects_counted, ranking.subjects = {1: 2, 2: 1, 3: 2}, 2
+    assert "<th" in page and "Subjects</th>" in ranking_html(ranking, "Ranking · All", 60, overall=True)

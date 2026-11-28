@@ -115,8 +115,8 @@ the dashboard. Students with nothing scored are listed last, without a place.
 
 Averages are shown to one decimal, and students whose averages look the same share a
 place, marked `2=`. Whether the next place is then 4th or 3rd is set under
-**Settings → Rankings**. Averages under the pass mark are shown in red, and **Export…**
-saves the ranking as CSV.
+**Settings → Rankings**. Averages under the pass mark are shown in red, **Export…**
+saves the ranking as CSV and **Save PDF…** saves it to print.
 
 ## Seating
 

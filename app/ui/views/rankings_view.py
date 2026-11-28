@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.dashboard import letter_grade
-from app.services.export import ranking_tsv, write_ranking_csv
+from app.services.export import ranking_html, ranking_tsv, write_ranking_csv
 from app.services.gradebook import PASS_MARK, format_number
 from app.services.rankings import Ranking, RankingService
 from app.services.roster import RosterService, matches
 from app.ui import style
-from app.ui.files import ask_save_path
+from app.ui.files import ask_save_path, write_pdf
 
 COLUMNS = ("Place", "Student", "Average", "Grade")
 OVERALL = -1  # the "All subjects" choice of Rank by
@@ -88,6 +88,10 @@ class RankingsView(QWidget):
         self.export_button.setToolTip("Save the ranking as a CSV file")
         self.export_button.clicked.connect(self.export_csv)
         header.addWidget(self.export_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        self.pdf_button = QPushButton("Save PD&F…")
+        self.pdf_button.setToolTip("Save the ranking as a PDF to print")
+        self.pdf_button.clicked.connect(self.save_pdf)
+        header.addWidget(self.pdf_button, alignment=Qt.AlignmentFlag.AlignBottom)
 
         self.summary = style.label("", 0.95, muted=True)
         self.table = QTableWidget(0, len(COLUMNS))
@@ -203,6 +207,7 @@ class RankingsView(QWidget):
         context = [x for x in (scope if subjects else None, school_class and school_class.display_name) if x]
         self.subtitle.setText(" · ".join(context))
         self.export_button.setEnabled(self.ranking is not None and bool(self.ranking.ranked))
+        self.pdf_button.setEnabled(self.export_button.isEnabled())
         self._show_state(subject.name if subject else "")
 
     def export_csv(self) -> None:
@@ -221,6 +226,17 @@ class RankingsView(QWidget):
         QMessageBox.information(
             self, "Export ranking", f"Saved the ranking of {n} student{'' if n == 1 else 's'} to\n{path}"
         )
+
+    def save_pdf(self) -> None:
+        """Save the ranking shown as an A4 PDF, ready to print."""
+        if self.ranking is None or not self.ranking.ranked:
+            return
+        title = f"Ranking · {self.subtitle.text()}"  # e.g. "Ranking · Maths · 7B (2026-2027)"
+        name = self.subtitle.text().replace(" · ", " ")
+        path = ask_save_path(self, "Save PDF", f"{name} ranking", "PDF files", ".pdf")
+        page = ranking_html(self.ranking, title, self.pass_mark, self.overall)
+        if path is not None and write_pdf(self, path, title, page, False):
+            QMessageBox.information(self, "Save PDF", f"Saved the ranking to\n{path}")
 
     def set_overall(self, overall: bool) -> None:
         """Rank by all subjects, or by the current one."""
