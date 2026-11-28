@@ -35,7 +35,7 @@ from app.services.gradebook import (
     next_title,
 )
 from app.services.dashboard import letter_grade
-from app.services.export import write_gradebook_csv
+from app.services.export import write_gradebook_csv, write_gradebook_xlsx
 from app.services.roster import RosterService, matches
 from app.ui import style
 from app.ui.dialogs.assignment_dialog import AssignmentDialog
@@ -121,7 +121,7 @@ class GradebookView(QWidget):
         header = QHBoxLayout()
         header.addLayout(titles, stretch=1)
         self.export_button = QPushButton("E&xport…")
-        self.export_button.setToolTip("Save the scores, category percents and averages as a CSV file")
+        self.export_button.setToolTip("Save the scores, category percents and averages as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
         header.addWidget(self.export_button, alignment=Qt.AlignmentFlag.AlignBottom)
         header.addWidget(self.categories_button, alignment=Qt.AlignmentFlag.AlignBottom)
@@ -259,11 +259,14 @@ class GradebookView(QWidget):
         if self.sheet is None or school_class is None:
             return
         name = f"{school_class.display_name} {self.sheet.subject.name} grades"
-        path = ask_save_path(self, "Export grades", name, "CSV files", ".csv")
+        path = ask_save_path(self, "Export grades", name, "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),))
         if path is None:
             return
         try:
-            write_gradebook_csv(path, self.sheet)
+            if path.suffix.lower() == ".xlsx":
+                write_gradebook_xlsx(path, self.sheet)
+            else:
+                write_gradebook_csv(path, self.sheet)
         except OSError as exc:
             QMessageBox.warning(self, "Export grades", f"The file could not be saved:\n{exc}")
             return

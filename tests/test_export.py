@@ -302,6 +302,34 @@ def test_gradebook_csv_has_scores_category_percents_and_averages(conn, roster, t
     ]
 
 
+def test_gradebook_xlsx_has_the_columns_of_the_csv_with_names_kept_in_view(conn, roster, tmp_path):
+    from openpyxl import load_workbook
+
+    from app.models import Assignment, Category, SchoolClass, Student, Subject
+    from app.repositories.gradebook_repo import GradebookRepository
+    from app.repositories.student_repo import StudentRepository
+    from app.repositories.subject_repo import SubjectRepository
+    from app.services.export import write_gradebook_xlsx
+    from app.services.gradebook import GradebookService
+
+    grades = GradebookService(GradebookRepository(conn), StudentRepository(conn), SubjectRepository(conn))
+    class_id = roster.save_class(SchoolClass(name="7B")).id
+    ada = roster.save_student(Student(class_id, "Ada", "=Lovelace", student_no="S1")).id
+    maths = roster.save_subject(Subject(class_id=class_id, name="Maths: algebra")).id
+    tests = grades.save_category(Category(maths, "Tests", 100)).id
+    t1 = grades.save_assignment(Assignment(maths, tests, "Test 1", 10)).id
+    grades.enter_score(t1, ada, "7.5")
+    path = tmp_path / "maths.xlsx"
+    write_gradebook_xlsx(path, grades.sheet(maths))
+    sheet = load_workbook(path).active
+    assert sheet.title == "Maths- algebra"
+    assert [c.value for c in sheet[1]] == ["Student #", "Last name", "First name", "Test 1 (/10)", "Tests %", "Average %", "Grade"]
+    assert [c.value for c in sheet[2]] == ["S1", "=Lovelace", "Ada", 7.5, 75, 75, "C"]
+    assert sheet["B2"].data_type == "s"  # a name like a formula stays text
+    assert sheet["A1"].font.bold and sheet.freeze_panes == "D2"
+    assert not list(tmp_path.glob(".export-*"))  # no temporary file left
+
+
 def test_ranking_csv_lists_places_best_first_then_those_unscored(tmp_path):
     from app.models import Student
     from app.services.export import write_ranking_csv

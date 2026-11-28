@@ -28,22 +28,36 @@ def safe_filename(text: str) -> str:
 
 
 def ask_save_path(
-    parent: QWidget, title: str, name: str, file_type: str, suffix: str, folder: Path | None = None
+    parent: QWidget,
+    title: str,
+    name: str,
+    file_type: str,
+    suffix: str,
+    folder: Path | None = None,
+    others: tuple[tuple[str, str], ...] = (),
 ) -> Path | None:
     """Ask where to save a file, suggesting `name` + `suffix` in `folder`, or else in the
     folder of the last export this session, or else the home folder.
 
-    `file_type` names the files for the dialog's filter, e.g. "CSV files". The suffix is
-    added if the teacher leaves it off. None if the dialog was cancelled.
+    `file_type` names the files for the dialog's filter, e.g. "CSV files"; `others` are
+    more (file type, suffix) pairs to choose from, e.g. ("Excel workbooks", ".xlsx").
+    A path ending in none of the suffixes gets the one of the filter chosen. None if
+    the dialog was cancelled.
     """
     global _last_folder
     if folder is None:
         folder = _last_folder if _last_folder is not None and _last_folder.is_dir() else Path.home()
     start = folder / f"{safe_filename(name)}{suffix}"
-    path, _filter = QFileDialog.getSaveFileName(parent, title, str(start), f"{file_type} (*{suffix})")
+    types = ((file_type, suffix), *others)
+    filters = [f"{kind} (*{ext})" for kind, ext in types]
+    path, chosen_filter = QFileDialog.getSaveFileName(parent, title, str(start), ";;".join(filters))
     if not path:
         return None
-    chosen = Path(path) if path.lower().endswith(suffix.lower()) else Path(path + suffix)
+    if any(path.lower().endswith(ext.lower()) for _kind, ext in types):
+        chosen = Path(path)
+    else:
+        ext = next((ext for (_kind, ext), f in zip(types, filters) if f == chosen_filter), suffix)
+        chosen = Path(path + ext)
     _last_folder = chosen.parent
     return chosen
 

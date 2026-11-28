@@ -42,6 +42,44 @@ def _write_csv(path: Path, rows: Sequence[Sequence[object]]) -> None:
         raise
 
 
+def _write_xlsx(path: Path, rows: Sequence[Sequence[object]], title: str, frozen: str = "A2") -> None:
+    """An Excel workbook of one sheet: the first row in bold, and rows and columns before
+    `frozen` kept in view while scrolling. Written next to `path` first and renamed, as
+    _write_csv does; text is never read as a formula."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = safe_sheet_title(title)
+    for r, row in enumerate(rows, start=1):
+        for c, value in enumerate(row, start=1):
+            cell = sheet.cell(r, c, value)
+            if isinstance(value, str):
+                cell.data_type = "s"  # "=1+1" stays text
+            if r == 1:
+                cell.font = Font(bold=True)
+    for c in range(1, max((len(row) for row in rows), default=0) + 1):
+        longest = max((len(str(row[c - 1])) for row in rows if c <= len(row)), default=0)
+        sheet.column_dimensions[get_column_letter(c)].width = min(max(longest + 2, 6), 40)
+    sheet.freeze_panes = frozen
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".export-", suffix=".tmp")
+    os.close(fd)
+    try:
+        workbook.save(tmp_name)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def safe_sheet_title(text: str) -> str:
+    """`text` as an Excel sheet name: at most 31 characters, none of []:*?/\\."""
+    name = "".join("-" if ch in '[]:*?/\\' else ch for ch in text).strip("' ")[:31]
+    return name or "Sheet"
+
+
 def write_roster_csv(path: Path, students: Sequence[Student]) -> None:
     """Save students as CSV, in the order given."""
     rows: list[Sequence[object]] = [ROSTER_COLUMNS]
@@ -351,6 +389,12 @@ def _gradebook_rows(sheet: GradeSheet) -> list[Sequence[object]]:
 def write_gradebook_csv(path: Path, sheet: GradeSheet) -> None:
     """Save one subject's gradebook as CSV, e.g. for the school's report cards."""
     _write_csv(path, _gradebook_rows(sheet))
+
+
+def write_gradebook_xlsx(path: Path, sheet: GradeSheet) -> None:
+    """Save one subject's gradebook as an Excel workbook, the same columns as the CSV,
+    with the students' names kept in view while scrolling."""
+    _write_xlsx(path, _gradebook_rows(sheet), sheet.subject.name, frozen="D2")
 
 
 def _ranking_rows(ranking: Ranking, overall: bool) -> list[Sequence[object]]:

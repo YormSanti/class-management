@@ -688,6 +688,30 @@ def test_export_saves_the_gradebook_as_csv(window: MainWindow, roster: RosterSer
     assert infos[0].startswith("Saved the grades of 2 students")
 
 
+def test_export_saves_the_gradebook_as_an_excel_workbook_if_chosen(
+    window: MainWindow, roster: RosterService, tmp_path, monkeypatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    maths, ada, test, homework = _graded_class(window, roster)
+    view = window.gradebook_view
+    view.table.item(0, 1).setText("8")
+    filters = []
+    target = tmp_path / "grades"  # the Excel filter adds .xlsx
+
+    def ask(*args):
+        filters.append(args[3].split(";;"))
+        return str(target), "Excel workbooks (*.xlsx)"
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", ask)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    view.export_button.click()
+    assert filters[0] == ["CSV files (*.csv)", "Excel workbooks (*.xlsx)"]
+    rows = list(load_workbook(tmp_path / "grades.xlsx").active.values)
+    assert rows[1] == (None, "Lovelace", "Ada", 8, None, 80, 80, "B")
+
+
 def test_lowering_a_maximum_below_scores_says_they_are_bonus(window: MainWindow, roster: RosterService, monkeypatch):
     from dataclasses import replace
 

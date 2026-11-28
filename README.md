@@ -100,7 +100,8 @@ possible, counted by its weight; categories with nothing scored yet, exempt stud
 empty cells are left out, while a 0 counts. Points above the maximum are bonus points.
 Averages under the pass mark (60% unless changed under **Settings → Grades**) are shown
 in red, here and on the dashboard. Clicking **Average** lists the best average first, and
-**Export…** saves the scores, category percents, averages and letter grades as CSV.
+**Export…** saves the scores, category percents, averages and letter grades as CSV or,
+choosing Excel workbooks as the file type, as an `.xlsx` file with the names kept in view.
 An empty cell of a dated assignment counts as missing work once the date has passed: it is
 shaded in the gradebook and counted on the dashboard. An exempt one isn't missing.
 
