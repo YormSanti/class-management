@@ -132,7 +132,8 @@ front: row 1, the front row, is at the bottom. Tick **Students' view** to show i
 students see it instead, front at the top, e.g. to put it on the board as they come in;
 **Save PDF…** then saves it that way round too.
 
-Click a student under **Not seated**, then a seat. Click a seated student, then another
+Click a student under **Not seated**, then a seat. Pointing at a student shows their
+number and notes, e.g. "Glasses: sits at the front". Click a seated student, then another
 seat to move them; if that seat is taken, the two swap. **Seat the rest** puts everyone
 not seated yet in the free seats by name, front row first, and **Shuffle** seats the
 whole class at random; Ctrl+Z undoes either. **Edit…** renames the plan or changes the

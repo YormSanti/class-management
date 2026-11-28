@@ -509,3 +509,17 @@ def test_ctrl_c_copies_the_plan_as_a_table_of_names(window: MainWindow, roster: 
     QTest.keyClick(view.grid, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
     assert qapp.clipboard().text() == "\t\t\nAda Lovelace\t\t\nFront of the room\n"
     assert view.summary.text().startswith("Copied the plan")
+
+
+def test_pointing_at_a_student_shows_their_number_and_notes(window: MainWindow, roster: RosterService):
+    class_id = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    ada = roster.save_student(Student(class_id, "Ada", "Lovelace", student_no="12", notes="Glasses: sits at the front"))
+    roster.save_student(Student(class_id, "Bob", "Smith"))
+    view = window.seating_view
+    layout = view.seating.save_layout(SeatLayout(class_id, "Tests", 1, 2)).id
+    window.select_class(class_id)
+    view.seating.place(layout, ada.id, 0, 0)
+    view.refresh()
+    assert view.grid.item(0, 0).toolTip() == "Ada Lovelace · No. 12\nGlasses: sits at the front"
+    assert view.grid.item(0, 1).toolTip() == ""  # a free seat
+    assert view.unseated.item(0).toolTip() == "Bob Smith"

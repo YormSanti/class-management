@@ -45,6 +45,14 @@ HINT = (
 )
 
 
+def student_tip(student) -> str:
+    """The student's full name and number, and their notes, which often matter for a seat,
+    e.g. "Glasses: sits at the front"."""
+    first = student.full_name + (f" · No. {student.student_no}" if student.student_no else "")
+    notes = student.notes.strip()
+    return f"{first}\n{notes}" if notes else first
+
+
 class SeatingView(QWidget):
     def __init__(self, seating: SeatingService, roster: RosterService, parent: QWidget | None = None):
         super().__init__(parent)
@@ -539,6 +547,7 @@ class SeatingView(QWidget):
         for student in plan.unseated:
             item = QListWidgetItem(student.full_name)
             item.setData(STUDENT_ID, student.id)
+            item.setToolTip(student_tip(student))
             self.unseated.addItem(item)
         seated = len(plan.seats)
         free = len(plan.free_seats)
@@ -580,6 +589,7 @@ class SeatingView(QWidget):
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if student:
             item.setData(STUDENT_ID, student.id)
+            item.setToolTip(student_tip(student))
         elif (row, col) in self.plan.gaps:
             item.setBackground(style.border(self))
             item.setToolTip("No desk here; right-click to put one")
