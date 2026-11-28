@@ -43,8 +43,8 @@ On the Attendance page's Day tab:
 - Ctrl+F finds a student, Alt+← / Alt+→ change the day, Alt+Home goes to today.
 - Ctrl+Z undoes and Ctrl+Y redoes.
 
-On the Month tab the same letters mark the selected cell, H shows the student's history, and
-Alt+← / Alt+→ (or Page Up / Page Down) change the month. Right-clicking a student on the Day tab lists what can be done.
+On the Month tab the same letters mark the selected cell, H shows the student's history,
+Ctrl+F finds a student's row and Alt+← / Alt+→ (or Page Up / Page Down) change the month. Right-clicking a student on the Day tab lists what can be done.
 
 On the Gradebook page, type a score in a cell and press Enter to go to the next student
 (Shift+Enter goes back). Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to

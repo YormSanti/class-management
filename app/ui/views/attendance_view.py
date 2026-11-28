@@ -182,6 +182,13 @@ class MonthView(QWidget):
             toolbar.addWidget(style.label(text, 0.9, muted=True))
             toolbar.addSpacing(8)
         toolbar.addStretch()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a student (Ctrl+F)")
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(200)
+        self.search.textChanged.connect(self.find_student)
+        self.search.returnPressed.connect(lambda: self.table.setFocus())  # the table comes next
+        toolbar.addWidget(self.search)
         toolbar.addWidget(self.copy_button)
         toolbar.addWidget(self.pdf_button)
         toolbar.addWidget(self.export_period_button)
@@ -202,7 +209,7 @@ class MonthView(QWidget):
             shortcut.activated.connect(lambda months=months: self.step(months))
 
         hint = style.label(
-            "Hover over a mark to see its note; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
+            "Hover over a mark to see its note; Ctrl+F finds a student; P L A E (or 1 2 3 4) mark the selected cell and Delete clears it; "
             "double-click a day (or press Enter) to open its register, or a name (or press H) for the student's history. "
             "The rate counts present and late out of the "
             "days marked; excused days count neither way, as on the dashboard.",
@@ -412,6 +419,20 @@ class MonthView(QWidget):
                     self.table.setCurrentCell(min(row + 1, len(self.register.rows) - 1), col)
                 return True
         return super().eventFilter(watched, event)
+
+    def find_student(self, text: str) -> None:
+        """Select the first student matching `text` by name or number, in the day selected or else today's."""
+        if self.register is None or not text.strip():
+            return
+        row = next((i for i, r in enumerate(self.register.rows) if matches(r.student, text)), None)
+        if row is None:
+            return
+        col = self.table.currentColumn()
+        if not 1 <= col <= len(self.register.days):
+            today = self._today()
+            col = self.register.days.index(today) + 1 if today in self.register.days else 0
+        self.table.setCurrentCell(row, col)
+        self.table.scrollToItem(self.table.item(row, col))
 
     def _cell(self, row: int, col: int) -> tuple[int, date] | None:
         """(student id, day) of a mark cell of the table, None for names, totals and the last row."""
@@ -1065,9 +1086,9 @@ class AttendanceView(QWidget):
     # --- finding a student ---------------------------------------------------
 
     def _start_find(self) -> None:
-        self.tabs.setCurrentIndex(0)
-        self.find_edit.setFocus()
-        self.find_edit.selectAll()
+        find = self.month_view.search if self.tabs.currentWidget() is self.month_view else self.find_edit
+        find.setFocus()
+        find.selectAll()
 
     def _apply_filter(self) -> None:
         """Hide the students the text in the find box doesn't find, as in the class list."""

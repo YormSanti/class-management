@@ -260,3 +260,28 @@ def test_a_day_picked_in_the_history_opens_on_the_day_tab_from_the_month_tab(
     view.month_view.history_requested.emit(student)  # a name double-clicked on the Month tab
     assert view.tabs.currentIndex() == 0
     assert view.day == date(2026, 11, 3)
+
+
+def test_ctrl_f_on_the_month_tab_finds_a_student_there(window: MainWindow, roster: RosterService):
+    view = _page(window, roster, names=("Ada Lovelace", "Grace Hopper", "José Ruiz"))
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    month.set_month(FRIDAY.year, FRIDAY.month)
+    friday = 1 + month.register.days.index(FRIDAY)
+    month.table.setCurrentCell(0, friday)
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    month.table.setFocus()
+    QTest.keyClick(month.table, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert view.tabs.currentWidget() is month  # stays on the Month tab
+    assert month.search.hasFocus()
+    QTest.keyClicks(month.search, "jose")
+    assert month.register.rows[month.table.currentRow()].student.full_name == "José Ruiz"
+    assert month.table.currentColumn() == friday  # still the day picked
+    assert all(not month.table.isRowHidden(r) for r in range(month.table.rowCount()))
+    QTest.keyClick(month.search, Qt.Key.Key_Return)
+    assert month.table.hasFocus()
+
+    view.tabs.setCurrentIndex(0)
+    QTest.keyClick(view.table, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert view.find_edit.hasFocus()

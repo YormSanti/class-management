@@ -33,6 +33,7 @@ SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Attendance, Month tab", "H", "Show the selected student's attendance history"),
     ("Attendance, Month tab", "Alt+Left  Alt+Right, Page Up  Page Down", "Previous or next month"),
     ("Attendance, Month tab", "Alt+Home", "This month"),
+    ("Attendance, Month tab", "Ctrl+F", "Find a student's row by name or number; Enter goes back to the table"),
     ("Gradebook", "0-9, ex", "Type a score in the selected cell: points, a percentage (85%), points out of a total (17/20) or ex for exempt"),
     ("Gradebook", "Enter", "Save the score and go to the next student"),
     ("Gradebook", "Shift+Enter", "Save the score and go back to the student before"),
