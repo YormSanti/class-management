@@ -32,7 +32,8 @@ Problems are logged to `classroom.log` in the settings folder (next to `config.j
 ## Keyboard
 
 **Help → Keyboard shortcuts** (F1) lists them all. The main ones: Ctrl+1 … Ctrl+7 switch
-pages, F5 reloads the page, Ctrl+Shift+B backs up.
+pages, Ctrl+Shift+Page Down / Page Up go to the next or previous class of the school year
+(**View → Next class**), F5 reloads the page, Ctrl+Shift+B backs up.
 
 On the Attendance page's Day tab:
 

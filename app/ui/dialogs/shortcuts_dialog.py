@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 # (where, keys, what they do); keep in step with the shortcuts set up on each page.
 SHORTCUTS: tuple[tuple[str, str, str], ...] = (
     ("Anywhere", "Ctrl+1 … Ctrl+7", "Switch page, in sidebar order"),
+    ("Anywhere", "Ctrl+Shift+Page Down  Ctrl+Shift+Page Up", "Next or previous class of the school year"),
     ("Anywhere", "Ctrl+Shift+B", "Back up now"),
     ("Anywhere", "F5", "Reload the page shown"),
     ("Anywhere", "F1", "This list"),

@@ -3093,3 +3093,27 @@ def test_dashboard_names_who_is_under_the_pass_mark_in_a_subject(window: MainWin
     below = window.dashboard_view.subjects_grid.itemAtPosition(1, 3).widget()
     assert below.text() == "1"
     assert below.toolTip() == "Under 60%:\nAda Lovelace 40%"
+
+
+def test_ctrl_shift_page_down_and_up_go_through_the_classes_of_the_school_year(
+    window: MainWindow, roster: RosterService, qapp
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    b = roster.save_class(SchoolClass(name="7B", term="2026-2027")).id
+    c = roster.save_class(SchoolClass(name="10A", term="2026-2027")).id
+    roster.save_class(SchoolClass(name="8A", term="2025-2026"))  # another year: never reached
+    window.select_class(b)
+    window.show_page("Gradebook")
+    window.activateWindow()
+    QTest.qWaitForWindowActive(window)
+    keys = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+    QTest.keyClick(window, Qt.Key.Key_PageDown, keys)
+    assert window.class_id == c  # 7B, then 10A, as people read them
+    assert window.stack.currentWidget() is window.gradebook_view  # the page stays
+    assert window.statusBar().currentMessage() == "Class: 10A (2026-2027)"
+    QTest.keyClick(window, Qt.Key.Key_PageDown, keys)
+    assert window.class_id == b  # round to the first
+    QTest.keyClick(window, Qt.Key.Key_PageUp, keys)
+    assert window.class_id == c

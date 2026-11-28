@@ -227,6 +227,12 @@ class MainWindow(QMainWindow):
         view_menu = self.menuBar().addMenu("&View")
         reload_action = view_menu.addAction("&Reload page", self.reload_page)
         reload_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Refresh))
+        view_menu.addSeparator()
+        # With Shift: Ctrl+Page Up / Page Down alone switch the tabs of the Attendance and Manage classes pages.
+        previous_class = view_menu.addAction("&Previous class", lambda: self.step_class(-1))
+        previous_class.setShortcut(QKeySequence("Ctrl+Shift+PgUp"))
+        next_class = view_menu.addAction("&Next class", lambda: self.step_class(1))
+        next_class.setShortcut(QKeySequence("Ctrl+Shift+PgDown"))
 
         help_menu = self.menuBar().addMenu("&Help")
         shortcuts = help_menu.addAction("&Keyboard shortcuts", self.show_shortcuts)
@@ -433,6 +439,21 @@ class MainWindow(QMainWindow):
         for _name, page in self.pages:
             page.set_class(self.class_id)
         self.select_subject()
+
+    def step_class(self, step: int) -> None:
+        """Go to the next (1) or previous (-1) class of the current class's school year,
+        in Manage classes order, round from the last to the first; the page shown stays."""
+        current = self.roster.get_class(self.class_id) if self.class_id is not None else None
+        if current is None:
+            return
+        classes = self.roster.list_classes(current.term)
+        ids = [c.id for c in classes]
+        if len(ids) < 2:
+            self.statusBar().showMessage(f"{current.display_name} is the only class of its school year", 4000)
+            return
+        chosen = classes[(ids.index(current.id) + step) % len(ids)]
+        self.select_class(chosen.id)
+        self.statusBar().showMessage(f"Class: {chosen.display_name}", 4000)
 
     def new_class(self, term: str | None = None) -> None:
         """Ask for a new class, suggesting `term` (default: the newest school year)."""
