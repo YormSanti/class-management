@@ -268,6 +268,16 @@ def test_subject_summaries(service, roster, conn, class_id, maths):
     assert (by_name["Art"].average, by_name["Art"].scored, by_name["Art"].subject.teacher) == (None, 0, "Ms. Chen")
 
 
+def test_subject_summaries_name_the_students_under_the_pass_mark_lowest_first(service, roster, conn, class_id, maths):
+    ada, alan, bea = (_student(roster, class_id, name) for name in ("Ada", "Alan", "Bea"))
+    test = _assignment(conn, maths, _category(conn, maths, "Tests", 1), "Test", 10, TODAY)
+    for student, points in ((ada, 9), (alan, 5), (bea, 3)):
+        _score(conn, test, student, points)
+
+    (summary,) = service.summary(class_id, TODAY).subjects
+    assert summary.below_pass_names == ["Bea Test 30%", "Alan Test 50%"]
+
+
 def test_low_grades_name_the_subject(service, roster, conn, class_id, maths):
     ada, alan = _student(roster, class_id, "Ada"), _student(roster, class_id, "Alan")
     science = roster.save_subject(Subject(class_id=class_id, name="Science")).id

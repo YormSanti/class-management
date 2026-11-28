@@ -3000,3 +3000,22 @@ def test_clicking_a_recent_assignment_on_the_dashboard_opens_it_in_the_gradebook
     assert window.stack.currentWidget() is view
     assert window.subject_id == science
     assert view.table.horizontalHeaderItem(view.table.currentColumn()).text().startswith("Quiz 1")
+
+
+def test_dashboard_names_who_is_under_the_pass_mark_in_a_subject(window: MainWindow, roster: RosterService, conn):
+    from datetime import date
+
+    from app.models import Assignment
+
+    class_id = roster.save_class(SchoolClass(name="7B"), "Maths").id
+    maths = roster.list_subjects(class_id)[0].id
+    ada = roster.save_student(Student(class_id=class_id, first_name="Ada", last_name="Lovelace")).id
+    grades = _grades(conn)
+    category = grades.add_categories(maths, (("Tests", 50),))[0]
+    test = grades.save_assignment(Assignment(subject_id=maths, category_id=category.id, title="Test", max_score=10, date=date.today()))
+    grades.enter_score(test.id, ada, "4")
+    window.select_class(class_id)
+    window.show_page("Dashboard")
+    below = window.dashboard_view.subjects_grid.itemAtPosition(1, 3).widget()
+    assert below.text() == "1"
+    assert below.toolTip() == "Under 60%:\nAda Lovelace 40%"

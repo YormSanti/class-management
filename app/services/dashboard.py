@@ -48,6 +48,7 @@ class SubjectSummary:
     average: float | None  # mean of the students' averages in this subject
     scored: int  # students with at least one score
     below_pass: int  # students whose average is under the pass mark
+    below_pass_names: list[str] = field(default_factory=list)  # e.g. "Ada Lovelace 45%", lowest first
 
 
 @dataclass
@@ -188,6 +189,7 @@ class DashboardService:
         missing = self.dashboard.missing_by_student(class_id, today)
         subjects = self.subjects.list_for_class(class_id)
 
+        names = {s.id: s.full_name for s in self.students.list_for_class(class_id)} if subjects else {}
         subject_summaries = []
         low_subjects: dict[int, list[tuple[str, float]]] = {}  # student id -> failing subjects
         for subject in subjects:
@@ -201,6 +203,11 @@ class DashboardService:
                     average=sum(scores.values()) / len(scores) if scores else None,
                     scored=len(scores),
                     below_pass=len(low),
+                    below_pass_names=[
+                        f"{names[sid]} {pct:.0f}%"
+                        for sid, pct in sorted(low.items(), key=lambda item: item[1])
+                        if sid in names
+                    ],
                 )
             )
 

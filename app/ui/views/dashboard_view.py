@@ -638,5 +638,6 @@ class DashboardView(QWidget):
             below.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if s.below_pass:
                 style.set_color(below, style.color(self, "danger"))
+                below.setToolTip(f"Under {self.dashboard.pass_mark:.0f}%:\n" + "\n".join(s.below_pass_names))
             grid.addWidget(below, row, 3)
         grid.setColumnStretch(2, 1)
