@@ -179,6 +179,12 @@ def write_attendance_csv(path: Path, register: MonthRegister) -> None:
     _write_csv(path, _month_rows(register))
 
 
+def write_attendance_xlsx(path: Path, register: MonthRegister, title: str) -> None:
+    """Save a month of attendance as an Excel workbook, the columns of the CSV, with the
+    students' names kept in view while scrolling through the days."""
+    _write_xlsx(path, _month_rows(register), title, frozen="D2")
+
+
 def attendance_month_tsv(register: MonthRegister) -> str:
     """A month of attendance as tab-separated text, to paste into a spreadsheet."""
     return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _month_rows(register))

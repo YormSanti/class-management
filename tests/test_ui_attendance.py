@@ -285,3 +285,23 @@ def test_ctrl_f_on_the_month_tab_finds_a_student_there(window: MainWindow, roste
     view.tabs.setCurrentIndex(0)
     QTest.keyClick(view.table, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
     assert view.find_edit.hasFocus()
+
+
+def test_the_month_is_exported_as_an_excel_workbook_if_chosen(
+    window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch
+):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    view = _page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()  # Grace Hopper, Friday
+    month = view.month_view
+    view.tabs.setCurrentWidget(month)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "nov"), "Excel workbooks (*.xlsx)"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    month.export_button.click()
+    sheet = load_workbook(tmp_path / "nov.xlsx").active
+    assert sheet.title == "November 2026" and sheet.freeze_panes == "D2"
+    rows = list(sheet.values)
+    friday = rows[0].index(FRIDAY.isoformat())
+    assert rows[1][1:3] == ("Hopper", "Grace") and rows[1][friday] == "A"

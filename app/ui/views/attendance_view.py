@@ -51,6 +51,7 @@ from app.services.export import (
     attendance_period_html,
     write_attendance_csv,
     write_attendance_summary_csv,
+    write_attendance_xlsx,
 )
 from app.services.roster import RosterService, matches, number_key
 from app.ui import style
@@ -148,8 +149,8 @@ class MonthView(QWidget):
         self.this_month_button = QPushButton("This month")
         self.this_month_button.setToolTip("Go to this month (Alt+Home)")
         self.this_month_button.clicked.connect(lambda: self.set_month(self._today().year, self._today().month))
-        self.export_button = QPushButton("Export CSV…")
-        self.export_button.setToolTip("Save this month as a CSV file for Excel or other programs")
+        self.export_button = QPushButton("Export…")
+        self.export_button.setToolTip("Save this month as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
         self.export_period_button = QPushButton("Export period…")
         self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
@@ -445,11 +446,14 @@ class MonthView(QWidget):
             return
         first = date(self.year, self.month, 1)
         name = f"{self.file_label} attendance {first:%B} {first.year}"
-        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),))
         if path is None:
             return
         try:
-            write_attendance_csv(path, self.register)
+            if path.suffix.lower() == ".xlsx":
+                write_attendance_xlsx(path, self.register, f"{first:%B} {first.year}")
+            else:
+                write_attendance_csv(path, self.register)
         except OSError as exc:
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
