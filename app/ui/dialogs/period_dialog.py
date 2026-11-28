@@ -59,9 +59,9 @@ class PeriodDialog(QDialog):
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export CSV…")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export…")  # CSV or Excel, asked next
         self.buttons.accepted.connect(self.accept)
-        self.as_pdf = False  # the PDF button was pressed rather than the CSV one
+        self.as_pdf = False  # the PDF button was pressed rather than Export
         self.pdf_button = self.buttons.addButton("Save PDF…", QDialogButtonBox.ButtonRole.ActionRole)
         self.pdf_button.setAutoDefault(False)
         self.pdf_button.clicked.connect(self._accept_pdf)

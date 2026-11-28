@@ -45,7 +45,8 @@ On the Attendance page's Day tab:
 
 On the Month tab the same letters mark the selected cell, H shows the student's history,
 Ctrl+F finds a student's row and Alt+← / Alt+→ (or Page Up / Page Down) change the month. Its **Export…** saves
-the month as CSV or as an Excel workbook. Right-clicking a student on the Day tab lists what can be done.
+the month as CSV or as an Excel workbook, and **Export period…** each student's totals for
+any dates, e.g. a term, as CSV, an Excel workbook or a PDF. Right-clicking a student on the Day tab lists what can be done.
 
 On the Gradebook page, type a score in a cell and press Enter to go to the next student
 (Shift+Enter goes back). Delete clears the selected scores, Ctrl+C / Ctrl+V copy scores to

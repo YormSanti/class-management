@@ -190,9 +190,9 @@ def attendance_month_tsv(register: MonthRegister) -> str:
     return "".join("\t".join(str(_safe_cell(v)) for v in row) + "\n" for row in _month_rows(register))
 
 
-def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
-    """Save each student's totals for a period, e.g. a term, with their attendance rate,
-    and a last "Whole class" row with the class's totals and rate."""
+def _summary_rows(summary: PeriodSummary) -> list[Sequence[object]]:
+    """Each student's totals for a period, e.g. a term, with their attendance rate, and a
+    last "Whole class" row with the class's totals and rate."""
     rows: list[Sequence[object]] = [
         ["Student #", "Last name", "First name", "Present", "Late", "Absent", "Excused", "Not marked", "Attendance %"]
     ]
@@ -208,7 +208,18 @@ def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
             ["", WHOLE_CLASS, "", totals["present"], totals["late"], totals["absent"], totals["excused"],
              sum(row.unmarked for row in summary.rows), _rate_cell(attendance_rate(totals))]
         )  # fmt: skip
-    _write_csv(path, rows)
+    return rows
+
+
+def write_attendance_summary_csv(path: Path, summary: PeriodSummary) -> None:
+    """Save each student's totals for a period as CSV; see _summary_rows()."""
+    _write_csv(path, _summary_rows(summary))
+
+
+def write_attendance_summary_xlsx(path: Path, summary: PeriodSummary) -> None:
+    """Save each student's totals for a period as an Excel workbook; see _summary_rows()."""
+    title = f"{summary.start.day} {summary.start:%b %Y} to {summary.end.day} {summary.end:%b %Y}"
+    _write_xlsx(path, _summary_rows(summary), title, frozen="D2")
 
 
 def write_student_history_csv(path: Path, history: StudentHistory) -> None:

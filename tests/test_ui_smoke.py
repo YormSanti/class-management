@@ -1000,6 +1000,27 @@ def test_attendance_export_period(window: MainWindow, roster: RosterService, tmp
     assert rows[2][1:] == ["Lovelace", "Ada", "1", "0", "0", "0", "0", "100"]
 
 
+def test_attendance_export_period_as_an_excel_workbook(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from app.models import AttendanceStatus
+    from app.ui.dialogs.period_dialog import PeriodDialog
+
+    view = _attendance_page(window, roster)
+    view._row_widgets[0][0].buttons[AttendanceStatus.ABSENT].click()
+    view.mark_rest_button.click()
+    monkeypatch.setattr(PeriodDialog, "exec", lambda dialog: True)  # the month shown
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(tmp_path / "term.xlsx"), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    view.month_view.export_period()
+    sheet = load_workbook(tmp_path / "term.xlsx").active
+    assert sheet.title == "1 Nov 2026 to 30 Nov 2026"
+    rows = list(sheet.values)
+    assert rows[1][1:] == ("Hopper", "Grace", 0, 0, 1, 0, 0, 0)
+    assert rows[3][1] == "Whole class"
+
+
 def test_attendance_month_saves_pdf(window: MainWindow, roster: RosterService, tmp_path: Path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
 

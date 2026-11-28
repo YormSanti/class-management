@@ -51,6 +51,7 @@ from app.services.export import (
     attendance_period_html,
     write_attendance_csv,
     write_attendance_summary_csv,
+    write_attendance_summary_xlsx,
     write_attendance_xlsx,
 )
 from app.services.roster import RosterService, matches, number_key
@@ -153,7 +154,9 @@ class MonthView(QWidget):
         self.export_button.setToolTip("Save this month as a CSV file or Excel workbook")
         self.export_button.clicked.connect(self.export_csv)
         self.export_period_button = QPushButton("Export period…")
-        self.export_period_button.setToolTip("Save each student's totals for any dates, e.g. a term, as CSV")
+        self.export_period_button.setToolTip(
+            "Save each student's totals for any dates, e.g. a term, as CSV, an Excel workbook or a PDF"
+        )
         self.export_period_button.clicked.connect(self.export_period)
         self.copy_button = QPushButton("Copy")
         self.copy_button.setToolTip("Copy this month as a table, to paste into a spreadsheet")
@@ -498,11 +501,14 @@ class MonthView(QWidget):
             if path is not None and write_pdf(self, path, title, attendance_period_html(summary, title), False):
                 QMessageBox.information(self, "Save PDF", f"Saved {recorded} to\n{path}")
             return
-        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv")
+        path = ask_save_path(self, "Export attendance", name, "CSV files", ".csv", others=(("Excel workbooks", ".xlsx"),))
         if path is None:
             return
         try:
-            write_attendance_summary_csv(path, summary)
+            if path.suffix.lower() == ".xlsx":
+                write_attendance_summary_xlsx(path, summary)
+            else:
+                write_attendance_summary_csv(path, summary)
         except OSError as exc:
             QMessageBox.warning(self, "Export attendance", f"The file could not be saved:\n{exc}")
             return
